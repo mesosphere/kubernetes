@@ -2,34 +2,22 @@
 
 <!-- TODO: Update, clean up. -->
 
-Mesos allows dynamic sharing of cluster resources
-between Kubernetes and other first-class Mesos frameworks such as
-[Hadoop](http://mesosphere.com/docs/tutorials/run-hadoop-on-mesos-using-installer),
-[Spark](http://mesosphere.com/docs/tutorials/run-spark-on-mesos), and
-[Chronos](http://mesosphere.com/docs/tutorials/run-chronos-on-mesos). Mesos ensures
-applications running on your cluster are isolated and that resources are
-allocated fairly.
+Mesos allows dynamic sharing of cluster resources between Kubernetes and other first-class Mesos frameworks such as [Hadoop][1], [Spark][2], and [Chronos][3].
+Mesos ensures applications running on your cluster are isolated and that resources are allocated fairly.
 
-Running Kubernetes on Mesos allows you to easily move Kubernetes
-workloads from one cloud provider to another to your own physical
-datacenter.
+Running Kubernetes on Mesos allows you to easily move Kubernetes workloads from one cloud provider to another to your own physical datacenter.
 
-This tutorial will walk you through setting up Kubernetes on a
-Mesos cluster on [Google Cloud Plaform](http://cloud.google.com).
-It provides a step by step walk through of adding Kubernetes to a
-Mesos cluster and running the classic GuestBook demo application.
+This tutorial will walk you through setting up Kubernetes on a Mesos cluster on [Google Cloud Plaform][4].
+It provides a step by step walk through of adding Kubernetes to a Mesos cluster and running the classic GuestBook demo application.
 
 ### Prerequisites
 
-* Mesos cluster on [Google Compute
-  Engine](https://google.mesosphere.com)
-* [VPN connection to the
-  cluster](http://mesosphere.com/docs/getting-started/cloud/google/#vpn-setup)
+* Mesos cluster on [Google Compute Engine][5]
+* [VPN connection to the cluster][6]
 
 ### Deploy Kubernetes-Mesos
 
-Log into the master node over SSH, replacing the placeholder below with
-the correct IP address.
+Log into the master node over SSH, replacing the placeholder below with the correct IP address.
 
 ```bash
 ssh jclouds@${ip_address_of_master_node}
@@ -39,8 +27,7 @@ Build the Kubernetes-Mesos executables.
 
 ```bash
 $ dpkg -l | grep -e mesos
-ii    mesos    0.21.0-1.0.debian77     amd64     Cluster resource
-manager ...
+ii    mesos    0.21.0-1.0.debian77     amd64     Cluster resource manager ...
 ```
 
 ```bash
@@ -51,8 +38,7 @@ $ mkdir -p bin && sudo docker run --rm \
 ```
 
 Set some environment variables.
-The internal IP address of the master is visible via the cluster details
-page on the Mesosphere launchpad:
+The internal IP address of the master is visible via the cluster details page on the Mesosphere launchpad:
 
 ```bash
 $ export servicehost=${mesos_master_internal_ip_address}
@@ -71,10 +57,8 @@ $ sudo docker run -d --net=host coreos/etcd go-wrapper run \
 
 ```bash
 $ sudo docker ps
-CONTAINER ID  IMAGE               COMMAND               CREATED  STATUS
-PORTS  NAMES
-4026e139abd2  coreos/etcd:latest  "/etcd go-wrapper ru  9s ago   Up 9s
-silly_bill
+CONTAINER ID  IMAGE               COMMAND               CREATED  STATUS PORTS  NAMES
+4026e139abd2  coreos/etcd:latest  "/etcd go-wrapper ru  9s ago   Up 9s         silly_bill
 ```
 
 Start the kubernetes-mesos framework:
@@ -100,8 +84,7 @@ $ ./bin/controller-manager -master=${KUBERNETES_MASTER} \
 
 
 ```bash
-$ sudo ./bin/kube-proxy -bind_address=${servicehost}
--etcd_servers=http://${servicehost}:4001 \
+$ sudo ./bin/kube-proxy -bind_address=${servicehost} -etcd_servers=http://${servicehost}:4001 \
   -logtostderr=true -v=2 >proxy.log 2>&1 &
 ```
 
@@ -122,16 +105,11 @@ Status
 ```
 
 ```bash
-$ bin/kubecfg list services                            # your service
-IPs will likely differ
-Name           Labels           Selector
-IP            Port
-----------     ----------       ----------
-----------    -----
-kubernetes-ro                   component=apiserver,provider=kubernetes
-10.10.10.227  80
-kubernetes                      component=apiserver,provider=kubernetes
-10.10.10.153  443
+$ bin/kubecfg list services                            # your service IPs will likely differ
+Name           Labels           Selector IP            Port
+----------     ----------       ---------- ----------    -----
+kubernetes-ro                   component=apiserver,provider=kubernetes 10.10.10.227  80
+kubernetes                      component=apiserver,provider=kubernetes 10.10.10.153  443
 ```
 
 ## Spin up a pod
@@ -175,26 +153,19 @@ Send the pod description to Kubernetes using the `kubecfg` CLI:
 
 ```bash
 $ bin/kubecfg -c nginx.json create pods
-Name                Image(s)            Host                Labels
-Status
-----------          ----------          ----------          ----------
-----------
-nginx-id-01         dockerfile/nginx    /                   name=foo
-Waiting
+Name                Image(s)            Host                Labels Status
+----------          ----------          ----------          ---------- ----------
+nginx-id-01         dockerfile/nginx    /                   name=foo Waiting
 ```
 
-Wait a minute or two while `dockerd` downloads the image layers from the
-internet.
+Wait a minute or two while `dockerd` downloads the image layers from the internet.
 We can use the `kubecfg` interface to monitor the status of our pod:
 
 ```bash
 $ bin/kubecfg list pods
-Name              Image(s)            Host                        Labels
-Status
-----------        ----------          ----------
-----------  ----------
-nginx-id-01       dockerfile/nginx    ${slave_ip}/${slave_ip}
-name=foo    Running
+Name              Image(s)            Host                        Labels Status
+----------        ----------          ---------- ----------  ----------
+nginx-id-01       dockerfile/nginx    ${slave_ip}/${slave_ip} name=foo    Running
 ```
 
 Verify that the pod task is running in the Mesos web console.
@@ -208,15 +179,13 @@ $ curl http://${slave_ip}:31000/
 
 ## Run the Example Guestbook App
 
-Following the instructions from the kubernetes-mesos
-[examples/guestbook](https://github.com/mesosphere/kubernetes-mesos/tree/v0.2.2/examples/guestbook):
+Following the instructions from the kubernetes-mesos [examples/guestbook][7]:
 
 ```bash
 $ export ex=k8sm/examples/guestbook
 $ bin/kubecfg -c $ex/redis-master.json create pods
 $ bin/kubecfg -c $ex/redis-master-service.json create services
-$ bin/kubecfg -c $ex/redis-slave-controller.json create
-replicationControllers
+$ bin/kubecfg -c $ex/redis-slave-controller.json create replicationControllers
 $ bin/kubecfg -c $ex/redis-slave-service.json create services
 $ bin/kubecfg -c $ex/frontend-controller.json create
 replicationControllers
@@ -247,42 +216,26 @@ Review your Mesos cluster's tasks:
 
 ```bash
 $ mesos ps
-   TIME   STATE    RSS     CPU    %MEM  COMMAND USER
-ID
- 0:00:03    R    67.62 MB  0.5   105.66   none  root
-c7315c47-7a61-11e4-8b8c-42010a863922
- 0:00:03    R    68.20 MB  0.75  106.57   none  root
-c731613c-7a61-11e4-8b8c-42010a863922
- 0:00:01    R    67.79 MB  0.25  105.93   none  root
-c7310460-7a61-11e4-8b8c-42010a863922
- 0:00:03    R    67.62 MB  0.5   105.66   none  root
-bda74154-7a61-11e4-8b8c-42010a863922
- 0:00:03    R    68.20 MB  0.75  106.57   none  root
-bda6e97f-7a61-11e4-8b8c-42010a863922
- 0:00:03    R    68.20 MB  0.75  106.57   none  root
-b0e206f1-7a61-11e4-8b8c-42010a863922
+   TIME   STATE    RSS     CPU    %MEM  COMMAND USER ID
+ 0:00:03    R    67.62 MB  0.5   105.66   none  root c7315c47-7a61-11e4-8b8c-42010a863922
+ 0:00:03    R    68.20 MB  0.75  106.57   none  root c731613c-7a61-11e4-8b8c-42010a863922
+ 0:00:01    R    67.79 MB  0.25  105.93   none  root c7310460-7a61-11e4-8b8c-42010a863922
+ 0:00:03    R    67.62 MB  0.5   105.66   none  root bda74154-7a61-11e4-8b8c-42010a863922
+ 0:00:03    R    68.20 MB  0.75  106.57   none  root bda6e97f-7a61-11e4-8b8c-42010a863922
+ 0:00:03    R    68.20 MB  0.75  106.57   none  root b0e206f1-7a61-11e4-8b8c-42010a863922
 ```
 
-Determine the internal IP address of the frontend
-[service
-portal](https://github.com/GoogleCloudPlatform/kubernetes/blob/release-0.6/docs/services.md#ips-and-portals):
+Determine the internal IP address of the frontend [service portal][8]:
 
 ```bash
 $ bin/kubecfg list services
-Name           Labels           Selector
-IP            Port
-----------     ----------       ----------
-----------    -----
-redismaster                     name=redis-master
-10.10.10.63   10000
-redisslave     name=redisslave  name=redisslave
-10.10.10.7    10001
-frontend                        name=frontend
-10.10.10.149  9998
-kubernetes-ro                   component=apiserver,provider=kubernetes
-10.10.10.60   80
-kubernetes                      component=apiserver,provider=kubernetes
-10.10.10.213  443
+Name           Labels           Selector IP            Port
+----------     ----------       ---------- ----------    -----
+redismaster                     name=redis-master 10.10.10.63   10000
+redisslave     name=redisslave  name=redisslave 10.10.10.7    10001
+frontend                        name=frontend 10.10.10.149  9998
+kubernetes-ro                   component=apiserver,provider=kubernetes 10.10.10.60   80
+kubernetes                      component=apiserver,provider=kubernetes 10.10.10.213  443
 ```
 
 Interact with the frontend application via curl:
@@ -305,12 +258,8 @@ Tail the logs of the kubelet-executor:
 
 ```bash
 $ mesos tail -f c7315c47-7a61-11e4-8b8c-42010a863922 stderr
-I1202 20:34:38.749340 03297 log.go:151] GET
-/podInfo?podID=c7312b26-7a61-11e4-8b8c-42010a863922&podNamespace=default:
-(3.71265ms) 200
-I1202 20:34:38.772047 03297 log.go:151] GET
-/podInfo?podID=bda7385a-7a61-11e4-8b8c-42010a863922&podNamespace=default:
-(3.785459ms) 200
+I1202 20:34:38.749340 03297 log.go:151] GET /podInfo?podID=c7312b26-7a61-11e4-8b8c-42010a863922&podNamespace=default: (3.71265ms) 200
+I1202 20:34:38.772047 03297 log.go:151] GET /podInfo?podID=bda7385a-7a61-11e4-8b8c-42010a863922&podNamespace=default: (3.785459ms) 200
 ...
 ```
 
@@ -321,23 +270,27 @@ First, open the firewall on the master machine.
 ```bash
 $ # determine the internal port for the frontend service portal
 $ sudo iptables-save|grep -e frontend  # -- port 56640 in this case
--A KUBE-PROXY -d 10.10.10.79/32 -p tcp -m comment --comment frontend -m
-tcp --dport 9998 -j DNAT --to-destination 10.57.172.200:56640
--A KUBE-PROXY -d 10.57.172.200/32 -p tcp -m comment --comment frontend
--m tcp --dport 9998 -j DNAT --to-destination 10.57.172.200:56640
+-A KUBE-PROXY -d 10.10.10.79/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.57.172.200:56640
+-A KUBE-PROXY -d 10.57.172.200/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.57.172.200:56640
 
 $ # open up access to the internal port for the frontend service portal
-$ sudo iptables -A INPUT -i eth0 -p tcp -m state --state NEW,ESTABLISHED
--m tcp \
+$ sudo iptables -A INPUT -i eth0 -p tcp -m state --state NEW,ESTABLISHED -m tcp \
   --dport ${internal_frontend_service_port} -j ACCEPT
 ```
 
 Next, add a firewall rule in Google Cloud Platform Console / Networking:
 
-<img src="{% asset_path learn/k8s-firewall.png %}" title="Google Cloud
-Platform firewall configuration" alt="" />
+<img src="{% asset_path learn/k8s-firewall.png %}" title="Google Cloud Platform firewall configuration" alt="" />
 
 Now, you can visit the guestbook in your browser!
 
-<img src="{% asset_path learn/k8s-guestbook.png %}" title="Kubernetes
-Guestbook app running on Mesos" alt="" />
+<img src="{% asset_path learn/k8s-guestbook.png %}" title="Kubernetes Guestbook app running on Mesos" alt="" />
+
+[1]: http://mesosphere.com/docs/tutorials/run-hadoop-on-mesos-using-installer
+[2]: http://mesosphere.com/docs/tutorials/run-spark-on-mesos
+[3]: http://mesosphere.com/docs/tutorials/run-chronos-on-mesos
+[4]: http://cloud.google.com
+[5]: https://google.mesosphere.com
+[6]: http://mesosphere.com/docs/getting-started/cloud/google/#vpn-setup
+[7]: https://github.com/mesosphere/kubernetes-mesos/tree/v0.2.2/examples/guestbook
+[8]: https://github.com/GoogleCloudPlatform/kubernetes/blob/release-0.6/docs/services.md#ips-and-portals

@@ -49,8 +49,8 @@ $ sudo docker run -d --hostname $(hostname -f) --name etcd -p 4001:4001 -p 7001:
 
 ```bash
 $ sudo docker ps
-CONTAINER ID  IMAGE               COMMAND               CREATED  STATUS PORTS  NAMES
-4026e139abd2  coreos/etcd:latest  "/etcd go-wrapper ru  9s ago   Up 9s         silly_bill
+CONTAINER ID   IMAGE                COMMAND   CREATED   STATUS   PORTS                NAMES
+fd7bac9e2301   coreos/etcd:latest   "/etcd"   5s ago    Up 3s    2379/tcp, 2380/...   etcd
 ```
 
 Start the kubernetes-mesos API server, controller manager, scheduler, and proxy:
@@ -163,7 +163,7 @@ Now we can interact with the pod running on the Mesos cluster:
 
 ```bash
 $ curl http://${slave_ip}:31000/
-... (HTML, Welcome to Nowginx on Debian!)
+... (HTML, Welcome to nginx on Debian!)
 ```
 
 ## Run the Example Guestbook App

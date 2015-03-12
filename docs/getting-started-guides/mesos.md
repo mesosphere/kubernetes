@@ -44,11 +44,7 @@ $ export KUBERNETES_MASTER=http://${servicehost}:8888
 Start etcd and verify that it is running:
 
 ```bash
-$ sudo docker run -d --net=host coreos/etcd go-wrapper run \
-       -advertise-client-urls=http://${servicehost}:4001 \
-       -listen-client-urls=http://${servicehost}:4001 \
-       -initial-advertise-peer-urls=http://${servicehost}:7001 \
-       -listen-peer-urls=http://${servicehost}:7001
+$ sudo docker run -d --hostname $(hostname -f) -p 4001:4001 -p 7001:7001 coreos/etcd
 ```
 
 ```bash
@@ -79,13 +75,13 @@ $ ./bin/km scheduler \
   --mesos_master=${mesos_master} \
   --etcd_servers=http://${servicehost}:4001 \
   --mesos_user=root \
-  --api_servers=$servicehost:8888
+  --api_servers=$servicehost:8888 \
   --v=2 >scheduler.log 2>&1 &
 
 $ sudo ./bin/km proxy \
   --bind_address=${servicehost} \
   --etcd_servers=http://${servicehost}:4001 \
-  --logtostderr=true -v=2 >proxy.log 2>&1 &
+  --logtostderr=true >proxy.log 2>&1 &
 ```
 
 Disown your background jobs so that they'll stay running if you log out.
@@ -181,7 +177,7 @@ $ bin/kubectl create -f $ex/redis-master-service.json
 $ bin/kubectl create -f $ex/redis-slave-controller.json
 $ bin/kubectl create -f $ex/redis-slave-service.json
 $ bin/kubectl create -f $ex/frontend-controller.json
-replicationControllers
+
 $ cat <<EOS >/tmp/frontend-service
 {
   "id": "frontend",
@@ -227,14 +223,13 @@ kubernetes      component=apiserver,provider=kubernetes   <none>              10
 kubernetes-ro   component=apiserver,provider=kubernetes   <none>              10.10.10.1     80
 redismaster     <none>                                    name=redis-master   10.10.10.49    10000
 redisslave      name=redisslave                           name=redisslave     10.10.10.109   10001
-frontend        name=frontend                             name=frontend       10.10.10.149   9998
+frontend        <none>                                    name=frontend       10.10.10.149   9998
 ```
 
 Interact with the frontend application via curl:
 
 ```bash
-$ curl
-http://${frontend_service_ip_address}:9998/index.php?cmd=get\&key=messages
+$ curl http://${frontend_service_ip_address}:9998/index.php?cmd=get\&key=messages
 ```
 
 Or via the Redis CLI:
@@ -261,9 +256,11 @@ First, open the firewall on the master machine.
 
 ```bash
 $ # determine the internal port for the frontend service portal
-$ sudo iptables-save|grep -e frontend  # -- port 56640 in this case
--A KUBE-PROXY -d 10.10.10.79/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.57.172.200:56640
--A KUBE-PROXY -d 10.57.172.200/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.57.172.200:56640
+$ sudo iptables-save|grep -e frontend  # -- port 36336 in this case
+-A KUBE-PORTALS-CONTAINER -d 10.10.10.149/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.22.183.23:36336
+-A KUBE-PORTALS-CONTAINER -d 10.22.183.23/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.22.183.23:36336
+-A KUBE-PORTALS-HOST -d 10.10.10.149/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.22.183.23:36336
+-A KUBE-PORTALS-HOST -d 10.22.183.23/32 -p tcp -m comment --comment frontend -m tcp --dport 9998 -j DNAT --to-destination 10.22.183.23:36336
 
 $ # open up access to the internal port for the frontend service portal
 $ sudo iptables -A INPUT -i eth0 -p tcp -m state --state NEW,ESTABLISHED -m tcp \

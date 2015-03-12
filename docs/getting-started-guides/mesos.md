@@ -23,18 +23,13 @@ Log into the master node over SSH, replacing the placeholder below with the corr
 ssh jclouds@${ip_address_of_master_node}
 ```
 
-Build the Kubernetes-Mesos executables.
-
-```bash
-$ dpkg -l | grep -e mesos
-ii    mesos    0.21.0-1.0.debian77     amd64     Cluster resource manager ...
-```
+Build Kubernetes-Mesos.
 
 ```bash
 $ git clone https://github.com/mesosphere/kubernetes-mesos k8sm
-$ mkdir -p bin && sudo docker run --rm \
-  -v $(pwd)/bin:/target -v $(pwd)/k8sm:/snapshot \
-  jdef/kubernetes-mesos:build-mesos-0.21.0-compat
+$ mkdir -p bin && sudo docker run --rm -v $(pwd)/bin:/target \
+  -v $(pwd)/k8sm:/snapshot -e GIT_BRANCH=release-0.4 \
+  mesosphere/kubernetes-mesos:build
 ```
 
 Set some environment variables.
@@ -42,6 +37,7 @@ The internal IP address of the master is visible via the cluster details page on
 
 ```bash
 $ export servicehost=${mesos_master_internal_ip_address}
+$ export mesos_master=${servicehost}:5050
 $ export KUBERNETES_MASTER=http://${servicehost}:8888
 ```
 
@@ -61,31 +57,35 @@ CONTAINER ID  IMAGE               COMMAND               CREATED  STATUS PORTS  N
 4026e139abd2  coreos/etcd:latest  "/etcd go-wrapper ru  9s ago   Up 9s         silly_bill
 ```
 
-Start the kubernetes-mesos framework:
+Start the kubernetes-mesos API server, controller manager, scheduler, and proxy:
 
 ```bash
-$ ./bin/kubernetes-mesos \
-      -address=${servicehost} \
-      -mesos_master=${servicehost}:5050 \
-      -etcd_servers=http://${servicehost}:4001 \
-      -executor_path=$(pwd)/bin/kubernetes-executor \
-      -proxy_path=$(pwd)/bin/kube-proxy \
-      -portal_net=10.10.10.0/24 \
-      -mesos_user=root \
-      -v=2 >master.log 2>&1 &
-```
+$ ./bin/km apiserver \
+  --address=${servicehost} \
+  --mesos_master=${mesos_master} \
+  --etcd_servers=http://${servicehost}:4001 \
+  --portal_net=10.10.10.0/24 \
+  --port=8888 \
+  --cloud_provider=mesos \
+  --v=1 >apiserver.log 2>&1 &
 
-Start a replication controller:
+$ ./bin/km controller-manager \
+  --master=$servicehost:8888 \
+  --mesos_master=${mesos_master} \
+  --v=1 >controller.log 2>&1 &
 
-```bash
-$ ./bin/controller-manager -master=${KUBERNETES_MASTER} \
-    -v=2 >controller.log 2>&1 &
-```
+$ ./bin/km scheduler \
+  --address=${servicehost} \
+  --mesos_master=${mesos_master} \
+  --etcd_servers=http://${servicehost}:4001 \
+  --mesos_user=root \
+  --api_servers=$servicehost:8888
+  --v=2 >scheduler.log 2>&1 &
 
-
-```bash
-$ sudo ./bin/kube-proxy -bind_address=${servicehost} -etcd_servers=http://${servicehost}:4001 \
-  -logtostderr=true -v=2 >proxy.log 2>&1 &
+$ sudo ./bin/km proxy \
+  --bind_address=${servicehost} \
+  --etcd_servers=http://${servicehost}:4001 \
+  --logtostderr=true -v=2 >proxy.log 2>&1 &
 ```
 
 Disown your background jobs so that they'll stay running if you log out.
@@ -94,22 +94,18 @@ Disown your background jobs so that they'll stay running if you log out.
 $ disown -a
 ```
 
-Interact with the kubernetes-mesos framework via `kubecfg`:
+Interact with the kubernetes-mesos framework via `kubectl`:
 
 ```bash
-$ bin/kubecfg list pods
-Name                Image(s)            Host             Labels
-Status
-----------          ----------          ----------       ----------
-----------
+$ bin/kubectl get pods
+POD        IP        CONTAINER(S)        IMAGE(S)        HOST        LABELS        STATUS
 ```
 
 ```bash
-$ bin/kubecfg list services                            # your service IPs will likely differ
-Name           Labels           Selector IP            Port
-----------     ----------       ---------- ----------    -----
-kubernetes-ro                   component=apiserver,provider=kubernetes 10.10.10.227  80
-kubernetes                      component=apiserver,provider=kubernetes 10.10.10.153  443
+$ bin/kubectl get services       # your service IPs will likely differ
+NAME            LABELS                                    SELECTOR            IP             PORT
+kubernetes      component=apiserver,provider=kubernetes   <none>              10.10.10.2     443
+kubernetes-ro   component=apiserver,provider=kubernetes   <none>              10.10.10.1     80
 ```
 
 ## Spin up a pod
@@ -149,23 +145,20 @@ $ cat <<EOPOD >nginx.json
 EOPOD
 ```
 
-Send the pod description to Kubernetes using the `kubecfg` CLI:
+Send the pod description to Kubernetes using the `kubectl` CLI:
 
 ```bash
-$ bin/kubecfg -c nginx.json create pods
-Name                Image(s)            Host                Labels Status
-----------          ----------          ----------          ---------- ----------
-nginx-id-01         dockerfile/nginx    /                   name=foo Waiting
+$ bin/kubectl create -f nginx.json
+nginx-id-01
 ```
 
 Wait a minute or two while `dockerd` downloads the image layers from the internet.
-We can use the `kubecfg` interface to monitor the status of our pod:
+We can use the `kubectl` interface to monitor the status of our pod:
 
 ```bash
-$ bin/kubecfg list pods
-Name              Image(s)            Host                        Labels Status
-----------        ----------          ---------- ----------  ----------
-nginx-id-01       dockerfile/nginx    ${slave_ip}/${slave_ip} name=foo    Running
+$ bin/kubectl get pods
+POD          IP           CONTAINER(S)  IMAGE(S)          HOST                       LABELS                STATUS
+nginx-id-01  172.17.5.27  nginx-01      dockerfile/nginx  10.72.72.178/10.72.72.178  cluster=gce,name=foo  Running
 ```
 
 Verify that the pod task is running in the Mesos web console.
@@ -183,11 +176,11 @@ Following the instructions from the kubernetes-mesos [examples/guestbook][7]:
 
 ```bash
 $ export ex=k8sm/examples/guestbook
-$ bin/kubecfg -c $ex/redis-master.json create pods
-$ bin/kubecfg -c $ex/redis-master-service.json create services
-$ bin/kubecfg -c $ex/redis-slave-controller.json create replicationControllers
-$ bin/kubecfg -c $ex/redis-slave-service.json create services
-$ bin/kubecfg -c $ex/frontend-controller.json create
+$ bin/kubectl create -f $ex/redis-master.json
+$ bin/kubectl create -f $ex/redis-master-service.json
+$ bin/kubectl create -f $ex/redis-slave-controller.json
+$ bin/kubectl create -f $ex/redis-slave-service.json
+$ bin/kubectl create -f $ex/frontend-controller.json
 replicationControllers
 $ cat <<EOS >/tmp/frontend-service
 {
@@ -203,13 +196,13 @@ $ cat <<EOS >/tmp/frontend-service
   ]
 }
 EOS
-$ bin/kubecfg -c /tmp/frontend-service create services
+$ bin/kubectl create -f /tmp/frontend-service
 ```
 
 Watch your pods transition from `Waiting` to `Running`:
 
 ```bash
-$ watch 'bin/kubecfg list pods'
+$ watch 'bin/kubectl get pods'
 ```
 
 Review your Mesos cluster's tasks:
@@ -228,14 +221,13 @@ $ mesos ps
 Determine the internal IP address of the frontend [service portal][8]:
 
 ```bash
-$ bin/kubecfg list services
-Name           Labels           Selector IP            Port
-----------     ----------       ---------- ----------    -----
-redismaster                     name=redis-master 10.10.10.63   10000
-redisslave     name=redisslave  name=redisslave 10.10.10.7    10001
-frontend                        name=frontend 10.10.10.149  9998
-kubernetes-ro                   component=apiserver,provider=kubernetes 10.10.10.60   80
-kubernetes                      component=apiserver,provider=kubernetes 10.10.10.213  443
+$ bin/kubectl get services
+NAME            LABELS                                    SELECTOR            IP             PORT
+kubernetes      component=apiserver,provider=kubernetes   <none>              10.10.10.2     443
+kubernetes-ro   component=apiserver,provider=kubernetes   <none>              10.10.10.1     80
+redismaster     <none>                                    name=redis-master   10.10.10.49    10000
+redisslave      name=redisslave                           name=redisslave     10.10.10.109   10001
+frontend        name=frontend                             name=frontend       10.10.10.149   9998
 ```
 
 Interact with the frontend application via curl:
@@ -292,7 +284,7 @@ Now, you can visit the guestbook in your browser!
 [4]: http://cloud.google.com
 [5]: https://google.mesosphere.com
 [6]: http://mesosphere.com/docs/getting-started/cloud/google/#vpn-setup
-[7]: https://github.com/mesosphere/kubernetes-mesos/tree/v0.2.2/examples/guestbook
-[8]: https://github.com/GoogleCloudPlatform/kubernetes/blob/release-0.6/docs/services.md#ips-and-portals
+[7]: https://github.com/mesosphere/kubernetes-mesos/tree/v0.4.0/examples/guestbook
+[8]: https://github.com/GoogleCloudPlatform/kubernetes/blob/v0.11.0/docs/services.md#ips-and-portals
 [9]: mesos/k8s-firewall.png
 [10]: mesos/k8s-guestbook.png

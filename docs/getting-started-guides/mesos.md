@@ -280,11 +280,11 @@ $ sudo iptables -A INPUT -i eth0 -p tcp -m state --state NEW,ESTABLISHED -m tcp 
 
 Next, add a firewall rule in Google Cloud Platform Console / Networking:
 
-<img src="{% asset_path learn/k8s-firewall.png %}" title="Google Cloud Platform firewall configuration" alt="" />
+![Google Cloud Platform firewall configuration][9]
 
 Now, you can visit the guestbook in your browser!
 
-<img src="{% asset_path learn/k8s-guestbook.png %}" title="Kubernetes Guestbook app running on Mesos" alt="" />
+![Kubernetes Guestbook app running on Mesos][10]
 
 [1]: http://mesosphere.com/docs/tutorials/run-hadoop-on-mesos-using-installer
 [2]: http://mesosphere.com/docs/tutorials/run-spark-on-mesos
@@ -294,3 +294,5 @@ Now, you can visit the guestbook in your browser!
 [6]: http://mesosphere.com/docs/getting-started/cloud/google/#vpn-setup
 [7]: https://github.com/mesosphere/kubernetes-mesos/tree/v0.2.2/examples/guestbook
 [8]: https://github.com/GoogleCloudPlatform/kubernetes/blob/release-0.6/docs/services.md#ips-and-portals
+[9]: mesos/k8s-firewall.png
+[10]: mesos/k8s-guestbook.png

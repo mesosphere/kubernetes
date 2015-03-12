@@ -33,10 +33,10 @@ $ mkdir -p bin && sudo docker run --rm -v $(pwd)/bin:/target \
 ```
 
 Set some environment variables.
-The internal IP address of the master is visible via the cluster details page on the Mesosphere launchpad:
+The internal IP address of the master is visible via the cluster details page on the Mesosphere launchpad, or may be obtained via `hostname -i`.
 
 ```bash
-$ export servicehost=${mesos_master_internal_ip_address}
+$ export servicehost=$(hostname -i)
 $ export mesos_master=${servicehost}:5050
 $ export KUBERNETES_MASTER=http://${servicehost}:8888
 ```

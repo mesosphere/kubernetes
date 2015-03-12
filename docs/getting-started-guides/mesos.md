@@ -199,7 +199,7 @@ EOS
 $ bin/kubectl create -f /tmp/frontend-service
 ```
 
-Watch your pods transition from `Waiting` to `Running`:
+Watch your pods transition from `Pending` to `Running`:
 
 ```bash
 $ watch 'bin/kubectl get pods'

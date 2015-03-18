@@ -9,6 +9,7 @@ Running Kubernetes on Mesos allows you to easily move Kubernetes workloads from 
 
 This tutorial will walk you through setting up Kubernetes on a Mesos cluster on [Google Cloud Plaform][4].
 It provides a step by step walk through of adding Kubernetes to a Mesos cluster and running the classic GuestBook demo application.
+The walkthrough presented here is based on the v0.4.x series of the Kubernetes-Mesos project, which itself is based on Kubernetes v0.11.0.
 
 ### Prerequisites
 

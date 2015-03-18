@@ -280,7 +280,7 @@ Now, you can visit the guestbook in your browser!
 [3]: http://mesosphere.com/docs/tutorials/run-chronos-on-mesos
 [4]: http://cloud.google.com
 [5]: https://google.mesosphere.com
-[6]: http://mesosphere.com/docs/getting-started/cloud/google/#vpn-setup
+[6]: http://mesosphere.com/docs/getting-started/cloud/google/mesosphere/#vpn-setup
 [7]: https://github.com/mesosphere/kubernetes-mesos/tree/v0.4.0/examples/guestbook
 [8]: https://github.com/GoogleCloudPlatform/kubernetes/blob/v0.11.0/docs/services.md#ips-and-portals
 [9]: mesos/k8s-firewall.png

@@ -12,8 +12,11 @@ It provides a step by step walk through of adding Kubernetes to a Mesos cluster 
 
 ### Prerequisites
 
+* Understanding of [Apache Mesos][11]
 * Mesos cluster on [Google Compute Engine][5]
-* [VPN connection to the cluster][6]
+* Identify the Mesos master node from Mesosphere [cluster launch pad][12]
+* [VPN connection to the cluster][6] (optional)
+  * Or, setup firewall rules and iptable configuration (used in this doc).
 
 ### Deploy Kubernetes-Mesos
 
@@ -285,3 +288,5 @@ Now, you can visit the guestbook in your browser!
 [8]: https://github.com/GoogleCloudPlatform/kubernetes/blob/v0.11.0/docs/services.md#ips-and-portals
 [9]: mesos/k8s-firewall.png
 [10]: mesos/k8s-guestbook.png
+[11]: http://mesos.apache.org/
+[12]: https://google.mesosphere.com/clusters

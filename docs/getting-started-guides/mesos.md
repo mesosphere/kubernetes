@@ -14,9 +14,21 @@ It provides a step by step walk through of adding Kubernetes to a Mesos cluster 
 
 * Understanding of [Apache Mesos][11]
 * Mesos cluster on [Google Compute Engine][5]
-* Identify the Mesos master node from Mesosphere [cluster launch pad][12]
-* [VPN connection to the cluster][6] (optional)
-  * Or, setup firewall rules and iptable configuration (used in this doc).
+* Identify the Mesos master node external IP from Mesosphere [cluster launch pad][12]
+* A [VPN connection to the cluster][6], or setup firewall rules for direct access (used in this doc).
+
+### Setup Access to Mesos Admin GUI
+This doc will refer to the running Mesos cluster repeatedly.  It's a good idea to make the Mesos admin GUI accessible via the browser.  First, take note of the network name attached to your Mesos cluster (either via the Google Cloud GUI) or with `gcloud` tool as follows:
+
+```bash
+gcloud compute firewall-rules list
+```
+Next, add a firewall-rule to open traffic on port 5050.  This will allow you to access Mesos master GUI via the browser.
+
+```bash
+gcloud compute firewall-rules create mesos-master-gui --network ${network_name}  --source-ranges 0.0.0.0/0 --allow tcp:5050
+```
+Once the rule is applied, point your browser to your Mesos master's IP address (see pre-requisites).  You should see the Mesos GUI displayed.
 
 ### Deploy Kubernetes-Mesos
 

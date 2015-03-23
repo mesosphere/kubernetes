@@ -55,7 +55,7 @@ $ export servicehost=$(hostname -i)
 $ export mesos_master=${servicehost}:5050
 $ export KUBERNETES_MASTER=http://${servicehost}:8888
 ```
-
+### Deploy etcd
 Start etcd and verify that it is running:
 
 ```bash
@@ -67,7 +67,13 @@ $ sudo docker ps
 CONTAINER ID   IMAGE                COMMAND   CREATED   STATUS   PORTS                NAMES
 fd7bac9e2301   coreos/etcd:latest   "/etcd"   5s ago    Up 3s    2379/tcp, 2380/...   etcd
 ```
+It's also a good idea to ensure your etcd instance is reachable by testing it
+```bash
+curl -L http://$(hostname -i):4001/v2/keys/
+```
+If connectivity is OK, you will see an output of the available keys in etcd (if any).
 
+### Start Kubernetes-Mesos Services
 Start the kubernetes-mesos API server, controller manager, scheduler, and proxy:
 
 ```bash
@@ -104,7 +110,7 @@ Disown your background jobs so that they'll stay running if you log out.
 ```bash
 $ disown -a
 ```
-
+#### Validate KM Services
 Interact with the kubernetes-mesos framework via `kubectl`:
 
 ```bash
@@ -118,6 +124,12 @@ NAME            LABELS                                    SELECTOR            IP
 kubernetes      component=apiserver,provider=kubernetes   <none>              10.10.10.2     443
 kubernetes-ro   component=apiserver,provider=kubernetes   <none>              10.10.10.1     80
 ```
+Lastly, use the Mesos CLI tool to validate the Kubernetes scheduler framework has been registered and running:
+```bash
+$ mesos state | grep "Kubernetes"
+$         "name": "Kubernetes",
+```
+Or, open the Mesos web GUI and look for the registered framework named "Kubernetes".
 
 ## Spin up a pod
 
@@ -172,14 +184,7 @@ POD          IP           CONTAINER(S)  IMAGE(S)          HOST                  
 nginx-id-01  172.17.5.27  nginx-01      dockerfile/nginx  10.72.72.178/10.72.72.178  cluster=gce,name=foo  Running
 ```
 
-Verify that the pod task is running in the Mesos web console.
-
-Now we can interact with the pod running on the Mesos cluster:
-
-```bash
-$ curl http://${slave_ip}:31000/
-... (HTML, Welcome to nginx on Debian!)
-```
+Verify that the pod task is running in the Mesos web console.  Click on the Kubernetes framework.  The next screen should show the running Mesos task that started the Kubernetes pod.
 
 ## Run the Example Guestbook App
 
@@ -228,8 +233,9 @@ $ mesos ps
  0:00:03    R    68.20 MB  0.75  106.57   none  root bda6e97f-7a61-11e4-8b8c-42010a863922
  0:00:03    R    68.20 MB  0.75  106.57   none  root b0e206f1-7a61-11e4-8b8c-42010a863922
 ```
+The number of Kubernetes pods listed earlier (from `bin/kubectl get pods`) should equal to the number active Mesos tasks listed the previous listing (`mesos ps`).
 
-Determine the internal IP address of the frontend [service portal][8]:
+Next, determine the internal IP address of the front end [service portal][8]:
 
 ```bash
 $ bin/kubectl get services
@@ -241,10 +247,11 @@ redisslave      name=redisslave                           name=redisslave     10
 frontend        <none>                                    name=frontend       10.10.10.149   9998
 ```
 
-Interact with the frontend application via curl:
+Interact with the frontend application via curl using the front-end service IP address from above:
 
 ```bash
 $ curl http://${frontend_service_ip_address}:9998/index.php?cmd=get\&key=messages
+{"data": ""}
 ```
 
 Or via the Redis CLI:
@@ -255,16 +262,7 @@ $ redis-cli -h ${redis_master_service_ip_address} -p 10000
 10.233.254.108:10000> dump messages
 "\x00\x06,world\x06\x00\xc9\x82\x8eHj\xe5\xd1\x12"
 ```
-
-Tail the logs of the kubelet-executor:
-
-```bash
-$ mesos tail -f c7315c47-7a61-11e4-8b8c-42010a863922 stderr
-I1202 20:34:38.749340 03297 log.go:151] GET /podInfo?podID=c7312b26-7a61-11e4-8b8c-42010a863922&podNamespace=default: (3.71265ms) 200
-I1202 20:34:38.772047 03297 log.go:151] GET /podInfo?podID=bda7385a-7a61-11e4-8b8c-42010a863922&podNamespace=default: (3.785459ms) 200
-...
-```
-
+#### Test Guestbook App
 Or interact with the frontend application via your browser, in 2 steps:
 
 First, open the firewall on the master machine.

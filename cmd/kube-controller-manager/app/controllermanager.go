@@ -37,6 +37,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/namespace"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/resourcequota"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/service"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/service/ipv4perpod"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 
 	"github.com/golang/glog"
@@ -65,6 +66,7 @@ type CMServer struct {
 	PodEvictionTimeout      time.Duration
 	DeletingPodsQps         float32
 	DeletingPodsBurst       int
+	EndpointsController     string
 
 	// TODO: Discover these by pinging the host machines, and rip out these params.
 	NodeMilliCPU int64
@@ -130,6 +132,7 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet) {
 	fs.Var(resource.NewQuantityFlagValue(&s.NodeMemory), "node_memory", "The amount of memory (in bytes) provisioned on each node")
 	fs.StringVar(&s.ClusterName, "cluster_name", s.ClusterName, "The instance prefix for the cluster")
 	fs.BoolVar(&s.EnableProfiling, "profiling", false, "Enable profiling via web interface host:port/debug/pprof/")
+	fs.StringVar(&s.EndpointsController, "endpoints_controller", ipv4perpod.Name, "The endpoints controller for syncing service endpoints")
 }
 
 func (s *CMServer) verifyMinionFlags() {
@@ -170,7 +173,7 @@ func (s *CMServer) Run(_ []string) error {
 		http.ListenAndServe(net.JoinHostPort(s.Address.String(), strconv.Itoa(s.Port)), nil)
 	}()
 
-	endpoints := service.NewEndpointController(kubeClient)
+	endpoints := service.GetEndpointsController(s.EndpointsController, kubeClient)
 	go util.Forever(func() { endpoints.SyncServiceEndpoints() }, time.Second*10)
 
 	controllerManager := replicationControllerPkg.NewReplicationManager(kubeClient)

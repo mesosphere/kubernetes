@@ -41,6 +41,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/master"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/service"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/service/ipv4perpod"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler"
@@ -138,7 +139,7 @@ func runControllerManager(machineList []string, cl *client.Client, nodeMilliCPU,
 		glog.Warningf("Running without a service controller: %v", err)
 	}
 
-	endpoints := service.NewEndpointController(cl)
+	endpoints := service.GetEndpointsController(ipv4perpod.Name, cl)
 	go util.Forever(func() { endpoints.SyncServiceEndpoints() }, time.Second*10)
 
 	controllerManager := controller.NewReplicationManager(cl)

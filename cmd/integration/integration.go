@@ -50,6 +50,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/master"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/probe"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/service"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/service/ipv4perpod"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/wait"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume/empty_dir"
@@ -206,7 +207,7 @@ func startComponents(firstManifestURL, secondManifestURL, apiVersion string) (st
 	eventBroadcaster.StartRecordingToSink(cl.Events(""))
 	scheduler.New(schedulerConfig).Run()
 
-	endpoints := service.NewEndpointController(cl)
+	endpoints := service.GetEndpointsController(ipv4perpod.Name, cl)
 	// ensure the service endpoints are sync'd several times within the window that the integration tests wait
 	go util.Forever(func() { endpoints.SyncServiceEndpoints() }, time.Second*4)
 

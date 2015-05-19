@@ -4357,7 +4357,7 @@ func TestGetRestartCount(t *testing.T) {
 
 	// Helper function for verifying the restart count.
 	verifyRestartCount := func(pod *api.Pod, expectedCount int) api.PodStatus {
-		status, err := kubelet.generatePodStatus(pod)
+		status, err := kubelet.GeneratePodStatus(pod)
 		if err != nil {
 			t.Errorf("unexpected error %v", err)
 		}

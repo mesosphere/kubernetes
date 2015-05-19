@@ -248,7 +248,7 @@ func (s *KubeletServer) Run(_ []string) error {
 		glog.Warning(err)
 	}
 
-	client, err := s.createAPIServerClient()
+	client, _, err := s.CreateAPIServerClient()
 	if err != nil && len(s.APIServerList) > 0 {
 		glog.Warningf("No API client: %v", err)
 	}
@@ -425,9 +425,9 @@ func (s *KubeletServer) createClientConfig() (*client.Config, error) {
 	return clientConfig, nil
 }
 
-func (s *KubeletServer) createAPIServerClient() (*client.Client, error) {
+func (s *KubeletServer) CreateAPIServerClient() (*client.Client, *client.Config, error) {
 	if len(s.APIServerList) < 1 {
-		return nil, fmt.Errorf("no api servers specified")
+		return nil, nil, fmt.Errorf("no api servers specified")
 	}
 	// TODO: adapt Kube client to support LB over several servers
 	if len(s.APIServerList) > 1 {
@@ -436,14 +436,14 @@ func (s *KubeletServer) createAPIServerClient() (*client.Client, error) {
 
 	clientConfig, err := s.createClientConfig()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.addChaosToClientConfig(clientConfig)
 	client, err := client.New(clientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return client, nil
+	return client, clientConfig, nil
 }
 
 // addChaosToClientConfig injects random errors into client connections if configured.

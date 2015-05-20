@@ -184,15 +184,18 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		return err
 	}
 
-	tlsOptions := &kubelet.TLSOptions{
-		Config: &tls.Config{
-			// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
-			MinVersion: tls.VersionTLS10,
-			// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
-			ClientAuth: tls.RequestClientCert,
-		},
-		CertFile: s.TLSCertFile,
-		KeyFile:  s.TLSPrivateKeyFile,
+	var tlsOptions *kubelet.TLSOptions
+	if s.TLSCertFile != "" && s.TLSPrivateKeyFile != "" {
+		tlsOptions = &kubelet.TLSOptions{
+			Config: &tls.Config{
+				// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
+				MinVersion: tls.VersionTLS10,
+				// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
+				ClientAuth: tls.RequestClientCert,
+			},
+			CertFile: s.TLSCertFile,
+			KeyFile:  s.TLSPrivateKeyFile,
+		}
 	}
 
 	mounter := mount.New()

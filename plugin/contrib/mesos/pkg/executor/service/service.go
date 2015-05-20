@@ -471,11 +471,13 @@ func (kl *kubeletExecutor) runProxyService() {
 		}
 	}
 	appendStringArg("master", kl.clientConfig.Host)
+	/* TODO(jdef) move these flags to a config file pointed to by --kubeconfig
 	appendStringArg("api-version", kl.clientConfig.Version)
 	appendStringArg("client-certificate", kl.clientConfig.CertFile)
 	appendStringArg("client-key", kl.clientConfig.KeyFile)
 	appendStringArg("certificate-authority", kl.clientConfig.CAFile)
 	args = append(args, fmt.Sprintf("--insecure-skip-tls-verify=%t", kl.clientConfig.Insecure))
+	*/
 
 	log.Infof("Spawning process executable %s with args '%+v'", kl.proxyExec, args)
 

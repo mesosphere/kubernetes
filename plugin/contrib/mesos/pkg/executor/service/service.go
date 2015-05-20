@@ -22,8 +22,10 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +34,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/credentialprovider"
-	_ "github.com/GoogleCloudPlatform/kubernetes/pkg/healthz"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/healthz"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/cadvisor"
 	kconfig "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/config"
@@ -204,9 +206,22 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	}
 
 	finished := make(chan struct{})
-	app.RunKubelet(&kcfg, app.KubeletBuilder(func(kc *app.KubeletConfig) (app.KubeletBootstrap, *kconfig.PodConfig, error) {
+	err = app.RunKubelet(&kcfg, app.KubeletBuilder(func(kc *app.KubeletConfig) (app.KubeletBootstrap, *kconfig.PodConfig, error) {
 		return s.createAndInitKubelet(kc, hks, clientConfig, shutdownCloser, finished)
 	}))
+	if err != nil {
+		return err
+	}
+
+	if s.HealthzPort > 0 {
+		healthz.DefaultHealthz()
+		go util.Forever(func() {
+			err := http.ListenAndServe(net.JoinHostPort(s.HealthzBindAddress.String(), strconv.Itoa(s.HealthzPort)), nil)
+			if err != nil {
+				log.Errorf("Starting health server failed: %v", err)
+			}
+		}, 5*time.Second)
+	}
 
 	// block until executor is shut down or commits shutdown
 	select {}

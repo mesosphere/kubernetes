@@ -18,6 +18,7 @@ package service
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"math/rand"
@@ -40,6 +41,7 @@ import (
 	kconfig "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/config"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/mount"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/config"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/hyperkube"
@@ -166,6 +168,11 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		LowThresholdPercent:  s.ImageGCLowThresholdPercent,
 	}
 
+	diskSpacePolicy := kubelet.DiskSpacePolicy{
+		DockerFreeDiskMB: s.LowDiskSpaceThresholdMB,
+		RootFreeDiskMB:   s.LowDiskSpaceThresholdMB,
+	}
+
 	//TODO(jdef) intentionally NOT initializing a cloud provider here since:
 	//(a) the kubelet doesn't actually use it
 	//(b) we don't need to create N-kubelet connections to zookeeper for no good reason
@@ -176,6 +183,24 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	if err != nil {
 		return err
 	}
+
+	tlsOptions := &kubelet.TLSOptions{
+		Config: &tls.Config{
+			// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
+			MinVersion: tls.VersionTLS10,
+			// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
+			ClientAuth: tls.RequestClientCert,
+		},
+		CertFile: s.TLSCertFile,
+		KeyFile:  s.TLSPrivateKeyFile,
+	}
+
+	mounter := mount.New()
+	if s.Containerized {
+		log.V(2).Info("Running kubelet in containerized mode (experimental)")
+		mounter = &mount.NsenterMounter{}
+	}
+
 	kcfg := app.KubeletConfig{
 		Address:                        s.Address,
 		AllowPrivileged:                s.AllowPrivileged,
@@ -192,6 +217,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		ClusterDomain:                  s.ClusterDomain,
 		ClusterDNS:                     s.ClusterDNS,
 		Port:                           s.Port,
+		ReadOnlyPort:                   s.ReadOnlyPort,
 		CadvisorInterface:              cadvisorInterface,
 		EnableServer:                   s.EnableServer,
 		EnableDebuggingHandlers:        s.EnableDebuggingHandlers,
@@ -202,7 +228,18 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		NetworkPlugins:                 app.ProbeNetworkPlugins(),
 		NetworkPluginName:              s.NetworkPluginName,
 		StreamingConnectionIdleTimeout: s.StreamingConnectionIdleTimeout,
+		TLSOptions:                     tlsOptions,
 		ImageGCPolicy:                  imageGCPolicy,
+		DiskSpacePolicy:                diskSpacePolicy,
+		Cloud:                          nil, // TODO(jdef) Cloud, specifying null here because we don't want all kubelets polling mesos-master; need to account for this in the cloudprovider impl
+		NodeStatusUpdateFrequency: s.NodeStatusUpdateFrequency,
+		ResourceContainer:         s.ResourceContainer,
+		CgroupRoot:                s.CgroupRoot,
+		ContainerRuntime:          s.ContainerRuntime,
+		Mounter:                   mounter,
+		DockerDaemonContainer:     s.DockerDaemonContainer,
+		ConfigureCBR0:             s.ConfigureCBR0,
+		MaxPods:                   s.MaxPods,
 	}
 
 	finished := make(chan struct{})
@@ -287,7 +324,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		kc.CadvisorInterface,
 		kc.ImageGCPolicy,
 		kc.DiskSpacePolicy,
-		nil, // TODO(jdef) Cloud, specifying null here because we don't want all kubelets polling mesos-master; need to account for this in the cloudprovider impl
+		kc.Cloud,
 		kc.NodeStatusUpdateFrequency,
 		kc.ResourceContainer,
 		kc.OSInterface,

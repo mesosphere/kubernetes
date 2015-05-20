@@ -101,18 +101,18 @@ func NewHyperKubeletExecutorServer() *KubeletExecutorServer {
 
 func (s *KubeletExecutorServer) addCoreFlags(fs *pflag.FlagSet) {
 	s.KubeletServer.AddFlags(fs)
-	fs.BoolVar(&s.RunProxy, "run_proxy", s.RunProxy, "Maintain a running kube-proxy instance as a child proc of this kubelet-executor.")
-	fs.IntVar(&s.ProxyLogV, "proxy_logv", s.ProxyLogV, "Log verbosity of the child kube-proxy.")
-	fs.StringVar(&s.ProxyLogfile, "proxy_logfile", s.ProxyLogfile, "Path to the kube-proxy log file.")
-	fs.BoolVar(&s.ProxyBindall, "proxy_bindall", s.ProxyBindall, "When true will cause kube-proxy to bind to 0.0.0.0.")
-	fs.DurationVar(&s.SuicideTimeout, "suicide_timeout", s.SuicideTimeout, "Self-terminate after this period of inactivity. Zero disables suicide watch.")
-	fs.IntVar(&s.ShutdownFD, "shutdown_fd", s.ShutdownFD, "File descriptor used to signal shutdown to external watchers, requires shutdown_fifo flag")
-	fs.StringVar(&s.ShutdownFIFO, "shutdown_fifo", s.ShutdownFIFO, "FIFO used to signal shutdown to external watchers, requires shutdown_fd flag")
+	fs.BoolVar(&s.RunProxy, "run-proxy", s.RunProxy, "Maintain a running kube-proxy instance as a child proc of this kubelet-executor.")
+	fs.IntVar(&s.ProxyLogV, "proxy-logv", s.ProxyLogV, "Log verbosity of the child kube-proxy.")
+	fs.StringVar(&s.ProxyLogfile, "proxy-logfile", s.ProxyLogfile, "Path to the kube-proxy log file.")
+	fs.BoolVar(&s.ProxyBindall, "proxy-bindall", s.ProxyBindall, "When true will cause kube-proxy to bind to 0.0.0.0.")
+	fs.DurationVar(&s.SuicideTimeout, "suicide-timeout", s.SuicideTimeout, "Self-terminate after this period of inactivity. Zero disables suicide watch.")
+	fs.IntVar(&s.ShutdownFD, "shutdown-fd", s.ShutdownFD, "File descriptor used to signal shutdown to external watchers, requires shutdown-fifo flag")
+	fs.StringVar(&s.ShutdownFIFO, "shutdown-fifo", s.ShutdownFIFO, "FIFO used to signal shutdown to external watchers, requires shutdown-fd flag")
 }
 
 func (s *KubeletExecutorServer) AddStandaloneFlags(fs *pflag.FlagSet) {
 	s.addCoreFlags(fs)
-	fs.StringVar(&s.ProxyExec, "proxy_exec", s.ProxyExec, "Path to the kube-proxy executable.")
+	fs.StringVar(&s.ProxyExec, "proxy-exec", s.ProxyExec, "Path to the kube-proxy executable.")
 }
 
 func (s *KubeletExecutorServer) AddHyperkubeFlags(fs *pflag.FlagSet) {
@@ -404,7 +404,7 @@ func (kl *kubeletExecutor) runProxyService() {
 		bindAddress = kl.address.String()
 	}
 	args = append(args,
-		fmt.Sprintf("--bind_address=%s", bindAddress),
+		fmt.Sprintf("--bind-address=%s", bindAddress),
 		fmt.Sprintf("--v=%d", kl.proxyLogV),
 		"--logtostderr=true",
 	)
@@ -416,11 +416,11 @@ func (kl *kubeletExecutor) runProxyService() {
 		}
 	}
 	appendStringArg("master", kl.clientConfig.Host)
-	appendStringArg("api_version", kl.clientConfig.Version)
-	appendStringArg("client_certificate", kl.clientConfig.CertFile)
-	appendStringArg("client_key", kl.clientConfig.KeyFile)
-	appendStringArg("certificate_authority", kl.clientConfig.CAFile)
-	args = append(args, fmt.Sprintf("--insecure_skip_tls_verify=%t", kl.clientConfig.Insecure))
+	appendStringArg("api-version", kl.clientConfig.Version)
+	appendStringArg("client-certificate", kl.clientConfig.CertFile)
+	appendStringArg("client-key", kl.clientConfig.KeyFile)
+	appendStringArg("certificate-authority", kl.clientConfig.CAFile)
+	args = append(args, fmt.Sprintf("--insecure-skip-tls-verify=%t", kl.clientConfig.Insecure))
 
 	log.Infof("Spawning process executable %s with args '%+v'", kl.proxyExec, args)
 

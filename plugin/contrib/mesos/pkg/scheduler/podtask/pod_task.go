@@ -181,7 +181,7 @@ func (t *T) FillFromDetails(details *mesos.Offer) error {
 
 	// hostname needs of the executor needs to match that of the offer, otherwise
 	// the kubelet node status checker/updater is very unhappy
-	const HOSTNAME_OVERRIDE_FLAG = "--hostname_override="
+	const HOSTNAME_OVERRIDE_FLAG = "--hostname-override="
 	hostname := details.GetHostname() // required field, non-empty
 	hostnameOverride := HOSTNAME_OVERRIDE_FLAG + hostname
 

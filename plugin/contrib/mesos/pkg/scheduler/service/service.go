@@ -182,61 +182,61 @@ func (s *SchedulerServer) addCoreFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.Port, "port", s.Port, "The port that the scheduler's http service runs on")
 	fs.Var(&s.Address, "address", "The IP address to serve on (set to 0.0.0.0 for all interfaces)")
 	fs.BoolVar(&s.EnableProfiling, "profiling", s.EnableProfiling, "Enable profiling via web interface host:port/debug/pprof/")
-	fs.Var(&s.APIServerList, "api_servers", "List of Kubernetes API servers for publishing events, and reading pods and services. (ip:port), comma separated.")
-	fs.StringVar(&s.AuthPath, "auth_path", s.AuthPath, "Path to .kubernetes_auth file, specifying how to authenticate to API server.")
-	fs.Var(&s.EtcdServerList, "etcd_servers", "List of etcd servers to watch (http://ip:port), comma separated. Mutually exclusive with -etcd_config")
-	fs.StringVar(&s.EtcdConfigFile, "etcd_config", s.EtcdConfigFile, "The config file for the etcd client. Mutually exclusive with -etcd_servers.")
-	fs.BoolVar(&s.AllowPrivileged, "allow_privileged", s.AllowPrivileged, "If true, allow privileged containers.")
-	fs.StringVar(&s.ClusterDomain, "cluster_domain", s.ClusterDomain, "Domain for this cluster.  If set, kubelet will configure all containers to search this domain in addition to the host's search domains")
-	fs.Var(&s.ClusterDNS, "cluster_dns", "IP address for a cluster DNS server. If set, kubelet will configure all containers to use this for DNS resolution in addition to the host's DNS servers")
+	fs.Var(&s.APIServerList, "api-servers", "List of Kubernetes API servers for publishing events, and reading pods and services. (ip:port), comma separated.")
+	fs.StringVar(&s.AuthPath, "auth-path", s.AuthPath, "Path to .kubernetes_auth file, specifying how to authenticate to API server.")
+	fs.Var(&s.EtcdServerList, "etcd-servers", "List of etcd servers to watch (http://ip:port), comma separated. Mutually exclusive with --etcd-config")
+	fs.StringVar(&s.EtcdConfigFile, "etcd-config", s.EtcdConfigFile, "The config file for the etcd client. Mutually exclusive with --etcd-servers.")
+	fs.BoolVar(&s.AllowPrivileged, "allow-privileged", s.AllowPrivileged, "If true, allow privileged containers.")
+	fs.StringVar(&s.ClusterDomain, "cluster-domain", s.ClusterDomain, "Domain for this cluster.  If set, kubelet will configure all containers to search this domain in addition to the host's search domains")
+	fs.Var(&s.ClusterDNS, "cluster-dns", "IP address for a cluster DNS server. If set, kubelet will configure all containers to use this for DNS resolution in addition to the host's DNS servers")
 
-	fs.StringVar(&s.MesosMaster, "mesos_master", s.MesosMaster, "Location of the Mesos master. The format is a comma-delimited list of of hosts like zk://host1:port,host2:port/mesos. If using ZooKeeper, pay particular attention to the leading zk:// and trailing /mesos! If not using ZooKeeper, standard URLs like http://localhost are also acceptable.")
-	fs.StringVar(&s.MesosUser, "mesos_user", s.MesosUser, "Mesos user for this framework, defaults to root.")
-	fs.StringVar(&s.MesosRole, "mesos_role", s.MesosRole, "Mesos role for this framework, defaults to none.")
-	fs.StringVar(&s.MesosAuthPrincipal, "mesos_authentication_principal", s.MesosAuthPrincipal, "Mesos authentication principal.")
-	fs.StringVar(&s.MesosAuthSecretFile, "mesos_authentication_secret_file", s.MesosAuthSecretFile, "Mesos authentication secret file.")
-	fs.StringVar(&s.MesosAuthProvider, "mesos_authentication_provider", s.MesosAuthProvider, fmt.Sprintf("Authentication provider to use, default is SASL that supports mechanisms: %+v", mech.ListSupported()))
+	fs.StringVar(&s.MesosMaster, "mesos-master", s.MesosMaster, "Location of the Mesos master. The format is a comma-delimited list of of hosts like zk://host1:port,host2:port/mesos. If using ZooKeeper, pay particular attention to the leading zk:// and trailing /mesos! If not using ZooKeeper, standard URLs like http://localhost are also acceptable.")
+	fs.StringVar(&s.MesosUser, "mesos-user", s.MesosUser, "Mesos user for this framework, defaults to root.")
+	fs.StringVar(&s.MesosRole, "mesos-role", s.MesosRole, "Mesos role for this framework, defaults to none.")
+	fs.StringVar(&s.MesosAuthPrincipal, "mesos-authentication-principal", s.MesosAuthPrincipal, "Mesos authentication principal.")
+	fs.StringVar(&s.MesosAuthSecretFile, "mesos-authentication-secret-file", s.MesosAuthSecretFile, "Mesos authentication secret file.")
+	fs.StringVar(&s.MesosAuthProvider, "mesos-authentication-provider", s.MesosAuthProvider, fmt.Sprintf("Authentication provider to use, default is SASL that supports mechanisms: %+v", mech.ListSupported()))
 	fs.BoolVar(&s.Checkpoint, "checkpoint", s.Checkpoint, "Enable/disable checkpointing for the kubernetes-mesos framework.")
-	fs.Float64Var(&s.FailoverTimeout, "failover_timeout", s.FailoverTimeout, fmt.Sprintf("Framework failover timeout, in sec."))
-	fs.UintVar(&s.DriverPort, "driver_port", s.DriverPort, "Port that the Mesos scheduler driver process should listen on.")
-	fs.StringVar(&s.HostnameOverride, "hostname_override", s.HostnameOverride, "If non-empty, will use this string as identification instead of the actual hostname.")
-	fs.Int64Var(&s.ReconcileInterval, "reconcile_interval", s.ReconcileInterval, "Interval at which to execute task reconciliation, in sec. Zero disables.")
-	fs.DurationVar(&s.ReconcileCooldown, "reconcile_cooldown", s.ReconcileCooldown, "Minimum rest period between task reconciliation operations.")
-	fs.StringVar(&s.SchedulerConfigFileName, "scheduler_config", s.SchedulerConfigFileName, "An ini-style configuration file with low-level scheduler settings.")
+	fs.Float64Var(&s.FailoverTimeout, "failover-timeout", s.FailoverTimeout, fmt.Sprintf("Framework failover timeout, in sec."))
+	fs.UintVar(&s.DriverPort, "driver-port", s.DriverPort, "Port that the Mesos scheduler driver process should listen on.")
+	fs.StringVar(&s.HostnameOverride, "hostname-override", s.HostnameOverride, "If non-empty, will use this string as identification instead of the actual hostname.")
+	fs.Int64Var(&s.ReconcileInterval, "reconcile-interval", s.ReconcileInterval, "Interval at which to execute task reconciliation, in sec. Zero disables.")
+	fs.DurationVar(&s.ReconcileCooldown, "reconcile-cooldown", s.ReconcileCooldown, "Minimum rest period between task reconciliation operations.")
+	fs.StringVar(&s.SchedulerConfigFileName, "scheduler-config", s.SchedulerConfigFileName, "An ini-style configuration file with low-level scheduler settings.")
 	fs.BoolVar(&s.Graceful, "graceful", s.Graceful, "Indicator of a graceful failover, intended for internal use only.")
 	fs.BoolVar(&s.HA, "ha", s.HA, "Run the scheduler in high availability mode with leader election. All peers should be configured exactly the same.")
-	fs.StringVar(&s.FrameworkName, "framework_name", s.FrameworkName, "The framework name to register with Mesos.")
-	fs.StringVar(&s.FrameworkWebURI, "framework_weburi", s.FrameworkWebURI, "A URI that points to a web-based interface for interacting with the framework.")
-	fs.StringVar(&s.AdvertisedAddress, "advertised_address", s.AdvertisedAddress, "host:port address that is advertised to clients. May be used to construct artifact download URIs.")
-	fs.Var(&s.ServiceAddress, "service_address", "The service portal IP address that the scheduler should register with (if unset, chooses randomly)")
+	fs.StringVar(&s.FrameworkName, "framework-name", s.FrameworkName, "The framework name to register with Mesos.")
+	fs.StringVar(&s.FrameworkWebURI, "framework-weburi", s.FrameworkWebURI, "A URI that points to a web-based interface for interacting with the framework.")
+	fs.StringVar(&s.AdvertisedAddress, "advertised-address", s.AdvertisedAddress, "host:port address that is advertised to clients. May be used to construct artifact download URIs.")
+	fs.Var(&s.ServiceAddress, "service-address", "The service portal IP address that the scheduler should register with (if unset, chooses randomly)")
 
-	fs.BoolVar(&s.ExecutorBindall, "executor_bindall", s.ExecutorBindall, "When true will set -address of the executor to 0.0.0.0.")
-	fs.IntVar(&s.ExecutorLogV, "executor_logv", s.ExecutorLogV, "Logging verbosity of spawned executor processes.")
-	fs.BoolVar(&s.ExecutorProxyBindall, "executor_proxy_bindall", s.ExecutorProxyBindall, "When true pass -proxy_bindall to the executor.")
-	fs.BoolVar(&s.ExecutorRunProxy, "executor_run_proxy", s.ExecutorRunProxy, "Run the kube-proxy as a child process of the executor.")
-	fs.DurationVar(&s.ExecutorSuicideTimeout, "executor_suicide_timeout", s.ExecutorSuicideTimeout, "Executor self-terminates after this period of inactivity. Zero disables suicide watch.")
+	fs.BoolVar(&s.ExecutorBindall, "executor-bindall", s.ExecutorBindall, "When true will set -address of the executor to 0.0.0.0.")
+	fs.IntVar(&s.ExecutorLogV, "executor-logv", s.ExecutorLogV, "Logging verbosity of spawned executor processes.")
+	fs.BoolVar(&s.ExecutorProxyBindall, "executor-proxy-bindall", s.ExecutorProxyBindall, "When true pass -proxy-bindall to the executor.")
+	fs.BoolVar(&s.ExecutorRunProxy, "executor-run-proxy", s.ExecutorRunProxy, "Run the kube-proxy as a child process of the executor.")
+	fs.DurationVar(&s.ExecutorSuicideTimeout, "executor-suicide-timeout", s.ExecutorSuicideTimeout, "Executor self-terminates after this period of inactivity. Zero disables suicide watch.")
 
-	fs.StringVar(&s.KubeletRootDirectory, "kubelet_root_dir", s.KubeletRootDirectory, "Directory path for managing kubelet files (volume mounts,etc). Defaults to executor sandbox.")
-	fs.StringVar(&s.KubeletDockerEndpoint, "kubelet_docker_endpoint", s.KubeletDockerEndpoint, "If non-empty, kubelet will use this for the docker endpoint to communicate with.")
-	fs.StringVar(&s.KubeletPodInfraContainerImage, "kubelet_pod_infra_container_image", s.KubeletPodInfraContainerImage, "The image whose network/ipc namespaces containers in each pod will use.")
-	fs.UintVar(&s.KubeletCadvisorPort, "kubelet_cadvisor_port", s.KubeletCadvisorPort, "The port of the kubelet's local cAdvisor endpoint")
-	fs.StringVar(&s.KubeletHostNetworkSources, "kubelet_host_network_sources", s.KubeletHostNetworkSources, "Comma-separated list of sources from which the Kubelet allows pods to use of host network. For all sources use \"*\" [default=\"file\"]")
-	fs.DurationVar(&s.KubeletSyncFrequency, "kubelet_sync_frequency", s.KubeletSyncFrequency, "Max period between synchronizing running containers and config")
-	fs.StringVar(&s.KubeletNetworkPluginName, "kubelet_network_plugin", s.KubeletNetworkPluginName, "<Warning: Alpha feature> The name of the network plugin to be invoked for various events in kubelet/pod lifecycle")
+	fs.StringVar(&s.KubeletRootDirectory, "kubelet-root-dir", s.KubeletRootDirectory, "Directory path for managing kubelet files (volume mounts,etc). Defaults to executor sandbox.")
+	fs.StringVar(&s.KubeletDockerEndpoint, "kubelet-docker-endpoint", s.KubeletDockerEndpoint, "If non-empty, kubelet will use this for the docker endpoint to communicate with.")
+	fs.StringVar(&s.KubeletPodInfraContainerImage, "kubelet-pod-infra-container-image", s.KubeletPodInfraContainerImage, "The image whose network/ipc namespaces containers in each pod will use.")
+	fs.UintVar(&s.KubeletCadvisorPort, "kubelet-cadvisor-port", s.KubeletCadvisorPort, "The port of the kubelet's local cAdvisor endpoint")
+	fs.StringVar(&s.KubeletHostNetworkSources, "kubelet-host-network-sources", s.KubeletHostNetworkSources, "Comma-separated list of sources from which the Kubelet allows pods to use of host network. For all sources use \"*\" [default=\"file\"]")
+	fs.DurationVar(&s.KubeletSyncFrequency, "kubelet-sync-frequency", s.KubeletSyncFrequency, "Max period between synchronizing running containers and config")
+	fs.StringVar(&s.KubeletNetworkPluginName, "kubelet-network-plugin", s.KubeletNetworkPluginName, "<Warning: Alpha feature> The name of the network plugin to be invoked for various events in kubelet/pod lifecycle")
 
 	//TODO(jdef) support this flag once we have a better handle on mesos-dns and k8s DNS integration
-	//fs.StringVar(&s.HADomain, "ha_domain", s.HADomain, "Domain of the HA scheduler service, only used in HA mode. If specified may be used to construct artifact download URIs.")
+	//fs.StringVar(&s.HADomain, "ha-domain", s.HADomain, "Domain of the HA scheduler service, only used in HA mode. If specified may be used to construct artifact download URIs.")
 }
 
 func (s *SchedulerServer) AddStandaloneFlags(fs *pflag.FlagSet) {
 	s.addCoreFlags(fs)
-	fs.StringVar(&s.ExecutorPath, "executor_path", s.ExecutorPath, "Location of the kubernetes executor executable")
-	fs.StringVar(&s.ProxyPath, "proxy_path", s.ProxyPath, "Location of the kubernetes proxy executable")
+	fs.StringVar(&s.ExecutorPath, "executor-path", s.ExecutorPath, "Location of the kubernetes executor executable")
+	fs.StringVar(&s.ProxyPath, "proxy-path", s.ProxyPath, "Location of the kubernetes proxy executable")
 }
 
 func (s *SchedulerServer) AddHyperkubeFlags(fs *pflag.FlagSet) {
 	s.addCoreFlags(fs)
-	fs.StringVar(&s.KMPath, "km_path", s.KMPath, "Location of the km executable, may be a URI or an absolute file path.")
+	fs.StringVar(&s.KMPath, "km-path", s.KMPath, "Location of the km executable, may be a URI or an absolute file path.")
 }
 
 // returns (downloadURI, basename(path))
@@ -286,7 +286,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 		ci.Uris = append(ci.Uris, &mesos.CommandInfo_URI{Value: proto.String(uri), Executable: proto.Bool(true)})
 		ci.Value = proto.String(fmt.Sprintf("./%s", executorCmd))
 	} else if !hks.FindServer(KM_EXECUTOR) {
-		return nil, nil, fmt.Errorf("either run this scheduler via km or else --executor_path is required")
+		return nil, nil, fmt.Errorf("either run this scheduler via km or else --executor-path is required")
 	} else {
 		if strings.Index(s.KMPath, "://") > 0 {
 			// URI could point directly to executable, e.g. hdfs:///km
@@ -309,41 +309,41 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 	if s.ProxyPath != "" {
 		uri, proxyCmd := s.serveFrameworkArtifact(s.ProxyPath)
 		ci.Uris = append(ci.Uris, &mesos.CommandInfo_URI{Value: proto.String(uri), Executable: proto.Bool(true)})
-		ci.Arguments = append(ci.Arguments, fmt.Sprintf("--proxy_exec=./%s", proxyCmd))
+		ci.Arguments = append(ci.Arguments, fmt.Sprintf("--proxy-exec=./%s", proxyCmd))
 	} else if !hks.FindServer(KM_PROXY) {
-		return nil, nil, fmt.Errorf("either run this scheduler via km or else --proxy_path is required")
+		return nil, nil, fmt.Errorf("either run this scheduler via km or else --proxy-path is required")
 	} else if s.ExecutorPath != "" {
 		return nil, nil, fmt.Errorf("proxy can only use km binary if executor does the same")
-	} // else, executor is smart enough to know when proxy_path is required, or to use km
+	} // else, executor is smart enough to know when proxy-path is required, or to use km
 
 	//TODO(jdef): provide some way (env var?) for users to customize executor config
 	//TODO(jdef): set -address to 127.0.0.1 if `address` is 127.0.0.1
 	//TODO(jdef): propagate dockercfg from RootDirectory?
 
 	apiServerArgs := strings.Join(s.APIServerList, ",")
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--api_servers=%s", apiServerArgs))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--api-servers=%s", apiServerArgs))
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--v=%d", s.ExecutorLogV))
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--allow_privileged=%t", s.AllowPrivileged))
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--suicide_timeout=%v", s.ExecutorSuicideTimeout))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--allow-privileged=%t", s.AllowPrivileged))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--suicide-timeout=%v", s.ExecutorSuicideTimeout))
 
 	if s.ExecutorBindall {
-		//TODO(jdef) determine whether hostname_override is really needed for bindall because
+		//TODO(jdef) determine whether hostname-override is really needed for bindall because
 		//it conflicts with kubelet node status checks/updates
-		//ci.Arguments = append(ci.Arguments, "--hostname_override=0.0.0.0")
+		//ci.Arguments = append(ci.Arguments, "--hostname-override=0.0.0.0")
 		ci.Arguments = append(ci.Arguments, "--address=0.0.0.0")
 	}
 
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--proxy_bindall=%v", s.ExecutorProxyBindall))
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--run_proxy=%v", s.ExecutorRunProxy))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--proxy-bindall=%v", s.ExecutorProxyBindall))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--run-proxy=%v", s.ExecutorRunProxy))
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--profiling=%t", s.EnableProfiling))
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--cadvisor_port=%v", s.KubeletCadvisorPort))
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--sync_frequency=%v", s.KubeletSyncFrequency))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--cadvisor-port=%v", s.KubeletCadvisorPort))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--sync-frequency=%v", s.KubeletSyncFrequency))
 
 	if s.AuthPath != "" {
 		//TODO(jdef) should probably support non-local files, e.g. hdfs:///some/config/file
 		uri, basename := s.serveFrameworkArtifact(s.AuthPath)
 		ci.Uris = append(ci.Uris, &mesos.CommandInfo_URI{Value: proto.String(uri)})
-		ci.Arguments = append(ci.Arguments, fmt.Sprintf("--auth_path=%s", basename))
+		ci.Arguments = append(ci.Arguments, fmt.Sprintf("--auth-path=%s", basename))
 	}
 	appendOptional := func(name string, value string) {
 		if value != "" {
@@ -351,14 +351,14 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 		}
 	}
 	if s.ClusterDNS != nil {
-		appendOptional("cluster_dns", s.ClusterDNS.String())
+		appendOptional("cluster-dns", s.ClusterDNS.String())
 	}
-	appendOptional("cluster_domain", s.ClusterDomain)
-	appendOptional("root_dir", s.KubeletRootDirectory)
-	appendOptional("docker_endpoint", s.KubeletDockerEndpoint)
-	appendOptional("pod_infra_container_image", s.KubeletPodInfraContainerImage)
-	appendOptional("host_network_sources", s.KubeletHostNetworkSources)
-	appendOptional("network_plugin", s.KubeletNetworkPluginName)
+	appendOptional("cluster-domain", s.ClusterDomain)
+	appendOptional("root-dir", s.KubeletRootDirectory)
+	appendOptional("docker-endpoint", s.KubeletDockerEndpoint)
+	appendOptional("pod-infra-container-image", s.KubeletPodInfraContainerImage)
+	appendOptional("host-network-sources", s.KubeletHostNetworkSources)
+	appendOptional("network-plugin", s.KubeletNetworkPluginName)
 
 	log.V(1).Infof("prepared executor command %q with args '%+v'", ci.GetValue(), ci.Arguments)
 
@@ -532,7 +532,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 
 	s.FrameworkName = strings.TrimSpace(s.FrameworkName)
 	if s.FrameworkName == "" {
-		log.Fatalf("framework_name must be a non-empty string")
+		log.Fatalf("framework-name must be a non-empty string")
 	}
 	s.FrameworkWebURI = strings.TrimSpace(s.FrameworkWebURI)
 
@@ -541,7 +541,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 	s.mux.Handle("/metrics", prometheus.Handler())
 
 	if (s.EtcdConfigFile != "" && len(s.EtcdServerList) != 0) || (s.EtcdConfigFile == "" && len(s.EtcdServerList) == 0) {
-		log.Fatalf("specify either --etcd_servers or --etcd_config")
+		log.Fatalf("specify either --etcd-servers or --etcd-config")
 	}
 
 	if len(s.APIServerList) < 1 {
@@ -653,7 +653,7 @@ func (s *SchedulerServer) failover(driver bindings.SchedulerDriver, hks hyperkub
 		flags = hks.Flags()
 	}
 	flags.Visit(func(flag *pflag.Flag) {
-		if flag.Name != "api_servers" && flag.Name != "etcd_servers" {
+		if flag.Name != "api-servers" && flag.Name != "etcd-servers" {
 			args = append(args, fmt.Sprintf("--%s=%s", flag.Name, flag.Value.String()))
 		}
 	})
@@ -661,10 +661,10 @@ func (s *SchedulerServer) failover(driver bindings.SchedulerDriver, hks hyperkub
 		args = append(args, "--graceful")
 	}
 	if len(s.APIServerList) > 0 {
-		args = append(args, "--api_servers="+strings.Join(s.APIServerList, ","))
+		args = append(args, "--api-servers="+strings.Join(s.APIServerList, ","))
 	}
 	if len(s.EtcdServerList) > 0 {
-		args = append(args, "--etcd_servers="+strings.Join(s.EtcdServerList, ","))
+		args = append(args, "--etcd-servers="+strings.Join(s.EtcdServerList, ","))
 	}
 	args = append(args, flags.Args()...)
 

@@ -931,7 +931,7 @@ func main() {
 
 	go func() {
 		defer util.FlushLogs()
-		time.Sleep(3 * time.Minute)
+		time.Sleep(5 * time.Minute)
 		glog.Fatalf("This test has timed out.")
 	}()
 

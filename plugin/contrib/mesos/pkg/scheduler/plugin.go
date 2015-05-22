@@ -632,12 +632,18 @@ func (k *deleter) deleteOne(pod *Pod) error {
 }
 
 // Create creates a scheduler plugin and all supporting background functions.
-func (k *KubernetesScheduler) NewPluginConfig(terminate <-chan struct{}, mux *http.ServeMux) *PluginConfig {
+func (k *KubernetesScheduler) NewDefaultPluginConfig(terminate <-chan struct{}, mux *http.ServeMux) *PluginConfig {
+	// use ListWatch watching pods using the client by default
+	return k.NewPluginConfig(terminate, mux, createAllPodsLW(k.client))
+}
+
+func (k *KubernetesScheduler) NewPluginConfig(terminate <-chan struct{}, mux *http.ServeMux,
+	podsWatcher *cache.ListWatch) *PluginConfig {
 
 	// Watch and queue pods that need scheduling.
 	updates := make(chan queue.Entry, k.schedcfg.UpdatesBacklog)
 	podUpdates := &podStoreAdapter{queue.NewHistorical(updates)}
-	reflector := cache.NewReflector(createAllPodsLW(k.client), &api.Pod{}, podUpdates, 0)
+	reflector := cache.NewReflector(podsWatcher, &api.Pod{}, podUpdates, 0)
 
 	// lock that guards critial sections that involve transferring pods from
 	// the store (cache) to the scheduling queue; its purpose is to maintain

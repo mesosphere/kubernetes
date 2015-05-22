@@ -132,7 +132,7 @@ func (s *KubeletExecutorServer) syncExternalShutdownWatcher() (io.Closer, error)
 	}
 	// redirfd -w n fifo ...  # (blocks until the fifo is read)
 	log.Infof("blocked, waiting for shutdown reader for FD %d FIFO at %s", s.ShutdownFD, s.ShutdownFIFO)
-	return redirfd.Write.Redirect(true, false, s.ShutdownFD, s.ShutdownFIFO)
+	return redirfd.Write.Redirect(true, false, redirfd.FileDescriptor(s.ShutdownFD), s.ShutdownFIFO)
 }
 
 // Run runs the specified KubeletExecutorServer.

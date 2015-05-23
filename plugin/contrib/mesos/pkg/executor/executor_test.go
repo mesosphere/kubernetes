@@ -17,13 +17,19 @@ limitations under the License.
 package executor
 
 import (
+	"flag"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
+	"github.com/stretchr/testify/assert"
 )
+
+var test_v = flag.Int("test-v", 0, "test -v")
 
 type suicideTracker struct {
 	suicideWatcher
@@ -194,4 +200,37 @@ func TestSuicide_WithTasks(t *testing.T) {
 	} else {
 		glog.Infoln("jumps verified") // glog so we get a timestamp
 	}
+}
+
+func TestExecutorRegister(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	executor := New(Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: make(chan interface{}, 1024),
+	})
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	assert.Equal(t, executor.isConnected(), true, "executor should be connected")
+	mockDriver.AssertExpectations(t)
+}
+
+func TestExecutorDisconnect(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	executor := New(Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: make(chan interface{}, 1024),
+	})
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+	executor.Disconnected(mockDriver)
+
+	assert.Equal(t, executor.isConnected(), false, "executor should not be connected after Disconnected")
+	mockDriver.AssertExpectations(t)
 }

@@ -86,7 +86,8 @@ func TestExecutorNew(t *testing.T) {
 	mockDriver := MockExecutorDriver{}
 	executor := NewTestKubernetesExecutor()
 
+	assert.NotNil(t, executor, "executor should not be nil")
+	assert.Equal(t, executor.isDone(), false, "executor should not be in Done state on initialization")
 	assert.Equal(t, executor.isConnected(), false, "executor should not be connected on initialization")
-	assert.NotNil(t, executor.isConnected(), "executor should not be nil")
 	mockDriver.AssertExpectations(t)
 }

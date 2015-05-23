@@ -26,6 +26,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
+	"github.com/mesos/mesos-go/mesosproto"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -206,10 +207,20 @@ func TestExecutorRegister(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
 	mockDriver := MockExecutorDriver{}
-	executor := New(Config{
-		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1024),
-	})
+	executor := NewTestKubernetesExecutor()
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	assert.Equal(t, executor.isConnected(), true, "executor should be connected")
+	mockDriver.AssertExpectations(t)
+}
+
+func TestExecutorReregister(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	executor := NewTestKubernetesExecutor()
 
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
@@ -222,15 +233,51 @@ func TestExecutorDisconnect(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
 	mockDriver := MockExecutorDriver{}
-	executor := New(Config{
-		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1024),
-	})
+	executor := NewTestKubernetesExecutor()
 
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
 	executor.Disconnected(mockDriver)
 
 	assert.Equal(t, executor.isConnected(), false, "executor should not be connected after Disconnected")
+	mockDriver.AssertExpectations(t)
+}
+
+func TestExecutorShutdown(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	kubeletFinished := make(chan struct{})
+	updates := make(chan interface{}, 1024)
+	config := Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: updates,
+		ShutdownAlert: func() {
+			close(kubeletFinished)
+		},
+		KubeletFinished: kubeletFinished,
+	}
+	executor := New(config)
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	mockDriver.On("Stop").Return(mesosproto.Status_DRIVER_STOPPED, nil).Once()
+
+	executor.Shutdown(mockDriver)
+
+	assert.Equal(t, executor.isConnected(), false, "executor should not be connected after Shutdown")
+	assert.Equal(t, executor.isDone(), true, "executor should be in Done state after Shutdown")
+
+	doneChanWorked := false
+	select {
+	case _, ok := <-executor.done:
+		if !ok {
+			doneChanWorked = true
+		}
+	default:
+	}
+	assert.Equal(t, doneChanWorked, true, "done channel should be closed after shutdown")
+
 	mockDriver.AssertExpectations(t)
 }

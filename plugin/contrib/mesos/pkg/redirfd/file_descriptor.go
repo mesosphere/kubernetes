@@ -14,6 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Some file descriptor manipulation funcs (Unix-Only), inspired by
-// https://github.com/skarnet/execline/blob/master/src/execline/redirfd.c
 package redirfd
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// FileDescriptor mirrors unix-specific indexes for cross-platform use
+type FileDescriptor int
+
+const (
+	InvalidFD FileDescriptor = -1
+	Stdin     FileDescriptor = 0
+	Stdout    FileDescriptor = 1
+	Stderr    FileDescriptor = 2
+)
+
+// ParseFileDescriptor parses a string formatted file descriptor
+func ParseFileDescriptor(fdstr string) (FileDescriptor, error) {
+	fdint, err := strconv.Atoi(fdstr)
+	if err != nil {
+		return InvalidFD, fmt.Errorf("file descriptor must be an integer: %q", fdstr)
+	}
+	return FileDescriptor(fdint), nil
+}

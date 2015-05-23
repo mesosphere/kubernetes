@@ -1,3 +1,5 @@
+// +build !windows
+
 /*
 Copyright 2015 The Kubernetes Authors All rights reserved.
 
@@ -34,7 +36,7 @@ const (
 )
 
 // see https://github.com/skarnet/execline/blob/master/src/execline/redirfd.c
-func (mode RedirectMode) Redirect(nonblock, changemode bool, fd int, name string) (*os.File, error) {
+func (mode RedirectMode) Redirect(nonblock, changemode bool, fd FileDescriptor, name string) (*os.File, error) {
 	flags := 0
 	what := -1
 
@@ -69,14 +71,14 @@ func (mode RedirectMode) Redirect(nonblock, changemode bool, fd int, name string
 	}
 	flags |= what
 
-	fd2, e := syscall.Open(name, flags, 0666)
+	fd2, e := open(name, flags, 0666)
 	if (what == syscall.O_WRONLY) && (e == syscall.ENXIO) {
 		// Opens file in read-only, non-blocking mode. Returns a valid fd number if it succeeds, or -1 (and sets errno) if it fails.
-		fdr, e2 := syscall.Open(name, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
+		fdr, e2 := open(name, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if e2 != nil {
 			return nil, &os.PathError{"open_read", name, e2}
 		}
-		fd2, e = syscall.Open(name, flags, 0666)
+		fd2, e = open(name, flags, 0666)
 		fd_close(fdr)
 	}
 	if e != nil {
@@ -98,8 +100,14 @@ func (mode RedirectMode) Redirect(nonblock, changemode bool, fd int, name string
 	return os.NewFile(uintptr(fd2), name), nil
 }
 
+// proxy to return a FileDescriptor
+func open(path string, openmode int, perm uint32) (FileDescriptor, error) {
+	fdint, err := syscall.Open(path, openmode, perm)
+	return FileDescriptor(fdint), err
+}
+
 // see https://github.com/skarnet/skalibs/blob/master/src/libstddjb/fd_move.c
-func fd_move(to, from int) (err error) {
+func fd_move(to, from FileDescriptor) (err error) {
 	if to == from {
 		return
 	}
@@ -125,11 +133,11 @@ func fd_move(to, from int) (err error) {
 }
 
 // see https://github.com/skarnet/skalibs/blob/master/src/libstddjb/fd_close.c
-func fd_close(fd int) (err error) {
+func fd_close(fd FileDescriptor) (err error) {
 	i := 0
 	var e error
 	for {
-		if e = syscall.Close(fd); e != nil {
+		if e = syscall.Close(int(fd)); e != nil {
 			return nil
 		}
 		i++
@@ -156,7 +164,7 @@ doit:
 */
 
 // see https://github.com/skarnet/skalibs/blob/master/src/libstddjb/ndelay_on.c
-func ndelay_on(fd int) error {
+func ndelay_on(fd FileDescriptor) error {
 	// 32-bit will likely break because it needs SYS_FCNTL64
 	got, _, e := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), uintptr(syscall.F_GETFL), 0)
 	if e != 0 {
@@ -178,7 +186,7 @@ int ndelay_on (int fd)
 */
 
 // see https://github.com/skarnet/skalibs/blob/master/src/libstddjb/ndelay_off.c
-func ndelay_off(fd int) error {
+func ndelay_off(fd FileDescriptor) error {
 	// 32-bit will likely break because it needs SYS_FCNTL64
 	got, _, e := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), uintptr(syscall.F_GETFL), 0)
 	if e != 0 {

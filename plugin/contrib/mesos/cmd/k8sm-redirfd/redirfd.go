@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"syscall"
 
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/redirfd"
@@ -60,9 +59,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fd, err := strconv.Atoi(args[1])
+	fd, err := redirfd.ParseFileDescriptor(args[1])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid file descriptor: %q\n", args[1])
+		fmt.Fprintf(os.Stderr, "failed to parse file descriptor: %v\n", err)
 		os.Exit(1)
 	}
 	file := args[2]
@@ -80,13 +79,14 @@ func main() {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if fd == syscall.Stdin {
+	switch fd {
+	case redirfd.Stdin:
 		cmd.Stdin = f
-	} else if fd == syscall.Stdout {
+	case redirfd.Stdout:
 		cmd.Stdout = f
-	} else if fd == syscall.Stderr {
+	case redirfd.Stderr:
 		cmd.Stderr = f
-	} else {
+	default:
 		cmd.ExtraFiles = []*os.File{f}
 	}
 	defer f.Close()

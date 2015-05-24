@@ -23,11 +23,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
 	"github.com/mesos/mesos-go/mesosproto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 var test_v = flag.Int("test-v", 0, "test -v")
@@ -243,15 +248,96 @@ func TestExecutorDisconnect(t *testing.T) {
 	mockDriver.AssertExpectations(t)
 }
 
+func TestExecutorLaunchAndKillTask(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	config := Config{
+		Docker:    dockertools.ConnectToDockerOrDie("fake://"),
+		Updates:   make(chan interface{}, 1024),
+		APIClient: client.NewOrDie(&client.Config{Host: "fakehost", Version: testapi.Version()}),
+	}
+	executor := New(config)
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	pod := newTestPod(1)
+	podTask, err := podtask.New(api.NewDefaultContext(), "",
+		*pod, &mesosproto.ExecutorInfo{})
+	assert.Equal(t, err, nil, "must be able to create a task from a pod")
+
+	taskInfo := podTask.BuildTaskInfo()
+	data, err := api.Codec.Encode(pod)
+	assert.Equal(t, err, nil, "must be able to encode a pod's spec data")
+	taskInfo.Data = data
+
+	mockDriver.On("SendStatusUpdate", mock.AnythingOfType("*mesosproto.TaskStatus")).Return(mesosproto.Status_DRIVER_RUNNING, nil)
+	executor.LaunchTask(mockDriver, taskInfo)
+	assert.Equal(t, len(executor.tasks), 1, "executor must be able to create a task")
+
+	mockDriver.On("SendStatusUpdate", mock.AnythingOfType("*mesosproto.TaskStatus")).Return(mesosproto.Status_DRIVER_RUNNING, nil)
+	executor.KillTask(mockDriver, taskInfo.TaskId)
+	assert.Equal(t, len(executor.tasks), 0, "executor must be able to kill a created task")
+	mockDriver.AssertExpectations(t)
+}
+
+func TestExecutorFrameworkMessage(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	executor := NewTestKubernetesExecutor()
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+	executor.FrameworkMessage(mockDriver, "test framework message")
+
+	// TODO(tyler) make this test more meaningful
+	mockDriver.AssertExpectations(t)
+}
+
+// Create a pod with a given index, requiring one port
+func newTestPod(i int) *api.Pod {
+	name := fmt.Sprintf("pod%d", i)
+	return &api.Pod{
+		TypeMeta: api.TypeMeta{APIVersion: testapi.Version()},
+		ObjectMeta: api.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			SelfLink:  fmt.Sprintf("http://1.2.3.4/api/v1beta1/pods/%v", i),
+		},
+		Spec: api.PodSpec{
+			Containers: []api.Container{
+				{
+					Ports: []api.ContainerPort{
+						{
+							ContainerPort: 8000 + i,
+							Protocol:      api.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: api.PodStatus{
+			PodIP: fmt.Sprintf("1.2.3.%d", 4+i),
+			Conditions: []api.PodCondition{
+				{
+					Type:   api.PodReady,
+					Status: api.ConditionTrue,
+				},
+			},
+		},
+	}
+}
+
 func TestExecutorShutdown(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
 	mockDriver := MockExecutorDriver{}
 	kubeletFinished := make(chan struct{})
-	updates := make(chan interface{}, 1024)
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: updates,
+		Updates: make(chan interface{}, 1024),
 		ShutdownAlert: func() {
 			close(kubeletFinished)
 		},

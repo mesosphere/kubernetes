@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
@@ -208,6 +209,8 @@ func TestSuicide_WithTasks(t *testing.T) {
 	}
 }
 
+// TestExecutorRegister ensures that the executor thinks it is connected
+// after Register is called.
 func TestExecutorRegister(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
@@ -217,23 +220,12 @@ func TestExecutorRegister(t *testing.T) {
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
 
-	assert.Equal(t, executor.isConnected(), true, "executor should be connected")
+	assert.Equal(t, true, executor.isConnected(), "executor should be connected")
 	mockDriver.AssertExpectations(t)
 }
 
-func TestExecutorReregister(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
-	mockDriver := MockExecutorDriver{}
-	executor := NewTestKubernetesExecutor()
-
-	executor.Init(mockDriver)
-	executor.Registered(mockDriver, nil, nil, nil)
-
-	assert.Equal(t, executor.isConnected(), true, "executor should be connected")
-	mockDriver.AssertExpectations(t)
-}
-
+// TestExecutorDisconnect ensures that the executor thinks that it is not
+// connected after a call to Disconnected has occured.
 func TestExecutorDisconnect(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
@@ -244,45 +236,14 @@ func TestExecutorDisconnect(t *testing.T) {
 	executor.Registered(mockDriver, nil, nil, nil)
 	executor.Disconnected(mockDriver)
 
-	assert.Equal(t, executor.isConnected(), false, "executor should not be connected after Disconnected")
+	assert.Equal(t, false, executor.isConnected(),
+		"executor should not be connected after Disconnected")
 	mockDriver.AssertExpectations(t)
 }
 
-func TestExecutorLaunchAndKillTask(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
-	mockDriver := MockExecutorDriver{}
-	config := Config{
-		Docker:    dockertools.ConnectToDockerOrDie("fake://"),
-		Updates:   make(chan interface{}, 1024),
-		APIClient: client.NewOrDie(&client.Config{Host: "fakehost", Version: testapi.Version()}),
-	}
-	executor := New(config)
-
-	executor.Init(mockDriver)
-	executor.Registered(mockDriver, nil, nil, nil)
-
-	pod := newTestPod(1)
-	podTask, err := podtask.New(api.NewDefaultContext(), "",
-		*pod, &mesosproto.ExecutorInfo{})
-	assert.Equal(t, err, nil, "must be able to create a task from a pod")
-
-	taskInfo := podTask.BuildTaskInfo()
-	data, err := api.Codec.Encode(pod)
-	assert.Equal(t, err, nil, "must be able to encode a pod's spec data")
-	taskInfo.Data = data
-
-	mockDriver.On("SendStatusUpdate", mock.AnythingOfType("*mesosproto.TaskStatus")).Return(mesosproto.Status_DRIVER_RUNNING, nil)
-	executor.LaunchTask(mockDriver, taskInfo)
-	assert.Equal(t, len(executor.tasks), 1, "executor must be able to create a task")
-
-	mockDriver.On("SendStatusUpdate", mock.AnythingOfType("*mesosproto.TaskStatus")).Return(mesosproto.Status_DRIVER_RUNNING, nil)
-	executor.KillTask(mockDriver, taskInfo.TaskId)
-	assert.Equal(t, len(executor.tasks), 0, "executor must be able to kill a created task")
-	mockDriver.AssertExpectations(t)
-}
-
-func TestExecutorFrameworkMessage(t *testing.T) {
+// TestExecutorReregister ensures that the executor thinks it is connected
+// after a connection problem happens, followed by a call to Reregistered.
+func TestExecutorReregister(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
 	mockDriver := MockExecutorDriver{}
@@ -290,13 +251,112 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
-	executor.FrameworkMessage(mockDriver, "test framework message")
+	executor.Disconnected(mockDriver)
+	executor.Reregistered(mockDriver, nil)
 
-	// TODO(tyler) make this test more meaningful
+	assert.Equal(t, true, executor.isConnected(), "executor should be connected")
 	mockDriver.AssertExpectations(t)
 }
 
+// TestExecutorLaunchAndKillTask ensures that the executor is able to launch
+// and kill tasks while properly bookkeping its tasks.
+func TestExecutorLaunchAndKillTask(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	config := Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: make(chan interface{}, 1024),
+		APIClient: client.NewOrDie(&client.Config{
+			Host:    "fakehost",
+			Version: testapi.Version(),
+		}),
+	}
+	executor := New(config)
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	pod := newTestPod(1)
+	podTask, err := podtask.New(api.NewDefaultContext(), "foo",
+		*pod, &mesosproto.ExecutorInfo{})
+	assert.Equal(t, nil, err, "must be able to create a task from a pod")
+
+	taskInfo := podTask.BuildTaskInfo()
+	data, err := api.Codec.Encode(pod)
+	assert.Equal(t, nil, err, "must be able to encode a pod's spec data")
+	taskInfo.Data = data
+
+	mockDriver.On(
+		"SendStatusUpdate",
+		mock.AnythingOfType("*mesosproto.TaskStatus"),
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil)
+
+	executor.LaunchTask(mockDriver, taskInfo)
+	assert.Equal(t, 1, len(executor.tasks),
+		"executor must be able to create a task")
+
+	executor.KillTask(mockDriver, taskInfo.TaskId)
+	assert.Equal(t, 0, len(executor.tasks),
+		"executor must be able to kill a created task")
+}
+
+// TestExecutorFrameworkMessage ensures that the executor is able to
+// handle messages from the framework, specifically about lost tasks
+// and Kamikaze.  When a task is lost, the executor needs to clean up
+// its state.  When a Kamikaze message is received, the executor should
+// attempt suicide.
+func TestExecutorFrameworkMessage(t *testing.T) {
+	mockDriver := MockExecutorDriver{}
+	kubeletFinished := make(chan struct{})
+	config := Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: make(chan interface{}, 1024),
+		APIClient: client.NewOrDie(&client.Config{
+			Host:    "fakehost",
+			Version: testapi.Version(),
+		}),
+		ShutdownAlert: func() {
+			close(kubeletFinished)
+		},
+		KubeletFinished: kubeletFinished,
+	}
+	executor := New(config)
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	executor.FrameworkMessage(mockDriver, "test framework message")
+
+	// set up a pod to then lose
+	pod := newTestPod(1)
+	podTask, _ := podtask.New(api.NewDefaultContext(), "foo",
+		*pod, &mesosproto.ExecutorInfo{})
+
+	taskInfo := podTask.BuildTaskInfo()
+	data, _ := api.Codec.Encode(pod)
+	taskInfo.Data = data
+
+	mockDriver.On(
+		"SendStatusUpdate",
+		mock.AnythingOfType("*mesosproto.TaskStatus"),
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil)
+
+	executor.LaunchTask(mockDriver, taskInfo)
+
+	// send task-lost message for it
+	executor.FrameworkMessage(mockDriver, "task-lost:foo")
+	assert.Equal(t, 0, len(executor.tasks),
+		"executor must clean up task state when it is lost")
+
+	mockDriver.On("Stop").Return(mesosproto.Status_DRIVER_STOPPED, nil).Once()
+	executor.FrameworkMessage(mockDriver, messages.Kamikaze)
+	assert.Equal(t, true, executor.isDone(),
+		"executor should have shut down after receiving a Kamikaze message")
+}
+
 // Create a pod with a given index, requiring one port
+// TODO(tyler) nuke this when sttts's scheduler tests are merged, use his
 func newTestPod(i int) *api.Pod {
 	name := fmt.Sprintf("pod%d", i)
 	return &api.Pod{
@@ -330,11 +390,14 @@ func newTestPod(i int) *api.Pod {
 	}
 }
 
+// TestExecutorShutdown ensures that the executor properly shuts down
+// when Shutdown is called.
 func TestExecutorShutdown(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
 	mockDriver := MockExecutorDriver{}
 	kubeletFinished := make(chan struct{})
+	shutdownChan := make(chan struct{})
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
 		Updates: make(chan interface{}, 1024),
@@ -342,6 +405,9 @@ func TestExecutorShutdown(t *testing.T) {
 			close(kubeletFinished)
 		},
 		KubeletFinished: kubeletFinished,
+		ExitFunc: func() {
+			close(shutdownChan)
+		},
 	}
 	executor := New(config)
 
@@ -352,18 +418,32 @@ func TestExecutorShutdown(t *testing.T) {
 
 	executor.Shutdown(mockDriver)
 
-	assert.Equal(t, executor.isConnected(), false, "executor should not be connected after Shutdown")
-	assert.Equal(t, executor.isDone(), true, "executor should be in Done state after Shutdown")
+	assert.Equal(t, false, executor.isConnected(),
+		"executor should not be connected after Shutdown")
+	assert.Equal(t, true, executor.isDone(),
+		"executor should be in Done state after Shutdown")
 
 	doneChanWorked := false
 	select {
-	case _, ok := <-executor.done:
+	case _, ok := <-executor.Done():
 		if !ok {
 			doneChanWorked = true
 		}
 	default:
 	}
-	assert.Equal(t, doneChanWorked, true, "done channel should be closed after shutdown")
+	assert.Equal(t, true, doneChanWorked,
+		"done channel should be closed after shutdown")
+
+	shutdownChanClosed := false
+	select {
+	case _, ok := <-shutdownChan:
+		if !ok {
+			doneChanWorked = true
+		}
+	default:
+	}
+	assert.Equal(t, true, shutdownChanClosed,
+		"the executor should call its ExitFunc when it is ready to close down")
 
 	mockDriver.AssertExpectations(t)
 }

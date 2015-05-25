@@ -397,7 +397,7 @@ func TestExecutorShutdown(t *testing.T) {
 
 	mockDriver := MockExecutorDriver{}
 	kubeletFinished := make(chan struct{})
-	shutdownChan := make(chan struct{})
+	var exitCalled int32 = 0
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
 		Updates: make(chan interface{}, 1024),
@@ -406,7 +406,7 @@ func TestExecutorShutdown(t *testing.T) {
 		},
 		KubeletFinished: kubeletFinished,
 		ExitFunc: func() {
-			close(shutdownChan)
+			atomic.AddInt32(&exitCalled, 1)
 		},
 	}
 	executor := New(config)
@@ -434,16 +434,6 @@ func TestExecutorShutdown(t *testing.T) {
 	assert.Equal(t, true, doneChanWorked,
 		"done channel should be closed after shutdown")
 
-	shutdownChanClosed := false
-	select {
-	case _, ok := <-shutdownChan:
-		if !ok {
-			doneChanWorked = true
-		}
-	default:
-	}
-	assert.Equal(t, true, shutdownChanClosed,
+	assert.Equal(t, true, atomic.LoadInt32(&exitCalled) > 0,
 		"the executor should call its ExitFunc when it is ready to close down")
-
-	mockDriver.AssertExpectations(t)
 }

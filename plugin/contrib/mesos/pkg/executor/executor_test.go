@@ -19,6 +19,10 @@ package executor
 import (
 	"flag"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,9 +30,13 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
+
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
 	"github.com/mesos/mesos-go/mesosproto"
@@ -260,12 +268,19 @@ func TestExecutorReregister(t *testing.T) {
 func TestExecutorLaunchAndKillTask(t *testing.T) {
 	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
 
+	// create a fake pod watch. We use that below to submit new pods to the scheduler
+	podListWatch := NewMockPodsListWatch(api.PodList{})
+
+	// create fake apiserver
+	testApiServer := NewTestServer(t, api.NamespaceDefault, &podListWatch.list)
+	defer testApiServer.server.Close()
+
 	mockDriver := MockExecutorDriver{}
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
 		Updates: make(chan interface{}, 1024),
 		APIClient: client.NewOrDie(&client.Config{
-			Host:    "fakehost",
+			Host:    testApiServer.server.URL,
 			Version: testapi.Version(),
 		}),
 	}
@@ -353,7 +368,7 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 }
 
 // Create a pod with a given index, requiring one port
-// TODO(tyler) nuke this when sttts's scheduler tests are merged, use his
+// TODO(tyler) remove when scheduler tests are merged in, use that version
 func newTestPod(i int) *api.Pod {
 	name := fmt.Sprintf("pod%d", i)
 	return &api.Pod{
@@ -385,6 +400,78 @@ func newTestPod(i int) *api.Pod {
 			},
 		},
 	}
+}
+
+// TODO(tyler) remove when scheduler tests are merged in, use that version
+// Create mock of pods ListWatch, usually listening on the apiserver pods watch endpoint
+type MockPodsListWatch struct {
+	ListWatch   cache.ListWatch
+	fakeWatcher *watch.FakeWatcher
+	list        api.PodList
+}
+
+// TODO(tyler) remove when scheduler tests are merged in, use that version
+// A apiserver mock which partially mocks the pods API
+type TestServer struct {
+	server *httptest.Server
+	Stats  map[string]uint
+	lock   sync.Mutex
+}
+
+// TODO(tyler) remove when scheduler tests are merged in, use that version
+func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServer {
+	ts := TestServer{
+		Stats: map[string]uint{},
+	}
+	mux := http.NewServeMux()
+
+	mux.HandleFunc(testapi.ResourcePath("pods", namespace, ""), func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), pods)))
+	})
+
+	mux.HandleFunc(testapi.ResourcePath("pods", namespace, "")+"/", func(w http.ResponseWriter, r *http.Request) {
+		name := strings.SplitN(r.URL.Path, "/", 5)[4]
+
+		// update statistics for this pod
+		ts.lock.Lock()
+		defer ts.lock.Unlock()
+		ts.Stats[name] = ts.Stats[name] + 1
+
+		for _, p := range pods.Items {
+			if p.Name == name {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), &p)))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mux.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
+		t.Errorf("unexpected request: %v", req.RequestURI)
+		res.WriteHeader(http.StatusNotFound)
+	})
+
+	ts.server = httptest.NewServer(mux)
+	return &ts
+}
+
+// TODO(tyler) remove when scheduler tests are merged in, use that version
+func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
+	lw := MockPodsListWatch{
+		fakeWatcher: watch.NewFake(),
+		list:        initialPodList,
+	}
+	lw.ListWatch = cache.ListWatch{
+		WatchFunc: func(resourceVersion string) (watch.Interface, error) {
+			return lw.fakeWatcher, nil
+		},
+		ListFunc: func() (runtime.Object, error) {
+			return &lw.list, nil
+		},
+	}
+	return &lw
 }
 
 // TestExecutorShutdown ensures that the executor properly shuts down

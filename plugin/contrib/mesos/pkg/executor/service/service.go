@@ -360,6 +360,10 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 				}
 			}
 		},
+		ExitFunc: os.Exit,
+		PodStatusFunc: func(kl *kubelet.Kubelet, pod *api.Pod) (api.PodStatus, error) {
+			return kl.GeneratePodStatus(pod)
+		},
 	})
 
 	k := &kubeletExecutor{

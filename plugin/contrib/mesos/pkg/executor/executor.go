@@ -19,7 +19,6 @@ package executor
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -118,6 +117,8 @@ type KubernetesExecutor struct {
 	shutdownAlert       func()          // invoked just prior to executor shutdown
 	kubeletFinished     <-chan struct{} // signals that kubelet Run() died
 	initialRegistration sync.Once
+	exitFunc            func(int)
+	podStatusFunc       func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
 
 type Config struct {
@@ -130,6 +131,8 @@ type Config struct {
 	ShutdownAlert   func()
 	SuicideTimeout  time.Duration
 	KubeletFinished <-chan struct{}
+	ExitFunc        func(int)
+	PodStatusFunc   func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
 
 func (k *KubernetesExecutor) isConnected() bool {
@@ -153,6 +156,8 @@ func New(config Config) *KubernetesExecutor {
 		kubeletFinished: config.KubeletFinished,
 		suicideWatch:    &suicideTimer{},
 		shutdownAlert:   config.ShutdownAlert,
+		exitFunc:        config.ExitFunc,
+		podStatusFunc:   config.PodStatusFunc,
 	}
 	//TODO(jdef) do something real with these events..
 	if config.Watch != nil {
@@ -424,7 +429,6 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 			messages.CreateBindingFailure))
 		return
 	}
-
 	podFullName := container.GetPodFullName(pod)
 
 	// allow a recently failed-over scheduler the chance to recover the task/pod binding:
@@ -480,8 +484,9 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 
 	// Delay reporting 'task running' until container is up.
 	psf := podStatusFunc(func() (api.PodStatus, error) {
-		return k.kl.GeneratePodStatus(pod)
+		return k.podStatusFunc(k.kl, pod)
 	})
+
 	go k._launchTask(driver, taskId, podFullName, psf)
 }
 
@@ -675,7 +680,7 @@ func (k *KubernetesExecutor) FrameworkMessage(driver bindings.ExecutorDriver, me
 
 	log.Infof("Receives message from framework %v\n", message)
 	//TODO(jdef) master reported a lost task, reconcile this! @see scheduler.go:handleTaskLost
-	if strings.HasPrefix("task-lost:", message) && len(message) > 10 {
+	if strings.HasPrefix(message, "task-lost:") && len(message) > 10 {
 		taskId := message[10:]
 		if taskId != "" {
 			// clean up pod state
@@ -701,7 +706,10 @@ func (k *KubernetesExecutor) Shutdown(driver bindings.ExecutorDriver) {
 // assumes that caller has obtained state lock
 func (k *KubernetesExecutor) doShutdown(driver bindings.ExecutorDriver) {
 	defer func() {
-		log.Exit("exiting with unclean shutdown: %v", recover())
+		log.Errorf("exiting with unclean shutdown: %v", recover())
+		if k.exitFunc != nil {
+			k.exitFunc(1)
+		}
 	}()
 
 	(&k.state).transitionTo(terminalState)
@@ -743,7 +751,9 @@ func (k *KubernetesExecutor) doShutdown(driver bindings.ExecutorDriver) {
 	}
 
 	log.Infoln("exiting")
-	os.Exit(0)
+	if k.exitFunc != nil {
+		k.exitFunc(0)
+	}
 }
 
 // Destroy existing k8s containers

@@ -360,6 +360,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 				}
 			}
 		},
+		ExitFunc: func() { os.Exit(0) },
 	})
 
 	k := &kubeletExecutor{

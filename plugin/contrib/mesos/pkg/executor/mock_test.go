@@ -33,44 +33,37 @@ type MockExecutorDriver struct {
 
 func (m MockExecutorDriver) Start() (mesosproto.Status, error) {
 	args := m.Called()
-	return status(args, 0), args.Error(1)
+	return mesosproto.Status_DRIVER_RUNNING, args.Error(1)
 }
 
 func (m MockExecutorDriver) Stop() (mesosproto.Status, error) {
 	args := m.Called()
-	return status(args, 0), args.Error(1)
+	return mesosproto.Status_DRIVER_STOPPED, args.Error(1)
 }
 
 func (m MockExecutorDriver) Abort() (mesosproto.Status, error) {
 	args := m.Called()
-	return status(args, 0), args.Error(1)
+	return mesosproto.Status_DRIVER_ABORTED, args.Error(1)
 }
 
 func (m MockExecutorDriver) Join() (mesosproto.Status, error) {
 	args := m.Called()
-	return status(args, 0), args.Error(1)
+	return mesosproto.Status_DRIVER_RUNNING, args.Error(1)
 }
 
 func (m MockExecutorDriver) Run() (mesosproto.Status, error) {
 	args := m.Called()
-	return status(args, 0), args.Error(1)
+	return mesosproto.Status_DRIVER_RUNNING, args.Error(1)
 }
 
 func (m MockExecutorDriver) SendStatusUpdate(taskStatus *mesosproto.TaskStatus) (mesosproto.Status, error) {
 	args := m.Called(taskStatus)
-	return status(args, 0), args.Error(1)
+	return mesosproto.Status_DRIVER_RUNNING, args.Error(1)
 }
 
 func (m MockExecutorDriver) SendFrameworkMessage(msg string) (mesosproto.Status, error) {
-	args := m.Called(m)
-	return status(args, 0), args.Error(1)
-}
-
-func status(args mock.Arguments, at int) (val mesosproto.Status) {
-	if x := args.Get(at); x != nil {
-		val = x.(mesosproto.Status)
-	}
-	return
+	args := m.Called(msg)
+	return mesosproto.Status_DRIVER_RUNNING, args.Error(1)
 }
 
 func NewTestKubernetesExecutor() *KubernetesExecutor {

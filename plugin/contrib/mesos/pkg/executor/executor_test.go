@@ -221,7 +221,6 @@ func TestExecutorRegister(t *testing.T) {
 	executor.Registered(mockDriver, nil, nil, nil)
 
 	assert.Equal(t, true, executor.isConnected(), "executor should be connected")
-	mockDriver.AssertExpectations(t)
 }
 
 // TestExecutorDisconnect ensures that the executor thinks that it is not
@@ -238,7 +237,6 @@ func TestExecutorDisconnect(t *testing.T) {
 
 	assert.Equal(t, false, executor.isConnected(),
 		"executor should not be connected after Disconnected")
-	mockDriver.AssertExpectations(t)
 }
 
 // TestExecutorReregister ensures that the executor thinks it is connected
@@ -255,7 +253,6 @@ func TestExecutorReregister(t *testing.T) {
 	executor.Reregistered(mockDriver, nil)
 
 	assert.Equal(t, true, executor.isConnected(), "executor should be connected")
-	mockDriver.AssertExpectations(t)
 }
 
 // TestExecutorLaunchAndKillTask ensures that the executor is able to launch
@@ -436,4 +433,20 @@ func TestExecutorShutdown(t *testing.T) {
 
 	assert.Equal(t, true, atomic.LoadInt32(&exitCalled) > 0,
 		"the executor should call its ExitFunc when it is ready to close down")
+}
+
+func TestExecutorsendFrameworkMessage(t *testing.T) {
+	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
+
+	mockDriver := MockExecutorDriver{}
+	executor := NewTestKubernetesExecutor()
+
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, nil, nil, nil)
+
+	mockDriver.On(
+		"SendFrameworkMessage",
+		"foo bar baz",
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
+	executor.sendFrameworkMessage(mockDriver, "foo bar baz")
 }

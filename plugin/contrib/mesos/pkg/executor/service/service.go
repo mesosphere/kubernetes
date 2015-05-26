@@ -305,7 +305,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	pc := kconfig.NewPodConfig(kconfig.PodConfigNotificationSnapshotAndUpdates, kc.Recorder)
 	updates := pc.Channel(MESOS_CFG_SOURCE)
 
-	kubelet, err := kubelet.NewMainKubelet(
+	klet, err := kubelet.NewMainKubelet(
 		kc.Hostname,
 		kc.DockerClient,
 		kubeClient,
@@ -346,7 +346,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	// get rid of it from executor.Config
 	kubeletFinished := make(chan struct{})
 	exec := executor.New(executor.Config{
-		Kubelet:         kubelet,
+		Kubelet:         klet,
 		Updates:         updates,
 		SourceName:      MESOS_CFG_SOURCE,
 		APIClient:       kc.KubeClient,
@@ -367,7 +367,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	})
 
 	k := &kubeletExecutor{
-		Kubelet:         kubelet,
+		Kubelet:         klet,
 		finished:        finished,
 		runProxy:        ks.RunProxy,
 		proxyLogV:       ks.ProxyLogV,

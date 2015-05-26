@@ -17,11 +17,9 @@ limitations under the License.
 package executor
 
 import (
-	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -43,8 +41,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
-
-var test_v = flag.Int("test-v", 0, "test -v")
 
 type suicideTracker struct {
 	suicideWatcher
@@ -220,8 +216,6 @@ func TestSuicide_WithTasks(t *testing.T) {
 // TestExecutorRegister ensures that the executor thinks it is connected
 // after Register is called.
 func TestExecutorRegister(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	mockDriver := MockExecutorDriver{}
 	executor := NewTestKubernetesExecutor()
 
@@ -234,8 +228,6 @@ func TestExecutorRegister(t *testing.T) {
 // TestExecutorDisconnect ensures that the executor thinks that it is not
 // connected after a call to Disconnected has occured.
 func TestExecutorDisconnect(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	mockDriver := MockExecutorDriver{}
 	executor := NewTestKubernetesExecutor()
 
@@ -250,8 +242,6 @@ func TestExecutorDisconnect(t *testing.T) {
 // TestExecutorReregister ensures that the executor thinks it is connected
 // after a connection problem happens, followed by a call to Reregistered.
 func TestExecutorReregister(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	mockDriver := MockExecutorDriver{}
 	executor := NewTestKubernetesExecutor()
 
@@ -266,8 +256,6 @@ func TestExecutorReregister(t *testing.T) {
 // TestExecutorLaunchAndKillTask ensures that the executor is able to launch
 // and kill tasks while properly bookkeping its tasks.
 func TestExecutorLaunchAndKillTask(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	// create a fake pod watch. We use that below to submit new pods to the scheduler
 	podListWatch := NewMockPodsListWatch(api.PodList{})
 
@@ -425,32 +413,8 @@ func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServe
 	}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc(testapi.ResourcePath("pods", namespace, ""), func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), pods)))
-	})
-
-	mux.HandleFunc(testapi.ResourcePath("pods", namespace, "")+"/", func(w http.ResponseWriter, r *http.Request) {
-		name := strings.SplitN(r.URL.Path, "/", 5)[4]
-
-		// update statistics for this pod
-		ts.lock.Lock()
-		defer ts.lock.Unlock()
-		ts.Stats[name] = ts.Stats[name] + 1
-
-		for _, p := range pods.Items {
-			if p.Name == name {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), &p)))
-				return
-			}
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	mux.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
-		t.Errorf("unexpected request: %v", req.RequestURI)
-		res.WriteHeader(http.StatusNotFound)
+	mux.HandleFunc(testapi.ResourcePath("bindings", namespace, ""), func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotImplemented)
 	})
 
 	ts.server = httptest.NewServer(mux)
@@ -477,8 +441,6 @@ func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
 // TestExecutorShutdown ensures that the executor properly shuts down
 // when Shutdown is called.
 func TestExecutorShutdown(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	mockDriver := MockExecutorDriver{}
 	kubeletFinished := make(chan struct{})
 	var exitCalled int32 = 0
@@ -523,8 +485,6 @@ func TestExecutorShutdown(t *testing.T) {
 }
 
 func TestExecutorsendFrameworkMessage(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	mockDriver := MockExecutorDriver{}
 	executor := NewTestKubernetesExecutor()
 

@@ -17,8 +17,6 @@ limitations under the License.
 package executor
 
 import (
-	"flag"
-	"fmt"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
@@ -74,8 +72,6 @@ func NewTestKubernetesExecutor() *KubernetesExecutor {
 }
 
 func TestExecutorNew(t *testing.T) {
-	flag.Lookup("v").Value.Set(fmt.Sprint(*test_v))
-
 	mockDriver := MockExecutorDriver{}
 	executor := NewTestKubernetesExecutor()
 	executor.Init(mockDriver)

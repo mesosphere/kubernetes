@@ -117,7 +117,7 @@ type KubernetesExecutor struct {
 	shutdownAlert       func()          // invoked just prior to executor shutdown
 	kubeletFinished     <-chan struct{} // signals that kubelet Run() died
 	initialRegistration sync.Once
-	exit                func()
+	exitFunc            func(int)
 	podStatusFunc       func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
 
@@ -131,7 +131,7 @@ type Config struct {
 	ShutdownAlert   func()
 	SuicideTimeout  time.Duration
 	KubeletFinished <-chan struct{}
-	ExitFunc        func()
+	ExitFunc        func(int)
 	PodStatusFunc   func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
 
@@ -156,7 +156,7 @@ func New(config Config) *KubernetesExecutor {
 		kubeletFinished: config.KubeletFinished,
 		suicideWatch:    &suicideTimer{},
 		shutdownAlert:   config.ShutdownAlert,
-		exit:            config.ExitFunc,
+		exitFunc:        config.ExitFunc,
 		podStatusFunc:   config.PodStatusFunc,
 	}
 	//TODO(jdef) do something real with these events..
@@ -707,8 +707,8 @@ func (k *KubernetesExecutor) Shutdown(driver bindings.ExecutorDriver) {
 func (k *KubernetesExecutor) doShutdown(driver bindings.ExecutorDriver) {
 	defer func() {
 		log.Warningf("exiting with unclean shutdown: %v", recover())
-		if k.exit != nil {
-			k.exit()
+		if k.exitFunc != nil {
+			k.exitFunc(1)
 		}
 	}()
 
@@ -751,8 +751,8 @@ func (k *KubernetesExecutor) doShutdown(driver bindings.ExecutorDriver) {
 	}
 
 	log.Infoln("exiting")
-	if k.exit != nil {
-		k.exit()
+	if k.exitFunc != nil {
+		k.exitFunc(0)
 	}
 }
 

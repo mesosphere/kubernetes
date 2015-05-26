@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,6 +30,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
@@ -217,10 +219,33 @@ func TestSuicide_WithTasks(t *testing.T) {
 // after Register is called.
 func TestExecutorRegister(t *testing.T) {
 	mockDriver := MockExecutorDriver{}
-	executor := NewTestKubernetesExecutor()
+	updates := make(chan interface{}, 1024)
+	executor := New(Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: updates,
+	})
 
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
+
+	initialPodUpdate := kubelet.PodUpdate{
+		Pods: []*api.Pod{},
+		Op:   kubelet.SET,
+	}
+	receivedInitialPodUpdate := false
+	select {
+	case m := <-updates:
+		update, ok := m.(kubelet.PodUpdate)
+		if ok {
+			if reflect.DeepEqual(initialPodUpdate, update) {
+				receivedInitialPodUpdate = true
+			}
+		}
+	case <-time.After(50 * time.Millisecond):
+	}
+	assert.Equal(t, true, receivedInitialPodUpdate,
+		"executor should have sent an initial PodUpdate "+
+			"to the updates chan upon registration")
 
 	assert.Equal(t, true, executor.isConnected(), "executor should be connected")
 }
@@ -264,21 +289,45 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 	defer testApiServer.server.Close()
 
 	mockDriver := MockExecutorDriver{}
+	updates := make(chan interface{}, 1024)
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1024),
+		Updates: updates,
 		APIClient: client.NewOrDie(&client.Config{
 			Host:    testApiServer.server.URL,
 			Version: testapi.Version(),
 		}),
+		Kubelet: &kubelet.Kubelet{},
+		PodStatusFunc: func(kl *kubelet.Kubelet, pod *api.Pod) (api.PodStatus, error) {
+			return api.PodStatus{
+				ContainerStatuses: []api.ContainerStatus{
+					{
+						Name: "foo",
+						State: api.ContainerState{
+							Running: &api.ContainerStateRunning{},
+						},
+					},
+				},
+				Phase: api.PodRunning,
+			}, nil
+		},
 	}
 	executor := New(config)
 
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
 
+	gotInitialUpdate := false
+	select {
+	case <-updates:
+		gotInitialUpdate = true
+	case <-time.After(5 * time.Millisecond):
+	}
+	assert.Equal(t, true, gotInitialUpdate,
+		"Executor should send an initial update on Registration")
+
 	pod := newTestPod(1)
-	podTask, err := podtask.New(api.NewDefaultContext(), "foo",
+	podTask, err := podtask.New(api.NewDefaultContext(), "default/pod1",
 		*pod, &mesosproto.ExecutorInfo{})
 	assert.Equal(t, nil, err, "must be able to create a task from a pod")
 
@@ -289,16 +338,44 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 
 	mockDriver.On(
 		"SendStatusUpdate",
-		mock.AnythingOfType("*mesosproto.TaskStatus"),
-	).Return(mesosproto.Status_DRIVER_RUNNING, nil)
+		mesosproto.TaskState_TASK_STARTING,
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
+
+	mockDriver.On(
+		"SendStatusUpdate",
+		mesosproto.TaskState_TASK_RUNNING,
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
 
 	executor.LaunchTask(mockDriver, taskInfo)
 	assert.Equal(t, 1, len(executor.tasks),
 		"executor must be able to create a task")
+	time.Sleep(350 * time.Millisecond)
+	assert.Equal(t, 1, len(executor.pods),
+		"executor must be able to create a pod")
+
+	gotPodUpdate := false
+	select {
+	case m := <-updates:
+		update, ok := m.(kubelet.PodUpdate)
+		if ok && len(update.Pods) == 1 {
+			gotPodUpdate = true
+		}
+	case <-time.After(5 * time.Millisecond):
+	}
+	assert.Equal(t, true, gotPodUpdate,
+		"the executor should send an update about a new pod to "+
+			"the updates chan when creating a new one.")
+
+	mockDriver.On(
+		"SendStatusUpdate",
+		mesosproto.TaskState_TASK_KILLED,
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
 
 	executor.KillTask(mockDriver, taskInfo.TaskId)
 	assert.Equal(t, 0, len(executor.tasks),
 		"executor must be able to kill a created task")
+	assert.Equal(t, 0, len(executor.pods),
+		"executor must be able to kill a created pod")
 }
 
 // TestExecutorFrameworkMessage ensures that the executor is able to
@@ -414,7 +491,7 @@ func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServe
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(testapi.ResourcePath("bindings", namespace, ""), func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotImplemented)
+		w.WriteHeader(http.StatusOK)
 	})
 
 	ts.server = httptest.NewServer(mux)

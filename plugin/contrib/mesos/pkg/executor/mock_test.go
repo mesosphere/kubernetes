@@ -55,7 +55,7 @@ func (m MockExecutorDriver) Run() (mesosproto.Status, error) {
 }
 
 func (m MockExecutorDriver) SendStatusUpdate(taskStatus *mesosproto.TaskStatus) (mesosproto.Status, error) {
-	args := m.Called(taskStatus)
+	args := m.Called(*taskStatus.State)
 	return mesosproto.Status_DRIVER_RUNNING, args.Error(1)
 }
 

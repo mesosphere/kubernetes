@@ -118,6 +118,7 @@ type KubernetesExecutor struct {
 	kubeletFinished     <-chan struct{} // signals that kubelet Run() died
 	initialRegistration sync.Once
 	exit                func()
+	podStatusFunc       func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
 
 type Config struct {
@@ -131,6 +132,7 @@ type Config struct {
 	SuicideTimeout  time.Duration
 	KubeletFinished <-chan struct{}
 	ExitFunc        func()
+	PodStatusFunc   func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
 
 func (k *KubernetesExecutor) isConnected() bool {
@@ -155,6 +157,7 @@ func New(config Config) *KubernetesExecutor {
 		suicideWatch:    &suicideTimer{},
 		shutdownAlert:   config.ShutdownAlert,
 		exit:            config.ExitFunc,
+		podStatusFunc:   config.PodStatusFunc,
 	}
 	//TODO(jdef) do something real with these events..
 	if config.Watch != nil {
@@ -426,7 +429,6 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 			messages.CreateBindingFailure))
 		return
 	}
-
 	podFullName := container.GetPodFullName(pod)
 
 	// allow a recently failed-over scheduler the chance to recover the task/pod binding:
@@ -482,8 +484,9 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 
 	// Delay reporting 'task running' until container is up.
 	psf := podStatusFunc(func() (api.PodStatus, error) {
-		return k.kl.GeneratePodStatus(pod)
+		return k.podStatusFunc(k.kl, pod)
 	})
+
 	go k._launchTask(driver, taskId, podFullName, psf)
 }
 

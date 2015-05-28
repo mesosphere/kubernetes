@@ -60,8 +60,8 @@ func TestProc_manyEndings(t *testing.T) {
 	for i := 0; i < COUNT; i++ {
 		runtime.On(p.End(), wg.Done)
 	}
-	fatalAfter(t, runtime.After(wg.Wait), 1*time.Second, "timed out waiting for loose End()s")
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, runtime.After(wg.Wait), 5*time.Second, "timed out waiting for loose End()s")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_singleAction(t *testing.T) {
@@ -81,12 +81,12 @@ func TestProc_singleAction(t *testing.T) {
 		}
 	}()
 
-	fatalAfter(t, scheduled, 1*time.Second, "timed out waiting for deferred action to be scheduled")
-	fatalAfter(t, called, 1*time.Second, "timed out waiting for deferred action to be invoked")
+	fatalAfter(t, scheduled, 5*time.Second, "timed out waiting for deferred action to be scheduled")
+	fatalAfter(t, called, 5*time.Second, "timed out waiting for deferred action to be invoked")
 
 	p.End()
 
-	fatalAfter(t, p.Done(), 2*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_singleActionEnd(t *testing.T) {
@@ -107,9 +107,9 @@ func TestProc_singleActionEnd(t *testing.T) {
 		}
 	}()
 
-	fatalAfter(t, scheduled, 1*time.Second, "timed out waiting for deferred action to be scheduled")
-	fatalAfter(t, called, 1*time.Second, "timed out waiting for deferred action to be invoked")
-	fatalAfter(t, p.Done(), 2*time.Second, "timed out waiting for process death")
+	fatalAfter(t, scheduled, 5*time.Second, "timed out waiting for deferred action to be scheduled")
+	fatalAfter(t, called, 5*time.Second, "timed out waiting for deferred action to be invoked")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_multiAction(t *testing.T) {
@@ -140,13 +140,13 @@ func TestProc_multiAction(t *testing.T) {
 
 	p.End()
 
-	fatalAfter(t, p.Done(), 2*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_goodLifecycle(t *testing.T) {
 	p := New()
 	p.End()
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_doWithDeadProc(t *testing.T) {
@@ -160,7 +160,7 @@ func TestProc_doWithDeadProc(t *testing.T) {
 	}))
 
 	decorated.Do(func() {})
-	fatalAfter(t, decorated.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, decorated.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_doWith(t *testing.T) {
@@ -184,13 +184,13 @@ func TestProc_doWith(t *testing.T) {
 		t.Fatalf("expected !nil error chan")
 	}
 
-	fatalAfter(t, executed, 1*time.Second, "timed out waiting deferred execution")
+	fatalAfter(t, executed, 5*time.Second, "timed out waiting deferred execution")
 	fatalAfter(t, decorated.OnError(err, func(e error) {
 		t.Fatalf("unexpected error: %v", err)
 	}), 1*time.Second, "timed out waiting for doer result")
 
 	decorated.End()
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_doWithNestedTwice(t *testing.T) {
@@ -219,13 +219,13 @@ func TestProc_doWithNestedTwice(t *testing.T) {
 		t.Fatalf("expected !nil error chan")
 	}
 
-	fatalAfter(t, executed, 1*time.Second, "timed out waiting deferred execution")
+	fatalAfter(t, executed, 5*time.Second, "timed out waiting deferred execution")
 	fatalAfter(t, decorated2.OnError(err, func(e error) {
 		t.Fatalf("unexpected error: %v", err)
 	}), 1*time.Second, "timed out waiting for doer result")
 
 	decorated2.End()
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func TestProc_doWithNestedErrorPropagation(t *testing.T) {
@@ -274,7 +274,7 @@ func TestProc_doWithNestedErrorPropagation(t *testing.T) {
 	}
 
 	decorated2.End()
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 func runDelegationTest(t *testing.T, p Process, name string, errOnce ErrorOnce) {
@@ -315,10 +315,10 @@ func runDelegationTest(t *testing.T, p Process, name string, errOnce ErrorOnce) 
 		errOnce.Reportf("expected !nil error chan")
 	}
 	errOnce.Send(err)
-	errorAfter(errOnce, executed, 1*time.Second, "timed out waiting deferred execution")
+	errorAfter(errOnce, executed, 5*time.Second, "timed out waiting deferred execution")
 	errorAfter(errOnce, decorated.OnError(err, func(e error) {
 		errOnce.Reportf("unexpected error: %v", err)
-	}), 1*time.Second, "timed out waiting for doer result")
+	}), 5*time.Second, "timed out waiting for doer result")
 }
 
 func TestProc_doWithNestedX(t *testing.T) {
@@ -333,7 +333,7 @@ func TestProc_doWithNestedX(t *testing.T) {
 		}
 	default:
 	}
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
 
 // intended to be run with -race
@@ -348,7 +348,7 @@ func TestProc_doWithNestedXConcurrent(t *testing.T) {
 		runtime.After(func() { runDelegationTest(t, p, fmt.Sprintf("nested%d", i), errOnce) }).Then(wg.Done)
 	}
 	ch := runtime.After(wg.Wait)
-	fatalAfter(t, ch, 2*time.Second, "timed out waiting for concurrent delegates")
+	fatalAfter(t, ch, 10*time.Second, "timed out waiting for concurrent delegates")
 
 	<-p.End()
 
@@ -360,5 +360,5 @@ func TestProc_doWithNestedXConcurrent(t *testing.T) {
 	default:
 	}
 
-	fatalAfter(t, p.Done(), 1*time.Second, "timed out waiting for process death")
+	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }

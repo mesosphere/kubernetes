@@ -136,7 +136,7 @@ func TestProc_multiAction(t *testing.T) {
 		}
 	}
 
-	fatalAfter(t, runtime.After(called.Wait), 1*time.Second, "timed out waiting for deferred actions to be invoked")
+	fatalAfter(t, runtime.After(called.Wait), 2*time.Second, "timed out waiting for deferred actions to be invoked")
 
 	p.End()
 

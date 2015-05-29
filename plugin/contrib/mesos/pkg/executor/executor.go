@@ -31,6 +31,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/archive"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/meta"
 	"github.com/fsouza/go-dockerclient"
@@ -100,39 +101,43 @@ type podStatusFunc func() (api.PodStatus, error)
 // KubernetesExecutor is an mesos executor that runs pods
 // in a minion machine.
 type KubernetesExecutor struct {
-	kl                  *kubelet.Kubelet // the kubelet instance.
-	updateChan          chan<- interface{}
-	state               stateType
-	tasks               map[string]*kuberTask
-	pods                map[string]*api.Pod
-	lock                sync.RWMutex
-	sourcename          string
-	client              *client.Client
-	events              <-chan watch.Event
-	done                chan struct{} // signals shutdown
-	outgoing            chan func() (mesos.Status, error)
-	dockerClient        dockertools.DockerInterface
-	suicideWatch        suicideWatcher
-	suicideTimeout      time.Duration
-	shutdownAlert       func()          // invoked just prior to executor shutdown
-	kubeletFinished     <-chan struct{} // signals that kubelet Run() died
-	initialRegistration sync.Once
-	exitFunc            func(int)
-	podStatusFunc       func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	kl                   *kubelet.Kubelet // the kubelet instance.
+	updateChan           chan<- interface{}
+	state                stateType
+	tasks                map[string]*kuberTask
+	pods                 map[string]*api.Pod
+	lock                 sync.RWMutex
+	sourcename           string
+	client               *client.Client
+	events               <-chan watch.Event
+	done                 chan struct{} // signals shutdown
+	outgoing             chan func() (mesos.Status, error)
+	dockerClient         dockertools.DockerInterface
+	suicideWatch         suicideWatcher
+	suicideTimeout       time.Duration
+	shutdownAlert        func()          // invoked just prior to executor shutdown
+	kubeletFinished      <-chan struct{} // signals that kubelet Run() died
+	initialRegistration  sync.Once
+	exitFunc             func(int)
+	podStatusFunc        func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	staticPodsConfig     []byte
+	staticPodsConfigPath string
+	initialRegComplete   chan struct{}
 }
 
 type Config struct {
-	Kubelet         *kubelet.Kubelet
-	Updates         chan<- interface{}
-	SourceName      string
-	APIClient       *client.Client
-	Watch           watch.Interface
-	Docker          dockertools.DockerInterface
-	ShutdownAlert   func()
-	SuicideTimeout  time.Duration
-	KubeletFinished <-chan struct{}
-	ExitFunc        func(int)
-	PodStatusFunc   func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	Kubelet              *kubelet.Kubelet
+	Updates              chan<- interface{}
+	SourceName           string
+	APIClient            *client.Client
+	Watch                watch.Interface
+	Docker               dockertools.DockerInterface
+	ShutdownAlert        func()
+	SuicideTimeout       time.Duration
+	KubeletFinished      <-chan struct{}
+	ExitFunc             func(int)
+	PodStatusFunc        func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	StaticPodsConfigPath string
 }
 
 func (k *KubernetesExecutor) isConnected() bool {
@@ -142,22 +147,24 @@ func (k *KubernetesExecutor) isConnected() bool {
 // New creates a new kubernetes executor.
 func New(config Config) *KubernetesExecutor {
 	k := &KubernetesExecutor{
-		kl:              config.Kubelet,
-		updateChan:      config.Updates,
-		state:           disconnectedState,
-		tasks:           make(map[string]*kuberTask),
-		pods:            make(map[string]*api.Pod),
-		sourcename:      config.SourceName,
-		client:          config.APIClient,
-		done:            make(chan struct{}),
-		outgoing:        make(chan func() (mesos.Status, error), 1024),
-		dockerClient:    config.Docker,
-		suicideTimeout:  config.SuicideTimeout,
-		kubeletFinished: config.KubeletFinished,
-		suicideWatch:    &suicideTimer{},
-		shutdownAlert:   config.ShutdownAlert,
-		exitFunc:        config.ExitFunc,
-		podStatusFunc:   config.PodStatusFunc,
+		kl:                   config.Kubelet,
+		updateChan:           config.Updates,
+		state:                disconnectedState,
+		tasks:                make(map[string]*kuberTask),
+		pods:                 make(map[string]*api.Pod),
+		sourcename:           config.SourceName,
+		client:               config.APIClient,
+		done:                 make(chan struct{}),
+		outgoing:             make(chan func() (mesos.Status, error), 1024),
+		dockerClient:         config.Docker,
+		suicideTimeout:       config.SuicideTimeout,
+		kubeletFinished:      config.KubeletFinished,
+		suicideWatch:         &suicideTimer{},
+		shutdownAlert:        config.ShutdownAlert,
+		exitFunc:             config.ExitFunc,
+		podStatusFunc:        config.PodStatusFunc,
+		initialRegComplete:   make(chan struct{}),
+		staticPodsConfigPath: config.StaticPodsConfigPath,
 	}
 	//TODO(jdef) do something real with these events..
 	if config.Watch != nil {
@@ -206,6 +213,11 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to register/transition to a connected state")
 	}
+
+	if executorInfo != nil && executorInfo.Data != nil {
+		k.staticPodsConfig = executorInfo.Data
+	}
+
 	k.initialRegistration.Do(k.onInitialRegistration)
 }
 
@@ -219,16 +231,38 @@ func (k *KubernetesExecutor) Reregistered(driver bindings.ExecutorDriver, slaveI
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to reregister/transition to a connected state")
 	}
+
 	k.initialRegistration.Do(k.onInitialRegistration)
 }
 
 func (k *KubernetesExecutor) onInitialRegistration() {
+	defer close(k.initialRegComplete)
 	// emit an empty update to allow the mesos "source" to be marked as seen
 	k.updateChan <- kubelet.PodUpdate{
 		Pods:   []*api.Pod{},
 		Op:     kubelet.SET,
 		Source: k.sourcename,
 	}
+}
+
+// InitializeStaticPodsSource blocks until initial regstration is complete and
+// then creates a static pod source using the given factory func.
+func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func()) {
+	<-k.initialRegComplete
+
+	if k.staticPodsConfig == nil {
+		return
+	}
+
+	log.V(2).Infof("extracting static pods config to %s", k.staticPodsConfigPath)
+	err := archive.UnzipDir(k.staticPodsConfig, k.staticPodsConfigPath)
+	if err != nil {
+		log.Errorf("Failed to extract static pod config: %v", err)
+		return
+	}
+
+	log.V(2).Infof("initializing static pods source factory, configured at path %q", k.staticPodsConfigPath)
+	sourceFactory()
 }
 
 // Disconnected is called when the executor is disconnected with the slave.
@@ -749,7 +783,6 @@ func (k *KubernetesExecutor) doShutdown(driver bindings.ExecutorDriver) {
 	case <-time.After(15 * time.Second):
 		log.Errorf("timed out waiting for kubelet Run() to die")
 	}
-
 	log.Infoln("exiting")
 	if k.exitFunc != nil {
 		k.exitFunc(0)

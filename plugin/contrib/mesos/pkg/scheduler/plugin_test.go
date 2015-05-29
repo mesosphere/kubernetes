@@ -414,12 +414,16 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	testApiServer := NewTestServer(t, api.NamespaceDefault, &podListWatch.list)
 	defer testApiServer.server.Close()
 
+	// create executor with some data for static pods if set
+	executor := util.NewExecutorInfo(
+		util.NewExecutorID("executor-id"),
+		util.NewCommandInfo("executor-cmd"),
+	)
+	executor.Data = []byte{0, 1, 2}
+
 	// create scheduler
 	testScheduler := New(Config{
-		Executor: util.NewExecutorInfo(
-			util.NewExecutorID("executor-id"),
-			util.NewCommandInfo("executor-cmd"),
-		),
+		Executor:     executor,
 		Client:       client.NewOrDie(&client.Config{Host: testApiServer.server.URL, Version: testapi.Version()}),
 		ScheduleFunc: FCFSScheduleFunc,
 		Schedcfg:     *schedcfg.CreateDefaultConfig(),
@@ -510,6 +514,9 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	assert.EventWithReason(eventObserver, "scheduled")
 	mockDriver.AssertNumberOfCalls(t, "LaunchTasks", 1)
 	assert.Equal(1, len(launchTasks_taskInfos))
+
+	// check that ExecutorInfo.data has the static pod data
+	assert.Len(launchTasks_taskInfos[0].Executor.Data, 3)
 
 	// report back that the task has been staged by mesos
 	launchedTask := launchTasks_taskInfos[0]

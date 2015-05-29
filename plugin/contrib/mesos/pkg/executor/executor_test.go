@@ -17,9 +17,13 @@ limitations under the License.
 package executor
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -31,6 +35,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
+	kconfig "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/config"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
@@ -41,6 +46,7 @@ import (
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
 	"github.com/mesos/mesos-go/mesosproto"
+	"github.com/mesos/mesos-go/mesosutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -394,6 +400,144 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting for status update calls to finish")
 	}
+	mockDriver.AssertExpectations(t)
+}
+
+// TestExecutorStaticPods test that the ExecutorInfo.data is parsed
+// as a zip archive with pod definitions.
+func TestExecutorStaticPods(t *testing.T) {
+	// create some zip with static pod definition
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	createStaticPodFile := func(fileName, id, name string) {
+		w, err := zw.Create(fileName)
+		assert.NoError(t, err)
+		spod := `{
+	  "kind": "Pod",
+	  "apiVersion": "v1beta1",
+	  "id": "%v",
+	  "desiredState": {
+		"manifest": {
+		  "version": "v1beta1",
+		  "containers": [{
+			"name": "%v",
+			"image": "library/nginx",
+			"ports": [{
+			  "containerPort": 80,
+			  "name": "http"
+			}],
+			"livenessProbe": {
+			  "enabled": true,
+			  "type": "http",
+			  "initialDelaySeconds": 30,
+			  "httpGet": {
+				"path": "/",
+				"port": "80"
+			  }
+			}
+		  }]
+		}
+	  },
+	  "labels": {
+		"name": "foo",
+		"cluster": "gce"
+	  }
+	}`
+		_, err = w.Write([]byte(fmt.Sprintf(spod, id, name)))
+		assert.NoError(t, err)
+	}
+	createStaticPodFile("spod.json", "spod-id-01", "spod-01")
+	createStaticPodFile("spod2.json", "spod-id-02", "spod-02")
+	createStaticPodFile("dir/spod.json", "spod-id-03", "spod-03") // same file name as first one to check for overwriting
+
+	expectedStaticPodsNum := 2 // subdirectories are ignored by FileSource, hence only 2
+
+	err := zw.Close()
+	assert.NoError(t, err)
+
+	// create fake apiserver
+	testApiServer := NewTestServer(t, api.NamespaceDefault, nil)
+	defer testApiServer.server.Close()
+
+	// temporary directory which is normally located in the executor sandbox
+	staticPodsConfigPath, err := ioutil.TempDir("/tmp", "executor-k8sm-archive")
+	assert.NoError(t, err)
+	defer os.RemoveAll(staticPodsConfigPath)
+
+	mockDriver := &MockExecutorDriver{}
+	updates := make(chan interface{}, 1024)
+	config := Config{
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: make(chan interface{}, 1), // allow kube-executor source to proceed past init
+		APIClient: client.NewOrDie(&client.Config{
+			Host:    testApiServer.server.URL,
+			Version: testapi.Version(),
+		}),
+		Kubelet: &kubelet.Kubelet{},
+		PodStatusFunc: func(kl *kubelet.Kubelet, pod *api.Pod) (api.PodStatus, error) {
+			return api.PodStatus{
+				ContainerStatuses: []api.ContainerStatus{
+					{
+						Name: "foo",
+						State: api.ContainerState{
+							Running: &api.ContainerStateRunning{},
+						},
+					},
+				},
+				Phase: api.PodRunning,
+			}, nil
+		},
+		StaticPodsConfigPath: staticPodsConfigPath,
+	}
+	executor := New(config)
+	hostname := "h1"
+	go executor.InitializeStaticPodsSource(func() {
+		kconfig.NewSourceFile(staticPodsConfigPath, hostname, 1*time.Second, updates)
+	})
+
+	// create ExecutorInfo with static pod zip in data field
+	executorInfo := mesosutil.NewExecutorInfo(
+		mesosutil.NewExecutorID("ex1"),
+		mesosutil.NewCommandInfo("k8sm-executor"),
+	)
+	executorInfo.Data = buf.Bytes()
+
+	// start the executor with the static pod data
+	executor.Init(mockDriver)
+	executor.Registered(mockDriver, executorInfo, nil, nil)
+
+	// wait for static pod to start
+	seenPods := map[string]struct{}{}
+	done := make(chan struct{})
+	go func() {
+		for {
+			// filter by PodUpdate type
+			select {
+			case update, ok := <-updates:
+				if !ok {
+					return
+				}
+				switch update.(type) {
+				case kubelet.PodUpdate:
+					// register the seen pods by name
+					podUpdate := update.(kubelet.PodUpdate)
+					for _, pod := range podUpdate.Pods {
+						seenPods[pod.Name] = struct{}{}
+					}
+					if len(seenPods) == expectedStaticPodsNum {
+						close(done)
+					}
+				}
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("Executor should send pod updates for %v pods, only saw %v", expectedStaticPodsNum, len(seenPods))
+	}
+
 	mockDriver.AssertExpectations(t)
 }
 

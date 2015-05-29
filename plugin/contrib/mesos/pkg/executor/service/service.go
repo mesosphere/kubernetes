@@ -212,7 +212,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		RootDirectory:      s.RootDirectory,
 		// ConfigFile: ""
 		// ManifestURL: ""
-		// FileCheckFrequency
+		FileCheckFrequency: s.FileCheckFrequency,
 		// HTTPCheckFrequency
 		PodInfraContainerImage:  s.PodInfraContainerImage,
 		SyncFrequency:           s.SyncFrequency,
@@ -371,6 +371,11 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		PodStatusFunc: func(kl *kubelet.Kubelet, pod *api.Pod) (api.PodStatus, error) {
 			return kl.GeneratePodStatus(pod)
 		},
+	})
+
+	fileSourceUpdates := pc.Channel(kubelet.FileSource)
+	go exec.InitializeStaticPodsSource(func(staticPodsConfigPath string) {
+		kconfig.NewSourceFile(staticPodsConfigPath, kc.Hostname, kc.FileCheckFrequency, fileSourceUpdates)
 	})
 
 	k := &kubeletExecutor{

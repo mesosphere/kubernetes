@@ -188,7 +188,7 @@ func TestDQ_ordered_add_pop(t *testing.T) {
 	before := time.Now()
 	idx := int32(-1)
 	ch := make(chan bool, 3)
-	for range finished {
+	for n := 0; n < len(finished); n++ {
 		go func() {
 			var ok bool
 			x := dq.Pop()

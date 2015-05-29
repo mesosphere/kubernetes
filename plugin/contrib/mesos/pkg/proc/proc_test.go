@@ -278,6 +278,9 @@ func TestProc_doWithNestedErrorPropagation(t *testing.T) {
 }
 
 func runDelegationTest(t *testing.T, p Process, name string, errOnce ErrorOnce) {
+	defer func() {
+		t.Logf("runDelegationTest finished at " + time.Now().String())
+	}()
 	var decorated Process
 	decorated = p
 
@@ -304,24 +307,28 @@ func runDelegationTest(t *testing.T, p Process, name string, errOnce ErrorOnce) 
 	}
 
 	executed := make(chan struct{})
-	err := decorated.Do(func() {
+	errCh := decorated.Do(func() {
 		defer close(executed)
 		if y != DEPTH {
 			errOnce.Reportf("expected delegated execution")
 		}
-		t.Logf("executing deferred action: " + name)
+		t.Logf("executing deferred action: " + name + " at " + time.Now().String())
+		errOnce.Send(nil) // we completed without error, let the listener know
 	})
-	if err == nil {
-		errOnce.Reportf("expected !nil error chan")
+	if errCh == nil {
+		t.Fatalf("expected !nil error chan")
 	}
-	errOnce.Send(err)
+
+	// forward any scheduling errors to the listener; NOTHING else should attempt to read
+	// from errCh after this point
+	errOnce.Send(errCh)
+
 	errorAfter(errOnce, executed, 5*time.Second, "timed out waiting deferred execution")
-	errorAfter(errOnce, decorated.OnError(err, func(e error) {
-		errOnce.Reportf("unexpected error: %v", err)
-	}), 5*time.Second, "timed out waiting for doer result")
+	t.Logf("runDelegationTest received executed signal at " + time.Now().String())
 }
 
 func TestProc_doWithNestedX(t *testing.T) {
+	t.Logf("starting test case at " + time.Now().String())
 	p := New()
 	errOnce := NewErrorOnce(p.Done())
 	runDelegationTest(t, p, "nested", errOnce)
@@ -331,7 +338,8 @@ func TestProc_doWithNestedX(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-	default:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for doer result")
 	}
 	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")
 }
@@ -357,7 +365,8 @@ func TestProc_doWithNestedXConcurrent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-	default:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for doer result")
 	}
 
 	fatalAfter(t, p.Done(), 5*time.Second, "timed out waiting for process death")

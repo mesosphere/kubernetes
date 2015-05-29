@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fs_test
+package fs
 
 import (
 	"archive/zip"
@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mesosphere/kubernetes-mesos/pkg/fs"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/fs"
 )
 
 func TestZipWalker(t *testing.T) {

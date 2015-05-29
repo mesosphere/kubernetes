@@ -206,13 +206,16 @@ func (self *procImpl) OnError(ch <-chan error, f func(error)) <-chan struct{} {
 }
 
 func (self *procImpl) flush() {
-	defer func() {
-		log.V(2).Infof("flushed action backlog for process %d", self.pid)
-	}()
 	log.V(2).Infof("flushing action backlog for process %d", self.pid)
-	for range self.backlog {
-		// discard all
+	i := 0
+	for {
+		_, open := <-self.backlog
+		if !open {
+			break
+		}
+		i++
 	}
+	log.V(2).Infof("flushed %d backlog actions for process %d", i, self.pid)
 }
 
 func (self *procImpl) End() <-chan struct{} {

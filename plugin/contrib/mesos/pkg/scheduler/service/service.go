@@ -28,7 +28,6 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
@@ -60,6 +59,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/pflag"
 	"golang.org/x/net/context"
+	"sync"
 )
 
 const (
@@ -117,10 +117,11 @@ type SchedulerServer struct {
 	KubeletSyncFrequency          time.Duration
 	KubeletNetworkPluginName      string
 
-	executable string // path to the binary running this service
-	client     *client.Client
-	driver     atomic.Value // bindings.SchedulerDriver
-	mux        *http.ServeMux
+	executable  string // path to the binary running this service
+	client      *client.Client
+	driver      bindings.SchedulerDriver
+	driverMutex sync.RWMutex
+	mux         *http.ServeMux
 }
 
 // useful for unit testing specific funcs
@@ -392,16 +393,15 @@ func (s *SchedulerServer) createAPIServerClient() (*client.Client, error) {
 }
 
 func (s *SchedulerServer) setDriver(driver bindings.SchedulerDriver, err error) {
-	if err == nil {
-		s.driver.Store(driver)
-	}
+	s.driverMutex.Lock()
+	defer s.driverMutex.Unlock()
+	s.driver = driver
 }
 
 func (s *SchedulerServer) getDriver() (driver bindings.SchedulerDriver) {
-	if d := s.driver.Load(); d != nil {
-		driver = d.(bindings.SchedulerDriver)
-	}
-	return
+	s.driverMutex.RLock()
+	defer s.driverMutex.RUnlock()
+	return s.driver
 }
 
 func (s *SchedulerServer) Run(hks hyperkube.Interface, _ []string) error {

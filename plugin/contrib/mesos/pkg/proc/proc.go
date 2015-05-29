@@ -208,6 +208,7 @@ func (self *procImpl) OnError(ch <-chan error, f func(error)) <-chan struct{} {
 func (self *procImpl) flush() {
 	log.V(2).Infof("flushing action backlog for process %d", self.pid)
 	i := 0
+	//TODO: replace with `for range self.backlog` once Go 1.3 support is dropped
 	for {
 		_, open := <-self.backlog
 		if !open {

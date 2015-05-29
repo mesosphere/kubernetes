@@ -188,6 +188,7 @@ func TestDQ_ordered_add_pop(t *testing.T) {
 	before := time.Now()
 	idx := int32(-1)
 	ch := make(chan bool, 3)
+	//TODO: replace with `for range finished` once Go 1.3 support is dropped
 	for n := 0; n < len(finished); n++ {
 		go func() {
 			var ok bool

@@ -394,7 +394,6 @@ func TestExecutorStaticPods(t *testing.T) {
 	// create some zip with static pod definition
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	numPods := 0
 	createStaticPodFile := func (fileName string, id string, name string) {
 		w, err := zw.Create(fileName)
 		assert.NoError(t, err)
@@ -431,11 +430,12 @@ func TestExecutorStaticPods(t *testing.T) {
 	}`
 		_, err = w.Write([]byte(fmt.Sprintf(spod, id, name)))
 		assert.NoError(t, err)
-		numPods = numPods + 1
 	}
 	createStaticPodFile("spod.json", "spod-id-01", "spod-01")
 	createStaticPodFile("spod2.json", "spod-id-02", "spod-02")
 	createStaticPodFile("dir/spod.json", "spod-id-03", "spod-03") // same file name as first one to check for overwriting
+
+	expectedStaticPodsNum := 2 // subdirectories are ignored by FileSource, hence only 2
 
 	err := zw.Close()
 	assert.NoError(t, err)
@@ -507,7 +507,7 @@ func TestExecutorStaticPods(t *testing.T) {
 					for _, pod := range(podUpdate.Pods) {
 						seenPods[pod.Name] = struct{}{}
 					}
-					if len(seenPods) == numPods {
+					if len(seenPods) == expectedStaticPodsNum {
 						close(done)
 					}
 				}
@@ -518,7 +518,7 @@ func TestExecutorStaticPods(t *testing.T) {
 	select {
 	case <- done:
 	case <-time.After(time.Second):
-		t.Fatalf("Executor should send pod updates for %v pods, only saw %v", numPods, len(seenPods))
+		t.Fatalf("Executor should send pod updates for %v pods, only saw %v", expectedStaticPodsNum, len(seenPods))
 	}
 
 	mockDriver.AssertExpectations(t)

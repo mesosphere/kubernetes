@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -302,22 +303,40 @@ func (k *KubernetesExecutor) retrieveStaticPods(data []byte) {
 	}
 
 	for _, file := range zr.File {
+		// skip directories
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		// open file
 		rc, err := file.Open()
 		if err != nil {
-			log.Errorf("Could retrieve archieved File.")
+			log.Errorf("Could retrieve archieved staticPods configfile %v.", file.Name)
 			return
 		}
 
-		path := filepath.Clean(filepath.Join(dir, file.Name))
-		f, err := os.Create(path)
+		// make sure the directory of the file exists, otherwise create
+		destPath := filepath.Clean(filepath.Join(dir, file.Name))
+		destBasedir := path.Dir(destPath)
+		if _, err := os.Stat(destBasedir); err != nil {
+			err = os.MkdirAll(destBasedir, 0755)
+			if err != nil {
+				log.Errorf("Could not create staticPods configFile directory %v.", destBasedir)
+				return
+			}
+		}
+
+		// create file
+		f, err := os.Create(destPath)
 		if err != nil {
-			log.Errorf("Could not create staticPods configFile.")
+			log.Errorf("Could not create staticPods configFile %v.", destPath)
 			return
 		}
 		defer f.Close()
 
+		// write file
 		if _, err := io.Copy(f, rc); err != nil {
-			log.Errorf("Could not create staticPods configFile.")
+			log.Errorf("Could not write staticPods configFile %v.", destPath, err)
 			return
 		}
 	}

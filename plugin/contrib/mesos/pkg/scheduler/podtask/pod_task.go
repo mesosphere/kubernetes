@@ -296,7 +296,7 @@ func (t *T) SaveRecoveryInfo(dict map[string]string) {
 func RecoverFrom(pod api.Pod) (*T, bool, error) {
 	// we only expect annotations if pod has been bound, which implies that it has already
 	// been scheduled and launched
-	if pod.Spec.Host == "" && len(pod.Annotations) == 0 {
+	if pod.Spec.NodeName == "" && len(pod.Annotations) == 0 {
 		log.V(1).Infof("skipping recovery for unbound pod %v/%v", pod.Namespace, pod.Name)
 		return nil, false, nil
 	}

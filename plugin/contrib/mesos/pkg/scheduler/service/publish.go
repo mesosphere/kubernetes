@@ -77,7 +77,7 @@ func (m *SchedulerServer) createSchedulerServiceIfNeeded(serviceName string, ser
 		},
 	}
 	if m.ServiceAddress != nil {
-		svc.Spec.PortalIP = m.ServiceAddress.String()
+		svc.Spec.ClusterIP = m.ServiceAddress.String()
 	}
 	_, err := m.client.Services(api.NamespaceValue(ctx)).Create(svc)
 	if err != nil && errors.IsAlreadyExists(err) {

@@ -426,7 +426,7 @@ func (q *queuer) Run(done <-chan struct{}) {
 			}
 
 			pod := p.(*Pod)
-			if pod.Spec.Host != "" {
+			if pod.Spec.NodeName != "" {
 				log.V(3).Infof("dequeuing pod for scheduling: %v", pod.Pod.Name)
 				q.dequeue(pod.GetUID())
 			} else {
@@ -475,7 +475,7 @@ func (q *queuer) yield() *api.Pod {
 			log.Warningf("yield unable to understand pod object %+v, will skip: %v", pod, err)
 		} else if !q.podUpdates.Poll(podName, queue.POP_EVENT) {
 			log.V(1).Infof("yield popped a transitioning pod, skipping: %+v", pod)
-		} else if pod.Spec.Host != "" {
+		} else if pod.Spec.NodeName != "" {
 			// should never happen if enqueuePods is filtering properly
 			log.Warningf("yield popped an already-scheduled pod, skipping: %+v", pod)
 		} else {
@@ -780,8 +780,8 @@ func (s *schedulingPlugin) reconcilePod(oldPod api.Pod) {
 		}
 		return
 	}
-	if oldPod.Spec.Host != pod.Spec.Host {
-		if pod.Spec.Host == "" {
+	if oldPod.Spec.NodeName != pod.Spec.NodeName {
+		if pod.Spec.NodeName == "" {
 			// pod is unscheduled.
 			// it's possible that we dropped the pod in the scheduler error handler
 			// because of task misalignment with the pod (task.Has(podtask.Launched) == true)

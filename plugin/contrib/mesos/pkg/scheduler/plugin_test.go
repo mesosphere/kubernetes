@@ -582,13 +582,13 @@ func TestPlugin_LifeCycle(t *testing.T) {
 
 	// 3. with pod still on the apiserver, bound i.e. host!=""
 	pod = startPod(offers1)
-	pod.Spec.Host = *offers1[0].Hostname
+	pod.Spec.NodeName = *offers1[0].Hostname
 	podListWatch.Modify(pod, false) // not notifying the watchers
 	failPodFromExecutor(launchTasks_taskInfos[0])
 
 	// 4. with pod still on the apiserver, bound i.e. host!="", notified via ListWatch
 	pod = startPod(offers1)
-	pod.Spec.Host = *offers1[0].Hostname
+	pod.Spec.NodeName = *offers1[0].Hostname
 	podListWatch.Modify(pod, true) // notifying the watchers
 	time.Sleep(time.Second / 2)
 	failPodFromExecutor(launchTasks_taskInfos[0])

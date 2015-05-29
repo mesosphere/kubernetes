@@ -609,7 +609,6 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		FailoverTimeout:      s.FailoverTimeout,
 		ReconcileInterval:    s.ReconcileInterval,
 		ReconcileCooldown:    s.ReconcileCooldown,
-		StaticPodsConfigPath: s.StaticPodsConfigPath,
 	})
 
 	masterUri := s.MesosMaster

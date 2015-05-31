@@ -212,7 +212,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		RootDirectory:      s.RootDirectory,
 		// ConfigFile: ""
 		// ManifestURL: ""
-		// FileCheckFrequency
+		FileCheckFrequency: s.FileCheckFrequency,
 		// HTTPCheckFrequency
 		PodInfraContainerImage:  s.PodInfraContainerImage,
 		SyncFrequency:           s.SyncFrequency,
@@ -352,7 +352,6 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	//TODO(jdef) either configure Watch here with something useful, or else
 	// get rid of it from executor.Config
 	kubeletFinished := make(chan struct{})
-	kubeletStarted := make(chan struct{})
 	exec := executor.New(executor.Config{
 		Kubelet:         klet,
 		Updates:         updates,
@@ -374,6 +373,11 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		},
 	})
 
+	fileSourceUpdates := pc.Channel(kubelet.FileSource)
+	go exec.InitializeStaticPodsSource(func(staticPodsConfigPath string) {
+		kconfig.NewSourceFile(staticPodsConfigPath, kc.Hostname, kc.FileCheckFrequency, fileSourceUpdates)
+	})
+
 	k := &kubeletExecutor{
 		Kubelet:         klet,
 		finished:        finished,
@@ -386,7 +390,6 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		dockerClient:    kc.DockerClient,
 		hks:             hks,
 		kubeletFinished: kubeletFinished,
-		kubeletStarted:  kubeletStarted,
 		executorDone:    exec.Done(),
 		clientConfig:    clientConfig,
 	}
@@ -406,9 +409,6 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 
 	k.BirthCry()
 	exec.Init(k.driver)
-
-	// Signal that kubelet is initialized
-	close(kubeletStarted)
 
 	k.StartGarbageCollection()
 
@@ -430,7 +430,6 @@ type kubeletExecutor struct {
 	dockerClient    dockertools.DockerInterface
 	hks             hyperkube.Interface
 	kubeletFinished chan struct{}   // closed once kubelet.Run() returns
-	kubeletStarted  chan struct{}   // closed once kubelet initialized returns
 	executorDone    <-chan struct{} // from KubeletExecutor.Done()
 	clientConfig    *client.Config
 }

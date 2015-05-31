@@ -33,6 +33,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
+	kconfig "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/config"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
@@ -42,8 +43,8 @@ import (
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
 	"github.com/mesos/mesos-go/mesosproto"
-	"github.com/stretchr/testify/assert"
 	"github.com/mesos/mesos-go/mesosutil"
+	"github.com/stretchr/testify/assert"
 )
 
 type suicideTracker struct {
@@ -394,7 +395,7 @@ func TestExecutorStaticPods(t *testing.T) {
 	// create some zip with static pod definition
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	createStaticPodFile := func (fileName string, id string, name string) {
+	createStaticPodFile := func(fileName string, id string, name string) {
 		w, err := zw.Create(fileName)
 		assert.NoError(t, err)
 		spod := `{
@@ -446,10 +447,9 @@ func TestExecutorStaticPods(t *testing.T) {
 
 	mockDriver := &MockExecutorDriver{}
 	updates := make(chan interface{}, 1024)
-	kubeletStarted := make(chan struct{})
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: updates,
+		Updates: make(chan interface{}, 1), // allow kube-executor source to proceed past init
 		APIClient: client.NewOrDie(&client.Config{
 			Host:    testApiServer.server.URL,
 			Version: testapi.Version(),
@@ -470,9 +470,10 @@ func TestExecutorStaticPods(t *testing.T) {
 		},
 	}
 	executor := New(config)
-
-	// overwrite kubeletStarted which originally came from the service
-	executor.kubeletStarted = kubeletStarted
+	hostname := "h1"
+	go executor.InitializeStaticPodsSource(func(staticPodsConfigPath string) {
+		kconfig.NewSourceFile(staticPodsConfigPath, hostname, 1*time.Second, updates)
+	})
 
 	// create ExecutorInfo with static pod zip in data field
 	executorInfo := mesosutil.NewExecutorInfo(
@@ -483,16 +484,12 @@ func TestExecutorStaticPods(t *testing.T) {
 
 	// start the executor with the static pod data
 	executor.Init(mockDriver)
-	hostname := "h1"
-	executor.Registered(mockDriver, executorInfo, nil, &mesosproto.SlaveInfo{Hostname: &hostname})
-
-	// fake kubelet to be initialized => static pods are created
-	close(kubeletStarted)
+	executor.Registered(mockDriver, executorInfo, nil, nil)
 
 	// wait for static pod to start
 	seenPods := map[string]struct{}{}
 	done := make(chan struct{})
-	go func () {
+	go func() {
 		for {
 			// filter by PodUpdate type
 			select {
@@ -504,7 +501,7 @@ func TestExecutorStaticPods(t *testing.T) {
 				case kubelet.PodUpdate:
 					// register the seen pods by name
 					podUpdate := update.(kubelet.PodUpdate)
-					for _, pod := range(podUpdate.Pods) {
+					for _, pod := range podUpdate.Pods {
 						seenPods[pod.Name] = struct{}{}
 					}
 					if len(seenPods) == expectedStaticPodsNum {
@@ -516,7 +513,7 @@ func TestExecutorStaticPods(t *testing.T) {
 	}()
 
 	select {
-	case <- done:
+	case <-done:
 	case <-time.After(time.Second):
 		t.Fatalf("Executor should send pod updates for %v pods, only saw %v", expectedStaticPodsNum, len(seenPods))
 	}
@@ -530,6 +527,7 @@ func TestExecutorStaticPods(t *testing.T) {
 // its state.  When a Kamikaze message is received, the executor should
 // attempt suicide.
 func TestExecutorFrameworkMessage(t *testing.T) {
+	//TODO(jdef) this test can be flaky, unexpected driver.SendStatusUpdate calls w/ TASK_LOST
 	mockDriver := &MockExecutorDriver{}
 	kubeletFinished := make(chan struct{})
 	config := Config{

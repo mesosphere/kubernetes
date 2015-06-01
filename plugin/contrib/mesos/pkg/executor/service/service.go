@@ -18,7 +18,6 @@ package service
 
 import (
 	"bufio"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"math/rand"
@@ -184,20 +183,10 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		return err
 	}
 
-	var tlsOptions *kubelet.TLSOptions
-	if s.TLSCertFile != "" && s.TLSPrivateKeyFile != "" {
-		tlsOptions = &kubelet.TLSOptions{
-			Config: &tls.Config{
-				// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
-				MinVersion: tls.VersionTLS10,
-				// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
-				ClientAuth: tls.RequestClientCert,
-			},
-			CertFile: s.TLSCertFile,
-			KeyFile:  s.TLSPrivateKeyFile,
-		}
+	tlsOptions, err := s.InitializeTLS()
+	if err != nil {
+		return err
 	}
-
 	mounter := mount.New()
 	if s.Containerized {
 		log.V(2).Info("Running kubelet in containerized mode (experimental)")
@@ -214,17 +203,17 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		// ManifestURL: ""
 		// FileCheckFrequency
 		// HTTPCheckFrequency
-		PodInfraContainerImage:  s.PodInfraContainerImage,
-		SyncFrequency:           s.SyncFrequency,
-		RegistryPullQPS:         s.RegistryPullQPS,
-		RegistryBurst:           s.RegistryBurst,
-		MinimumGCAge:            s.MinimumGCAge,
-		MaxPerPodContainerCount: s.MaxPerPodContainerCount,
-		MaxContainerCount:       s.MaxContainerCount,
-		RegisterNode:            s.RegisterNode,
-		ClusterDomain:           s.ClusterDomain,
-		ClusterDNS:              s.ClusterDNS,
-		// RunOnce: false
+		PodInfraContainerImage:         s.PodInfraContainerImage,
+		SyncFrequency:                  s.SyncFrequency,
+		RegistryPullQPS:                s.RegistryPullQPS,
+		RegistryBurst:                  s.RegistryBurst,
+		MinimumGCAge:                   s.MinimumGCAge,
+		MaxPerPodContainerCount:        s.MaxPerPodContainerCount,
+		MaxContainerCount:              s.MaxContainerCount,
+		RegisterNode:                   s.RegisterNode,
+		ClusterDomain:                  s.ClusterDomain,
+		ClusterDNS:                     s.ClusterDNS,
+		Runonce:                        s.RunOnce,
 		Port:                           s.Port,
 		ReadOnlyPort:                   s.ReadOnlyPort,
 		CadvisorInterface:              cadvisorInterface,
@@ -247,13 +236,13 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		ContainerRuntime:          s.ContainerRuntime,
 		Mounter:                   mounter,
 		DockerDaemonContainer:     s.DockerDaemonContainer,
+		SystemContainer:           s.SystemContainer,
 		ConfigureCBR0:             s.ConfigureCBR0,
 		MaxPods:                   s.MaxPods,
 	}
 
-	finished := make(chan struct{})
 	err = app.RunKubelet(&kcfg, app.KubeletBuilder(func(kc *app.KubeletConfig) (app.KubeletBootstrap, *kconfig.PodConfig, error) {
-		return s.createAndInitKubelet(kc, hks, clientConfig, shutdownCloser, finished)
+		return s.createAndInitKubelet(kc, hks, clientConfig, shutdownCloser)
 	}))
 	if err != nil {
 		return err
@@ -287,7 +276,6 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	hks hyperkube.Interface,
 	clientConfig *client.Config,
 	shutdownCloser io.Closer,
-	finished chan struct{},
 ) (app.KubeletBootstrap, *kconfig.PodConfig, error) {
 
 	// TODO(k8s): block until all sources have delivered at least one update to the channel, or break the sync loop
@@ -342,6 +330,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		kc.ContainerRuntime,
 		kc.Mounter,
 		kc.DockerDaemonContainer,
+		kc.SystemContainer,
 		kc.ConfigureCBR0,
 		kc.MaxPods,
 	)
@@ -375,7 +364,6 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 
 	k := &kubeletExecutor{
 		Kubelet:         klet,
-		finished:        finished,
 		runProxy:        ks.RunProxy,
 		proxyLogV:       ks.ProxyLogV,
 		proxyExec:       ks.ProxyExec,
@@ -415,7 +403,6 @@ type kubeletExecutor struct {
 	*kubelet.Kubelet
 	initialize      sync.Once
 	driver          bindings.ExecutorDriver
-	finished        chan struct{} // closed once driver.Run() completes
 	runProxy        bool
 	proxyLogV       int
 	proxyExec       string
@@ -437,7 +424,6 @@ func (kl *kubeletExecutor) ListenAndServe(address net.IP, port uint, tlsOptions 
 			go runtime.Until(kl.runProxyService, 5*time.Second, kl.executorDone)
 		}
 		go func() {
-			defer close(kl.finished)
 			if _, err := kl.driver.Run(); err != nil {
 				log.Fatalf("executor driver failed: %v", err)
 			}

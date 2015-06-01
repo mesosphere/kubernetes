@@ -52,6 +52,7 @@ import (
 	bindings "github.com/mesos/mesos-go/executor"
 
 	"github.com/spf13/pflag"
+	"path/filepath"
 )
 
 const (
@@ -352,6 +353,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	//TODO(jdef) either configure Watch here with something useful, or else
 	// get rid of it from executor.Config
 	kubeletFinished := make(chan struct{})
+	staticPodsConfigPath := filepath.Join(".", "static-pods")
 	exec := executor.New(executor.Config{
 		Kubelet:         klet,
 		Updates:         updates,
@@ -371,10 +373,11 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		PodStatusFunc: func(kl *kubelet.Kubelet, pod *api.Pod) (api.PodStatus, error) {
 			return kl.GeneratePodStatus(pod)
 		},
+		StaticPodsConfigPath: staticPodsConfigPath,
 	})
 
 	fileSourceUpdates := pc.Channel(kubelet.FileSource)
-	go exec.InitializeStaticPodsSource(func(staticPodsConfigPath string) {
+	go exec.InitializeStaticPodsSource(func() {
 		kconfig.NewSourceFile(staticPodsConfigPath, kc.Hostname, kc.FileCheckFrequency, fileSourceUpdates)
 	})
 

@@ -20,8 +20,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -445,6 +447,11 @@ func TestExecutorStaticPods(t *testing.T) {
 	testApiServer := NewTestServer(t, api.NamespaceDefault, nil)
 	defer testApiServer.server.Close()
 
+	// temporary directory which is normally located in the executor sandbox
+	staticPodsConfigPath, err := ioutil.TempDir("/tmp", "executor-k8sm-archive")
+	assert.NoError(t, err)
+	defer os.RemoveAll(staticPodsConfigPath)
+
 	mockDriver := &MockExecutorDriver{}
 	updates := make(chan interface{}, 1024)
 	config := Config{
@@ -468,10 +475,11 @@ func TestExecutorStaticPods(t *testing.T) {
 				Phase: api.PodRunning,
 			}, nil
 		},
+		StaticPodsConfigPath: staticPodsConfigPath,
 	}
 	executor := New(config)
 	hostname := "h1"
-	go executor.InitializeStaticPodsSource(func(staticPodsConfigPath string) {
+	go executor.InitializeStaticPodsSource(func() {
 		kconfig.NewSourceFile(staticPodsConfigPath, hostname, 1*time.Second, updates)
 	})
 

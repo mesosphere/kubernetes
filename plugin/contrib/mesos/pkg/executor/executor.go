@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -107,41 +106,43 @@ type podStatusFunc func() (api.PodStatus, error)
 // KubernetesExecutor is an mesos executor that runs pods
 // in a minion machine.
 type KubernetesExecutor struct {
-	kl                  *kubelet.Kubelet // the kubelet instance.
-	updateChan          chan<- interface{}
-	state               stateType
-	tasks               map[string]*kuberTask
-	pods                map[string]*api.Pod
-	lock                sync.RWMutex
-	sourcename          string
-	client              *client.Client
-	events              <-chan watch.Event
-	done                chan struct{} // signals shutdown
-	outgoing            chan func() (mesos.Status, error)
-	dockerClient        dockertools.DockerInterface
-	suicideWatch        suicideWatcher
-	suicideTimeout      time.Duration
-	shutdownAlert       func()          // invoked just prior to executor shutdown
-	kubeletFinished     <-chan struct{} // signals that kubelet Run() died
-	initialRegistration sync.Once
-	exitFunc            func(int)
-	podStatusFunc       func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
-	staticPodsConfig    []byte
-	initialRegComplete  chan struct{}
+	kl                   *kubelet.Kubelet // the kubelet instance.
+	updateChan           chan<- interface{}
+	state                stateType
+	tasks                map[string]*kuberTask
+	pods                 map[string]*api.Pod
+	lock                 sync.RWMutex
+	sourcename           string
+	client               *client.Client
+	events               <-chan watch.Event
+	done                 chan struct{} // signals shutdown
+	outgoing             chan func() (mesos.Status, error)
+	dockerClient         dockertools.DockerInterface
+	suicideWatch         suicideWatcher
+	suicideTimeout       time.Duration
+	shutdownAlert        func()          // invoked just prior to executor shutdown
+	kubeletFinished      <-chan struct{} // signals that kubelet Run() died
+	initialRegistration  sync.Once
+	exitFunc             func(int)
+	podStatusFunc        func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	staticPodsConfig     []byte
+	staticPodsConfigPath string
+	initialRegComplete   chan struct{}
 }
 
 type Config struct {
-	Kubelet         *kubelet.Kubelet
-	Updates         chan<- interface{}
-	SourceName      string
-	APIClient       *client.Client
-	Watch           watch.Interface
-	Docker          dockertools.DockerInterface
-	ShutdownAlert   func()
-	SuicideTimeout  time.Duration
-	KubeletFinished <-chan struct{}
-	ExitFunc        func(int)
-	PodStatusFunc   func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	Kubelet              *kubelet.Kubelet
+	Updates              chan<- interface{}
+	SourceName           string
+	APIClient            *client.Client
+	Watch                watch.Interface
+	Docker               dockertools.DockerInterface
+	ShutdownAlert        func()
+	SuicideTimeout       time.Duration
+	KubeletFinished      <-chan struct{}
+	ExitFunc             func(int)
+	PodStatusFunc        func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
+	StaticPodsConfigPath string
 }
 
 func (k *KubernetesExecutor) isConnected() bool {
@@ -151,23 +152,24 @@ func (k *KubernetesExecutor) isConnected() bool {
 // New creates a new kubernetes executor.
 func New(config Config) *KubernetesExecutor {
 	k := &KubernetesExecutor{
-		kl:                 config.Kubelet,
-		updateChan:         config.Updates,
-		state:              disconnectedState,
-		tasks:              make(map[string]*kuberTask),
-		pods:               make(map[string]*api.Pod),
-		sourcename:         config.SourceName,
-		client:             config.APIClient,
-		done:               make(chan struct{}),
-		outgoing:           make(chan func() (mesos.Status, error), 1024),
-		dockerClient:       config.Docker,
-		suicideTimeout:     config.SuicideTimeout,
-		kubeletFinished:    config.KubeletFinished,
-		suicideWatch:       &suicideTimer{},
-		shutdownAlert:      config.ShutdownAlert,
-		exitFunc:           config.ExitFunc,
-		podStatusFunc:      config.PodStatusFunc,
-		initialRegComplete: make(chan struct{}),
+		kl:                   config.Kubelet,
+		updateChan:           config.Updates,
+		state:                disconnectedState,
+		tasks:                make(map[string]*kuberTask),
+		pods:                 make(map[string]*api.Pod),
+		sourcename:           config.SourceName,
+		client:               config.APIClient,
+		done:                 make(chan struct{}),
+		outgoing:             make(chan func() (mesos.Status, error), 1024),
+		dockerClient:         config.Docker,
+		suicideTimeout:       config.SuicideTimeout,
+		kubeletFinished:      config.KubeletFinished,
+		suicideWatch:         &suicideTimer{},
+		shutdownAlert:        config.ShutdownAlert,
+		exitFunc:             config.ExitFunc,
+		podStatusFunc:        config.PodStatusFunc,
+		initialRegComplete:   make(chan struct{}),
+		staticPodsConfigPath: config.StaticPodsConfigPath,
 	}
 	//TODO(jdef) do something real with these events..
 	if config.Watch != nil {
@@ -248,38 +250,41 @@ func (k *KubernetesExecutor) onInitialRegistration() {
 	}
 }
 
-// InitializeStaticPodsSource blocks until initial regstration is complete and then creates a static pod source
-// using the given factory func.
-func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func(string)) {
+// InitializeStaticPodsSource blocks until initial regstration is complete and
+// then creates a static pod source using the given factory func.
+func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func()) {
 	<-k.initialRegComplete
-	staticPodsConfigPath := k.extractStaticPodConfig()
-	if staticPodsConfigPath != "" {
-		log.V(2).Infof("initializing static pods source factory, configured at path %q", staticPodsConfigPath)
-		sourceFactory(staticPodsConfigPath)
+
+	if k.staticPodsConfig == nil {
+		return
 	}
+
+	err := k.extractStaticPodConfig()
+	if err != nil {
+		log.Errorf("Extraction of static pods failed: %v", err)
+		return
+	}
+
+	log.V(2).Infof("initializing static pods source factory, configured at path %q", k.staticPodsConfigPath)
+	sourceFactory()
 }
 
-// ExtractStaticPodConfig extracts a compressed archive from k.staticPodsConfig and returns
-// the path to the extracted configuration. any errors are logged and result in returning ""
-func (k *KubernetesExecutor) extractStaticPodConfig() string {
-	if k.staticPodsConfig == nil {
-		return ""
-	}
+// ExtractStaticPodConfig extracts a compressed archive from k.staticPodsConfig
+// into k.staticPodsConfigPath.
+func (k *KubernetesExecutor) extractStaticPodConfig() error {
+	log.Infof("Extract staticPods config to %s.", k.staticPodsConfigPath)
 
-	// extract to local sendBox so it is automatically cleaned up
-	dir, err := ioutil.TempDir(".", "executor-k8sm-archive")
+	// create target root directory
+	err := os.MkdirAll(k.staticPodsConfigPath, 0755)
 	if err != nil {
-		log.Errorf("Failed to create temp dir for staticPods config: %v", err)
-		return ""
+		return fmt.Errorf("Could not create static pods config file directory %v: %v", k.staticPodsConfigPath, err)
 	}
 
-	log.Infof("Extract staticPods config to %s.", dir)
-
+	// open zip
 	data := k.staticPodsConfig
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		log.Errorf("Could not read staticPods config Files from ExecutorInfo: %v", err)
-		return ""
+		return fmt.Errorf("Could not read static pods config files from ExecutorInfo: %v", err)
 	}
 
 	for _, file := range zr.File {
@@ -291,36 +296,31 @@ func (k *KubernetesExecutor) extractStaticPodConfig() string {
 		// open file
 		rc, err := file.Open()
 		if err != nil {
-			log.Errorf("Could not retrieve archieved staticPods configfile %v: %v", file.Name, err)
-			return ""
+			return fmt.Errorf("Could not retrieve archieved static pods config file %v: %v", file.Name, err)
 		}
 
 		// make sure the directory of the file exists, otherwise create
-		destPath := filepath.Clean(filepath.Join(dir, file.Name))
+		destPath := filepath.Clean(filepath.Join(k.staticPodsConfigPath, file.Name))
 		destBasedir := path.Dir(destPath)
-		if _, err := os.Stat(destBasedir); err != nil {
-			err = os.MkdirAll(destBasedir, 0755)
-			if err != nil {
-				log.Errorf("Could not create staticPods configFile directory %v: %v", destBasedir, err)
-				return ""
-			}
+		err = os.MkdirAll(destBasedir, 0755)
+		if err != nil {
+			return fmt.Errorf("Could not create static pods config directory %v: %v", destBasedir, err)
 		}
 
 		// create file
 		f, err := os.Create(destPath)
 		if err != nil {
-			log.Errorf("Could not create staticPods configFile %v: %v", destPath, err)
-			return ""
+			return fmt.Errorf("Could not create static pods config file %v: %v", destPath, err)
 		}
 		defer f.Close()
 
 		// write file
 		if _, err := io.Copy(f, rc); err != nil {
-			log.Errorf("Could not write staticPods configFile %v: %v", destPath, err)
-			return ""
+			return fmt.Errorf("Could not write static pods config file %v: %v", destPath, err)
 		}
 	}
-	return dir
+
+	return nil
 }
 
 // Disconnected is called when the executor is disconnected with the slave.

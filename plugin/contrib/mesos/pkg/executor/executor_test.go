@@ -35,12 +35,14 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
+	kmruntime "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
 
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
 	"github.com/mesos/mesos-go/mesosproto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 type suicideTracker struct {
@@ -336,16 +338,20 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 	data, err := testapi.Codec().Encode(pod)
 	assert.Equal(t, nil, err, "must be able to encode a pod's spec data")
 	taskInfo.Data = data
+	var statusUpdateCalls sync.WaitGroup
+	statusUpdateDone := func(_ mock.Arguments) { statusUpdateCalls.Done() }
 
+	statusUpdateCalls.Add(1)
 	mockDriver.On(
 		"SendStatusUpdate",
 		mesosproto.TaskState_TASK_STARTING,
-	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(statusUpdateDone).Once()
 
+	statusUpdateCalls.Add(1)
 	mockDriver.On(
 		"SendStatusUpdate",
 		mesosproto.TaskState_TASK_RUNNING,
-	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(statusUpdateDone).Once()
 
 	executor.LaunchTask(mockDriver, taskInfo)
 	assert.Equal(t, 1, len(executor.tasks),
@@ -369,10 +375,11 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 		"the executor should send an update about a new pod to "+
 			"the updates chan when creating a new one.")
 
+	statusUpdateCalls.Add(1)
 	mockDriver.On(
 		"SendStatusUpdate",
 		mesosproto.TaskState_TASK_KILLED,
-	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(statusUpdateDone).Once()
 
 	executor.KillTask(mockDriver, taskInfo.TaskId)
 	assert.Equal(t, 0, len(executor.tasks),
@@ -381,7 +388,12 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 		"executor must be able to kill a created pod")
 
 	// Allow some time for asynchronous requests to the driver.
-	time.Sleep(time.Second)
+	finished := kmruntime.After(statusUpdateCalls.Wait)
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for status update calls to finish")
+	}
 	mockDriver.AssertExpectations(t)
 }
 
@@ -424,16 +436,28 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 	executor.LaunchTask(mockDriver, taskInfo)
 
 	// send task-lost message for it
+	called := make(chan struct{})
+	mockDriver.On(
+		"SendStatusUpdate",
+		mesosproto.TaskState_TASK_LOST,
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(func(_ mock.Arguments) { close(called) }).Once()
+
 	executor.FrameworkMessage(mockDriver, "task-lost:foo")
 	assert.Equal(t, 0, len(executor.tasks),
 		"executor must clean up task state when it is lost")
 
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for SendStatusUpdate")
+	}
+
 	mockDriver.On("Stop").Return(mesosproto.Status_DRIVER_STOPPED, nil).Once()
+
 	executor.FrameworkMessage(mockDriver, messages.Kamikaze)
 	assert.Equal(t, true, executor.isDone(),
 		"executor should have shut down after receiving a Kamikaze message")
 
-	time.Sleep(350 * time.Millisecond)
 	mockDriver.AssertExpectations(t)
 }
 
@@ -564,12 +588,18 @@ func TestExecutorsendFrameworkMessage(t *testing.T) {
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
 
+	called := make(chan struct{})
 	mockDriver.On(
 		"SendFrameworkMessage",
 		"foo bar baz",
-	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Once()
+	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(func(_ mock.Arguments) { close(called) }).Once()
 	executor.sendFrameworkMessage(mockDriver, "foo bar baz")
 
-	time.Sleep(350 * time.Millisecond)
+	// guard against data race in mock driver between AssertExpectations and Called
+	select {
+	case <-called: // expected
+	case <-time.After(5 * time.Second):
+		t.Fatalf("expected call to SendFrameworkMessage")
+	}
 	mockDriver.AssertExpectations(t)
 }

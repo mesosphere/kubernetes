@@ -269,7 +269,7 @@ func (k *KubernetesExecutor) extractStaticPodConfig() string {
 	// extract to local sendBox so it is automatically cleaned up
 	dir, err := ioutil.TempDir(".", "executor-k8sm-archive")
 	if err != nil {
-		log.Errorf("Failed to create temp dir for staticPods config.")
+		log.Errorf("Failed to create temp dir for staticPods config: %v", err)
 		return ""
 	}
 
@@ -278,7 +278,7 @@ func (k *KubernetesExecutor) extractStaticPodConfig() string {
 	data := k.staticPodsConfig
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		log.Errorf("Could not read staticPods config Files from ExecutorInfo.")
+		log.Errorf("Could not read staticPods config Files from ExecutorInfo: %v", err)
 		return ""
 	}
 
@@ -291,7 +291,7 @@ func (k *KubernetesExecutor) extractStaticPodConfig() string {
 		// open file
 		rc, err := file.Open()
 		if err != nil {
-			log.Errorf("Could not retrieve archieved staticPods configfile %v.", file.Name)
+			log.Errorf("Could not retrieve archieved staticPods configfile %v: %v", file.Name, err)
 			return ""
 		}
 
@@ -301,7 +301,7 @@ func (k *KubernetesExecutor) extractStaticPodConfig() string {
 		if _, err := os.Stat(destBasedir); err != nil {
 			err = os.MkdirAll(destBasedir, 0755)
 			if err != nil {
-				log.Errorf("Could not create staticPods configFile directory %v.", destBasedir)
+				log.Errorf("Could not create staticPods configFile directory %v: %v", destBasedir, err)
 				return ""
 			}
 		}
@@ -309,14 +309,14 @@ func (k *KubernetesExecutor) extractStaticPodConfig() string {
 		// create file
 		f, err := os.Create(destPath)
 		if err != nil {
-			log.Errorf("Could not create staticPods configFile %v.", destPath)
+			log.Errorf("Could not create staticPods configFile %v: %v", destPath, err)
 			return ""
 		}
 		defer f.Close()
 
 		// write file
 		if _, err := io.Copy(f, rc); err != nil {
-			log.Errorf("Could not write staticPods configFile %v.", destPath, err)
+			log.Errorf("Could not write staticPods configFile %v: %v", destPath, err)
 			return ""
 		}
 	}

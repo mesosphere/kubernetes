@@ -90,7 +90,8 @@ func ZipDirectory(path string) ([]byte, int, error) {
 	return buf.Bytes(), numberManifests, nil
 }
 
-// UnzipDirectory unzips all files from a given zip byte array.
+// UnzipDirectory unzips all files from a given zip byte array into a given directory.
+// The directory is created if it does not exist yet.
 func UnzipDirectory(data []byte, destPath string) error {
 	// open zip
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))

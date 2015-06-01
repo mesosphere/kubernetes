@@ -17,12 +17,9 @@ limitations under the License.
 package scheduler
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	goruntime "runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,7 +28,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	kutil "github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
@@ -52,19 +48,20 @@ import (
 // A apiserver mock which partially mocks the pods API
 type TestServer struct {
 	server *httptest.Server
-	Stats  map[string]uint
+	stats  map[string]uint
 	lock   sync.Mutex
 }
 
-func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServer {
+func NewTestServer(t *testing.T, namespace string, mockPodListWatch *MockPodsListWatch) *TestServer {
 	ts := TestServer{
-		Stats: map[string]uint{},
+		stats: map[string]uint{},
 	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(testapi.ResourcePath("pods", namespace, ""), func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), pods)))
+		pods := mockPodListWatch.Pods()
+		w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), &pods)))
 	})
 
 	podsPrefix := testapi.ResourcePath("pods", namespace, "") + "/"
@@ -74,14 +71,13 @@ func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServe
 		// update statistics for this pod
 		ts.lock.Lock()
 		defer ts.lock.Unlock()
-		ts.Stats[name] = ts.Stats[name] + 1
+		ts.stats[name] = ts.stats[name] + 1
 
-		for _, p := range pods.Items {
-			if p.Name == name {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), &p)))
-				return
-			}
+		p := mockPodListWatch.GetPod(name)
+		if p != nil {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(runtime.EncodeOrDie(testapi.Codec(), p)))
+			return
 		}
 		w.WriteHeader(http.StatusNotFound)
 	})
@@ -98,12 +94,19 @@ func NewTestServer(t *testing.T, namespace string, pods *api.PodList) *TestServe
 	ts.server = httptest.NewServer(mux)
 	return &ts
 }
+func (ts *TestServer) Stats(name string) uint {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+
+	return ts.stats[name]
+}
 
 // Create mock of pods ListWatch, usually listening on the apiserver pods watch endpoint
 type MockPodsListWatch struct {
 	ListWatch   cache.ListWatch
 	fakeWatcher *watch.FakeWatcher
 	list        api.PodList
+	lock        sync.Mutex
 }
 
 func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
@@ -121,13 +124,37 @@ func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
 	}
 	return &lw
 }
+func (lw *MockPodsListWatch) Pods() api.PodList {
+	lw.lock.Lock()
+	defer lw.lock.Unlock()
+
+	return lw.list
+}
+func (lw *MockPodsListWatch) GetPod(name string) *api.Pod {
+	lw.lock.Lock()
+	defer lw.lock.Unlock()
+
+	for _, p := range lw.list.Items {
+		if p.Name == name {
+			return &p
+		}
+	}
+
+	return nil
+}
 func (lw *MockPodsListWatch) Add(pod *api.Pod, notify bool) {
+	lw.lock.Lock()
+	defer lw.lock.Unlock()
+
 	lw.list.Items = append(lw.list.Items, *pod)
 	if notify {
 		lw.fakeWatcher.Add(pod)
 	}
 }
 func (lw *MockPodsListWatch) Modify(pod *api.Pod, notify bool) {
+	lw.lock.Lock()
+	defer lw.lock.Unlock()
+
 	for i, otherPod := range lw.list.Items {
 		if otherPod.Name == pod.Name {
 			lw.list.Items[i] = *pod
@@ -140,6 +167,9 @@ func (lw *MockPodsListWatch) Modify(pod *api.Pod, notify bool) {
 	log.Fatalf("Cannot find pod %v to modify in MockPodsListWatch", pod.Name)
 }
 func (lw *MockPodsListWatch) Delete(pod *api.Pod, notify bool) {
+	lw.lock.Lock()
+	defer lw.lock.Unlock()
+
 	for i, otherPod := range lw.list.Items {
 		if otherPod.Name == pod.Name {
 			lw.list.Items = append(lw.list.Items[:i], lw.list.Items[i+1:]...)
@@ -160,7 +190,7 @@ func NewTestPod(i int) *api.Pod {
 		ObjectMeta: api.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
-			SelfLink:  fmt.Sprintf("http://1.2.3.4/api/v1beta1/pods/%v", i),
+			SelfLink:  fmt.Sprintf("http://1.2.3.4/api/v1beta1/pods/%s", name),
 		},
 		Spec: api.PodSpec{
 			Containers: []api.Container{
@@ -216,28 +246,24 @@ type EventAssertions struct {
 	assert.Assertions
 }
 
+// EventObserver implements record.EventRecorder for the purposes of validation via EventAssertions.
 type EventObserver struct {
-	recorder record.EventRecorder
-	fifo     chan Event
+	fifo chan Event
 }
 
-func NewEventObserver(recorder record.EventRecorder) *EventObserver {
+func NewEventObserver() *EventObserver {
 	return &EventObserver{
-		recorder: recorder,
-		fifo:     make(chan Event, 1000),
+		fifo: make(chan Event, 1000),
 	}
 }
 func (o *EventObserver) Event(object runtime.Object, reason, message string) {
 	o.fifo <- Event{Object: object, Reason: reason, Message: message}
-	o.recorder.Event(object, reason, message)
 }
 func (o *EventObserver) Eventf(object runtime.Object, reason, messageFmt string, args ...interface{}) {
 	o.fifo <- Event{Object: object, Reason: reason, Message: fmt.Sprintf(messageFmt, args...)}
-	o.recorder.Eventf(object, reason, messageFmt, args...)
 }
 func (o *EventObserver) PastEventf(object runtime.Object, timestamp kutil.Time, reason, messageFmt string, args ...interface{}) {
 	o.fifo <- Event{Object: object, Reason: reason, Message: fmt.Sprintf(messageFmt, args...)}
-	o.recorder.PastEventf(object, timestamp, reason, messageFmt, args...)
 }
 
 func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, msgAndArgs ...interface{}) bool {
@@ -312,67 +338,17 @@ func (a *EventAssertions) EventuallyTrue(timeout time.Duration, fn func() bool, 
 	}
 }
 
-// Extend the MockSchedulerDriver with a blocking Join method
-type StatefullMockSchedulerDriver struct {
+type joinableDriver struct {
 	MockSchedulerDriver
-	stopped chan struct{}
-	aborted chan struct{}
-	status  mesos.Status
+	joinFunc func() (mesos.Status, error)
 }
 
-func (m *StatefullMockSchedulerDriver) implementationCalled(arguments ...interface{}) {
-	// get the calling function's name
-	pc, _, _, ok := goruntime.Caller(1)
-	if !ok {
-		panic("Couldn't get the caller information")
+// Join invokes joinFunc if it has been set, otherwise blocks forever
+func (m *joinableDriver) Join() (mesos.Status, error) {
+	if m.joinFunc != nil {
+		return m.joinFunc()
 	}
-	functionPath := goruntime.FuncForPC(pc).Name()
-	parts := strings.Split(functionPath, ".")
-	functionName := parts[len(parts)-1]
-
-	// only register the call, not expected call processing
-	m.Calls = append(m.Calls, mock.Call{functionName, arguments, make([]interface{}, 0), 0, nil, nil})
-}
-func (m *StatefullMockSchedulerDriver) Start() (mesos.Status, error) {
-	m.implementationCalled()
-	if m.status != mesos.Status_DRIVER_NOT_STARTED {
-		return m.status, errors.New("cannot start driver which isn't in status NOT_STARTED")
-	}
-	m.status = mesos.Status_DRIVER_RUNNING
-	return m.status, nil
-}
-func (m *StatefullMockSchedulerDriver) Stop(b bool) (mesos.Status, error) {
-	m.implementationCalled(b)
-	close(m.stopped)
-	m.status = mesos.Status_DRIVER_STOPPED
-	return m.status, nil
-}
-func (m *StatefullMockSchedulerDriver) Abort() (mesos.Status, error) {
-	m.implementationCalled()
-	close(m.aborted)
-	m.status = mesos.Status_DRIVER_ABORTED
-	return m.status, nil
-}
-func (m *StatefullMockSchedulerDriver) Join() (mesos.Status, error) {
-	m.implementationCalled()
-	select {
-	case <-m.stopped:
-		log.Info("JoinableMockSchedulerDriver stopped")
-		return mesos.Status_DRIVER_STOPPED, nil
-	case <-m.aborted:
-		log.Info("JoinableMockSchedulerDriver aborted")
-		return mesos.Status_DRIVER_ABORTED, nil
-	}
-	return mesos.Status_DRIVER_ABORTED, errors.New("unknown reason for join")
-}
-func (m *StatefullMockSchedulerDriver) CallsFor(methodName string) []*mock.Call {
-	methodCalls := []*mock.Call{}
-	for _, c := range m.Calls {
-		if c.Method == methodName {
-			methodCalls = append(methodCalls, &c)
-		}
-	}
-	return methodCalls
+	select {}
 }
 
 // Create mesos.TaskStatus for a given task
@@ -411,7 +387,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	podListWatch := NewMockPodsListWatch(api.PodList{})
 
 	// create fake apiserver
-	testApiServer := NewTestServer(t, api.NamespaceDefault, &podListWatch.list)
+	testApiServer := NewTestServer(t, api.NamespaceDefault, podListWatch)
 	defer testApiServer.server.Close()
 
 	// create scheduler
@@ -437,7 +413,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	assert.NotNil(c)
 
 	// make events observable
-	eventObserver := NewEventObserver(c.Recorder)
+	eventObserver := NewEventObserver()
 	c.Recorder = eventObserver
 
 	// create plugin
@@ -453,47 +429,45 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	assert.NoError(err)
 
 	// create mock mesos scheduler driver
-	mockDriver := StatefullMockSchedulerDriver{
-		status: mesos.Status_DRIVER_NOT_STARTED,
-	}
-	var launchTasks_taskInfos []*mesos.TaskInfo
+	mockDriver := &joinableDriver{}
+	mockDriver.On("Start").Return(mesos.Status_DRIVER_RUNNING, nil).Once()
+	started := mockDriver.Upon()
 
-	mockDriver.On("ReconcileTasks", mock.AnythingOfType("[]*mesosproto.TaskStatus")).Return(mockDriver.status, nil)
-	mockDriver.On("SendFrameworkMessage",
-		mock.AnythingOfType("*mesosproto.ExecutorID"),
-		mock.AnythingOfType("*mesosproto.SlaveID"),
-		mock.AnythingOfType("string"),
-	).Return(mockDriver.status, nil)
-	mockDriver.On("LaunchTasks",
-		mock.AnythingOfType("[]*mesosproto.OfferID"),
-		mock.AnythingOfType("[]*mesosproto.TaskInfo"),
-		mock.AnythingOfType("*mesosproto.Filters"),
-	).Return(mockDriver.status, nil).Run(func(args mock.Arguments) {
-		launchTasks_taskInfos = args.Get(1).([]*mesos.TaskInfo)
-	})
-	mockDriver.On("KillTask",
-		mock.AnythingOfType("*mesosproto.TaskID"),
-	).Return(mockDriver.status, nil)
+	mAny := mock.AnythingOfType
+	mockDriver.On("ReconcileTasks", mAny("[]*mesosproto.TaskStatus")).Return(mesos.Status_DRIVER_RUNNING, nil)
+	mockDriver.On("SendFrameworkMessage", mAny("*mesosproto.ExecutorID"), mAny("*mesosproto.SlaveID"), mAny("string")).
+		Return(mesos.Status_DRIVER_RUNNING, nil)
+
+	launchedTasks := make(chan *mesos.TaskInfo, 1)
+	launchTasksCalledFunc := func(args mock.Arguments) {
+		taskInfos := args.Get(1).([]*mesos.TaskInfo)
+		assert.Equal(1, len(taskInfos))
+		launchedTasks <- taskInfos[0]
+	}
+	mockDriver.On("LaunchTasks", mAny("[]*mesosproto.OfferID"), mAny("[]*mesosproto.TaskInfo"), mAny("*mesosproto.Filters")).
+		Return(mesos.Status_DRIVER_RUNNING, nil).Run(launchTasksCalledFunc)
 
 	// elect master with mock driver
 	driverFactory := ha.DriverFactory(func() (bindings.SchedulerDriver, error) {
-		return &mockDriver, nil
+		return mockDriver, nil
 	})
 	schedulerProcess.Elect(driverFactory)
 	elected := schedulerProcess.Elected()
 
 	// driver will be started
-	assert.EventuallyTrue(time.Second, func() bool { return len(mockDriver.CallsFor("Start")) > 0 })
+	<-started
 
 	// tell scheduler to be registered
 	testScheduler.Registered(
-		&mockDriver,
+		mockDriver,
 		util.NewFrameworkID("kubernetes-id"),
 		util.NewMasterInfo("master-id", (192<<24)+(168<<16)+(0<<8)+1, 5050),
 	)
 
 	// wait for being elected
-	_ = <-elected
+	<-elected
+
+	//TODO(jdef) refactor things above here into a test suite setup of some sort
 
 	// fake new, unscheduled pod
 	pod1 := NewTestPod(1)
@@ -508,50 +482,68 @@ func TestPlugin_LifeCycle(t *testing.T) {
 
 	// and wait for scheduled pod
 	assert.EventWithReason(eventObserver, "scheduled")
-	mockDriver.AssertNumberOfCalls(t, "LaunchTasks", 1)
-	assert.Equal(1, len(launchTasks_taskInfos))
+	select {
+	case launchedTask := <-launchedTasks:
+		// report back that the task has been staged, and then started by mesos
+		testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_STAGING))
+		testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_RUNNING))
 
-	// report back that the task has been staged by mesos
-	launchedTask := launchTasks_taskInfos[0]
-	testScheduler.StatusUpdate(&mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_STAGING))
+		// report back that the task has been lost
+		mockDriver.AssertNumberOfCalls(t, "SendFrameworkMessage", 0)
+		testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_LOST))
 
-	// report back that the task has been started by mesos
-	testScheduler.StatusUpdate(&mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_RUNNING))
+		// and wait that framework message is sent to executor
+		mockDriver.AssertNumberOfCalls(t, "SendFrameworkMessage", 1)
 
-	// report back that the task has been lost
-	mockDriver.AssertNumberOfCalls(t, "SendFrameworkMessage", 0)
-	testScheduler.StatusUpdate(&mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_LOST))
-
-	// and wait that framework message is sent to executor
-	mockDriver.AssertNumberOfCalls(t, "SendFrameworkMessage", 1)
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for launchTasks call")
+	}
 
 	// start another pod
 	podNum := 1
-	startPod := func(offers []*mesos.Offer) *api.Pod {
+	startPod := func(offers []*mesos.Offer) (*api.Pod, *mesos.TaskInfo) {
 		podNum = podNum + 1
-		launchTasksCallsBefore := len(mockDriver.CallsFor("LaunchTasks"))
+
+		// create pod and matching offer
 		pod := NewTestPod(podNum)
 		podListWatch.Add(pod, true) // notify watchers
-		testScheduler.ResourceOffers(&mockDriver, offers)
+		testScheduler.ResourceOffers(mockDriver, offers)
 		assert.EventWithReason(eventObserver, "scheduled")
-		mockDriver.AssertNumberOfCalls(t, "LaunchTasks", launchTasksCallsBefore+1)
-		return pod
+
+		// wait for driver.launchTasks call
+		select {
+		case launchedTask := <-launchedTasks:
+			testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_STAGING))
+			testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_RUNNING))
+			return pod, launchedTask
+
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for launchTasks")
+			return nil, nil
+		}
 	}
-	pod := startPod(offers1)
-	launchedTask = launchTasks_taskInfos[0]
-	testScheduler.StatusUpdate(&mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_STAGING))
-	testScheduler.StatusUpdate(&mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_RUNNING))
+
+	pod, launchedTask := startPod(offers1)
+
+	// mock drvier.KillTask, should be invoked when a pod is deleted
+	mockDriver.On("KillTask", mAny("*mesosproto.TaskID")).Return(mesos.Status_DRIVER_RUNNING, nil).Run(func(args mock.Arguments) {
+		killedTaskId := *(args.Get(0).(*mesos.TaskID))
+		assert.Equal(*launchedTask.TaskId, killedTaskId, "expected same TaskID as during launch")
+	})
+	killTaskCalled := mockDriver.Upon()
 
 	// stop it again via the apiserver mock
-	killTaskCallsBefore := len(mockDriver.CallsFor("KillTask"))
 	podListWatch.Delete(pod, true) // notify watchers
 
 	// and wait for the driver killTask call with the correct TaskId
-	assert.EventuallyTrue(time.Second, func() bool { return len(mockDriver.CallsFor("KillTask")) > killTaskCallsBefore })
-	assert.Equal(*launchedTask.TaskId, *(mockDriver.CallsFor("KillTask")[killTaskCallsBefore].Arguments.Get(0).(*mesos.TaskID)), "expected same TaskID as during launch")
+	select {
+	case <-killTaskCalled:
+		// report back that the task is finished
+		testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_FINISHED))
 
-	// report back that the task is finished
-	testScheduler.StatusUpdate(&mockDriver, newTaskStatusForTask(launchedTask, mesos.TaskState_TASK_FINISHED))
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for KillTask")
+	}
 
 	// start pods:
 	// - which are failing while binding,
@@ -559,39 +551,39 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	// - with different states on the apiserver
 
 	failPodFromExecutor := func(task *mesos.TaskInfo) {
-		beforePodLookups := testApiServer.Stats[pod.Name]
+		beforePodLookups := testApiServer.Stats(pod.Name)
 		status := newTaskStatusForTask(task, mesos.TaskState_TASK_FAILED)
 		message := messages.CreateBindingFailure
 		status.Message = &message
-		testScheduler.StatusUpdate(&mockDriver, status)
+		testScheduler.StatusUpdate(mockDriver, status)
 
-		// sttts: the following is true on k8sm branch, but not on upstream
+		// TODO(sttts): the following is true on k8sm branch, but not on upstream
 		assert.EventuallyTrue(time.Second, func() bool {
-			return testApiServer.Stats[pod.Name] == beforePodLookups+1
+			return testApiServer.Stats(pod.Name) == beforePodLookups+1
 		}, "expect that reconcilePod will access apiserver for pod %v", pod.Name)
 	}
 
 	// 1. with pod deleted from the apiserver
-	pod = startPod(offers1)
+	pod, launchedTask = startPod(offers1)
 	podListWatch.Delete(pod, false) // not notifying the watchers
-	failPodFromExecutor(launchTasks_taskInfos[0])
+	failPodFromExecutor(launchedTask)
 
 	// 2. with pod still on the apiserver, not bound
-	pod = startPod(offers1)
-	failPodFromExecutor(launchTasks_taskInfos[0])
+	pod, launchedTask = startPod(offers1)
+	failPodFromExecutor(launchedTask)
 
 	// 3. with pod still on the apiserver, bound i.e. host!=""
-	pod = startPod(offers1)
+	pod, launchedTask = startPod(offers1)
 	pod.Spec.NodeName = *offers1[0].Hostname
 	podListWatch.Modify(pod, false) // not notifying the watchers
-	failPodFromExecutor(launchTasks_taskInfos[0])
+	failPodFromExecutor(launchedTask)
 
 	// 4. with pod still on the apiserver, bound i.e. host!="", notified via ListWatch
-	pod = startPod(offers1)
+	pod, launchedTask = startPod(offers1)
 	pod.Spec.NodeName = *offers1[0].Hostname
 	podListWatch.Modify(pod, true) // notifying the watchers
 	time.Sleep(time.Second / 2)
-	failPodFromExecutor(launchTasks_taskInfos[0])
+	failPodFromExecutor(launchedTask)
 }
 
 func TestDeleteOne_NonexistentPod(t *testing.T) {

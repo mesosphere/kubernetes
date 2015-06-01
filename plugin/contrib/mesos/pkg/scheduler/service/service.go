@@ -363,7 +363,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 
 	// Check for staticPods
 	if s.StaticPodsConfigPath != "" {
-		bs, numberStaticPods, err := zipManifests(s.StaticPodsConfigPath)
+		bs, numberStaticPods, err := zipStaticPodsConfig(s.StaticPodsConfigPath)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -389,8 +389,9 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 	return info, eid, nil
 }
 
-// Create a zip of all manifest in given path
-func zipManifests(path string) ([]byte, int, error) {
+// Create a zip of all manifest in given path and return a byte array and the
+// number of files in the archive.
+func zipStaticPodsConfig(path string) ([]byte, int, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	zipWalker := fs.ZipWalker(zw)

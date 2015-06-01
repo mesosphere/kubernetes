@@ -19,8 +19,10 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 )
 
@@ -86,4 +88,48 @@ func ZipDirectory(path string) ([]byte, int, error) {
 		return nil, 0, err
 	}
 	return buf.Bytes(), numberManifests, nil
+}
+
+// UnzipDirectory unzips all files from a given zip byte array.
+func UnzipDirectory(data []byte, destPath string) error {
+	// open zip
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return fmt.Errorf("Unzip archive read error: %v", err)
+	}
+
+	for _, file := range zr.File {
+		// skip directories
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		// open file
+		rc, err := file.Open()
+		if err != nil {
+			return fmt.Errorf("Unzip file read error: %v", err)
+		}
+
+		// make sure the directory of the file exists, otherwise create
+		destPath := filepath.Clean(filepath.Join(destPath, file.Name))
+		destBasedir := path.Dir(destPath)
+		err = os.MkdirAll(destBasedir, 0755)
+		if err != nil {
+			return fmt.Errorf("Unzip mkdir error: %v", err)
+		}
+
+		// create file
+		f, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("Unzip file creation error: %v", err)
+		}
+		defer f.Close()
+
+		// write file
+		if _, err := io.Copy(f, rc); err != nil {
+			return fmt.Errorf("Unzip file write error: %v", err)
+		}
+	}
+
+	return nil
 }

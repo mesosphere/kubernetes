@@ -17,14 +17,8 @@ limitations under the License.
 package executor
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +31,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/archive"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/meta"
 	"github.com/fsouza/go-dockerclient"
@@ -259,68 +254,15 @@ func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func()) {
 		return
 	}
 
-	err := k.extractStaticPodConfig()
+	log.V(2).Infof("extracting static pods config to %s", k.staticPodsConfigPath)
+	err := archive.UnzipDirectory(k.staticPodsConfig, k.staticPodsConfigPath)
 	if err != nil {
-		log.Errorf("Extraction of static pods failed: %v", err)
+		log.Errorf("Failed to extract static pod config: %v", err)
 		return
 	}
 
 	log.V(2).Infof("initializing static pods source factory, configured at path %q", k.staticPodsConfigPath)
 	sourceFactory()
-}
-
-// ExtractStaticPodConfig extracts a compressed archive from k.staticPodsConfig
-// into k.staticPodsConfigPath.
-func (k *KubernetesExecutor) extractStaticPodConfig() error {
-	log.Infof("Extract staticPods config to %s.", k.staticPodsConfigPath)
-
-	// create target root directory
-	err := os.MkdirAll(k.staticPodsConfigPath, 0755)
-	if err != nil {
-		return fmt.Errorf("Could not create static pods config file directory %v: %v", k.staticPodsConfigPath, err)
-	}
-
-	// open zip
-	data := k.staticPodsConfig
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return fmt.Errorf("Could not read static pods config files from ExecutorInfo: %v", err)
-	}
-
-	for _, file := range zr.File {
-		// skip directories
-		if file.FileInfo().IsDir() {
-			continue
-		}
-
-		// open file
-		rc, err := file.Open()
-		if err != nil {
-			return fmt.Errorf("Could not retrieve archieved static pods config file %v: %v", file.Name, err)
-		}
-
-		// make sure the directory of the file exists, otherwise create
-		destPath := filepath.Clean(filepath.Join(k.staticPodsConfigPath, file.Name))
-		destBasedir := path.Dir(destPath)
-		err = os.MkdirAll(destBasedir, 0755)
-		if err != nil {
-			return fmt.Errorf("Could not create static pods config directory %v: %v", destBasedir, err)
-		}
-
-		// create file
-		f, err := os.Create(destPath)
-		if err != nil {
-			return fmt.Errorf("Could not create static pods config file %v: %v", destPath, err)
-		}
-		defer f.Close()
-
-		// write file
-		if _, err := io.Copy(f, rc); err != nil {
-			return fmt.Errorf("Could not write static pods config file %v: %v", destPath, err)
-		}
-	}
-
-	return nil
 }
 
 // Disconnected is called when the executor is disconnected with the slave.

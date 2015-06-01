@@ -435,7 +435,7 @@ func (s *SchedulerServer) Run(hks hyperkube.Interface, _ []string) error {
 		path := fmt.Sprintf(meta.DefaultElectionFormat, s.FrameworkName)
 		sid := uid.New(eid.Group(), "").String()
 		log.Infof("registering for election at %v with id %v", path, sid)
-		go election.Notify(election.NewEtcdMasterElector(etcdClient), path, sid, srv)
+		go election.Notify(election.NewEtcdMasterElector(etcdClient), path, sid, srv, nil)
 	} else {
 		log.Infoln("self-electing in non-HA mode")
 		schedulerProcess.Elect(driverFactory)

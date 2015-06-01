@@ -50,6 +50,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/ha"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/meta"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/metrics"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/uid"
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/gogo/protobuf/proto"
@@ -72,8 +73,6 @@ const (
 	defaultReconcileInterval = 300    // 5m default task reconciliation interval
 	defaultReconcileCooldown = 15 * time.Second
 	defaultFrameworkName     = "Kubernetes"
-	containerCpus            = 0.25 // initial CPU allocated for executor
-	containerMem             = 64   // initial MB of memory allocated for executor
 )
 
 type SchedulerServer struct {
@@ -375,8 +374,8 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 		log.Infof("Detected %d staticPods in Configuration.", numberStaticPods)
 
 		info.Resources = []*mesos.Resource{
-			mutil.NewScalarResource("cpus", float64(numberStaticPods)*containerCpus),
-			mutil.NewScalarResource("mem", float64(numberStaticPods)*containerMem),
+			mutil.NewScalarResource("cpus", float64(numberStaticPods)*podtask.DefaultContainerCpus),
+			mutil.NewScalarResource("mem", float64(numberStaticPods)*podtask.DefaultContainerMem),
 		}
 	}
 

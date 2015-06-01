@@ -353,7 +353,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	//TODO(jdef) either configure Watch here with something useful, or else
 	// get rid of it from executor.Config
 	kubeletFinished := make(chan struct{})
-	staticPodsConfigPath := filepath.Join(".", "static-pods")
+	staticPodsConfigPath := filepath.Join(kc.RootDirectory, "static-pods")
 	exec := executor.New(executor.Config{
 		Kubelet:         klet,
 		Updates:         updates,

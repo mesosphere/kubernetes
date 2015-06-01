@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fs
+package archive
 
 import (
 	"archive/zip"
@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/fs"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/archive"
 )
 
 func TestZipWalker(t *testing.T) {
@@ -45,7 +45,7 @@ func TestZipWalker(t *testing.T) {
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	if err := filepath.Walk(dir, fs.ZipWalker(zw)); err != nil {
+	if err := filepath.Walk(dir, archive.ZipWalker(zw)); err != nil {
 		t.Fatal(err)
 	} else if err = zw.Close(); err != nil {
 		t.Fatal(err)

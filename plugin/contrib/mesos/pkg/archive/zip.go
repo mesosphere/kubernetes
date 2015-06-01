@@ -14,10 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fs
+package archive
 
 import (
 	"archive/zip"
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,4 +64,26 @@ func ZipWalker(zw *zip.Writer) filepath.WalkFunc {
 		f.Close()
 		return err
 	}
+}
+
+// Create a zip of all files in a directory recursively, return a byte array and
+// the number of files archived.
+func ZipDirectory(path string) ([]byte, int, error) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	zipWalker := ZipWalker(zw)
+	numberManifests := 0
+	err := filepath.Walk(path, filepath.WalkFunc(func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			numberManifests++
+		}
+		return zipWalker(path, info, err)
+	}))
+
+	if err != nil {
+		return nil, 0, err
+	} else if err = zw.Close(); err != nil {
+		return nil, 0, err
+	}
+	return buf.Bytes(), numberManifests, nil
 }

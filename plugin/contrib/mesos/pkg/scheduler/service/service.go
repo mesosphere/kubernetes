@@ -17,9 +17,7 @@ limitations under the License.
 package service
 
 import (
-	"archive/zip"
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -28,7 +26,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,7 +38,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/election"
 	execcfg "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/config"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/fs"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/archive"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/hyperkube"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/profile"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/runtime"
@@ -362,7 +359,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 
 	// Check for staticPods
 	if s.StaticPodsConfigPath != "" {
-		bs, numberStaticPods, err := zipStaticPodsConfig(s.StaticPodsConfigPath)
+		bs, numberStaticPods, err := archive.ZipDirectory(s.StaticPodsConfigPath)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -386,28 +383,6 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 	info.ExecutorId = &mesos.ExecutorID{Value: proto.String(eid.String())}
 
 	return info, eid, nil
-}
-
-// Create a zip of all manifest in given path and return a byte array and the
-// number of files in the archive.
-func zipStaticPodsConfig(path string) ([]byte, int, error) {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	zipWalker := fs.ZipWalker(zw)
-	numberManifests := 0
-	err := filepath.Walk(path, filepath.WalkFunc(func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			numberManifests++
-		}
-		return zipWalker(path, info, err)
-	}))
-
-	if err != nil {
-		return nil, 0, err
-	} else if err = zw.Close(); err != nil {
-		return nil, 0, err
-	}
-	return buf.Bytes(), numberManifests, nil
 }
 
 // TODO(jdef): hacked from kubelet/server/server.go

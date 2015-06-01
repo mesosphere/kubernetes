@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/runtime"
 
 	"github.com/golang/glog"
 )
@@ -62,51 +63,72 @@ type notifier struct {
 
 // Notify runs Elect() on m, and calls Start()/Stop() on s when the
 // elected master starts/stops matching 'id'. Never returns.
-func Notify(m MasterElector, path, id string, s Service) {
+func Notify(m MasterElector, path, id string, s Service, abort <-chan struct{}) {
 	n := &notifier{id: Master(id), service: s}
 	n.cond = sync.NewCond(&n.lock)
-	go n.serviceLoop()
-	for {
-		w := m.Elect(path, id)
-		for {
-			event, open := <-w.ResultChan()
-			if !open {
-				break
-			}
-			if event.Type != watch.Modified {
-				continue
-			}
-			electedMaster, ok := event.Object.(Master)
-			if !ok {
-				glog.Errorf("Unexpected object from election channel: %v", event.Object)
-				break
-			}
-			func() {
-				n.lock.Lock()
-				defer n.lock.Unlock()
-				n.desired = electedMaster
-				if n.desired != n.current {
-					n.cond.Signal()
+	finished := runtime.After(func() {
+		runtime.Until(func() {
+			for {
+				w := m.Elect(path, id)
+				for {
+					select {
+					case <-abort:
+						return
+					case event, open := <-w.ResultChan():
+						if !open {
+							break
+						}
+						if event.Type != watch.Modified {
+							continue
+						}
+						electedMaster, ok := event.Object.(Master)
+						if !ok {
+							glog.Errorf("Unexpected object from election channel: %v", event.Object)
+							break
+						}
+						func() {
+							n.lock.Lock()
+							defer n.lock.Unlock()
+							n.desired = electedMaster
+							if n.desired != n.current {
+								n.cond.Signal()
+							}
+						}()
+					}
 				}
-			}()
-		}
-	}
+			}
+		}, 0, abort)
+	})
+	runtime.Until(func() { n.serviceLoop(finished) }, 0, abort)
 }
 
 // serviceLoop waits for changes, and calls Start()/Stop() as needed.
-func (n *notifier) serviceLoop() {
+func (n *notifier) serviceLoop(abort <-chan struct{}) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	for {
-		for n.desired == n.current {
-			n.cond.Wait()
+		select {
+		case <-abort:
+			return
+		default:
+			for n.desired == n.current {
+				ch := runtime.After(n.cond.Wait)
+				select {
+				case <-abort:
+					n.cond.Signal() // ensure that Wait() returns
+					<-ch
+					return
+				case <-ch:
+					// we were notified and have the lock, proceed..
+				}
+			}
+			if n.current != n.id && n.desired == n.id {
+				n.service.Validate(n.desired, n.current)
+				n.service.Start()
+			} else if n.current == n.id && n.desired != n.id {
+				n.service.Stop()
+			}
+			n.current = n.desired
 		}
-		if n.current != n.id && n.desired == n.id {
-			n.service.Validate(n.desired, n.current)
-			n.service.Start()
-		} else if n.current == n.id && n.desired != n.id {
-			n.service.Stop()
-		}
-		n.current = n.desired
 	}
 }

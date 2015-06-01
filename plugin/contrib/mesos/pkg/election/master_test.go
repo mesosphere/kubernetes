@@ -19,6 +19,8 @@ package election
 import (
 	"testing"
 	"time"
+
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/runtime"
 )
 
 type slowService struct {
@@ -67,20 +69,18 @@ func Test(t *testing.T) {
 	changes := make(chan bool, 1500)
 	done := make(chan struct{})
 	s := &slowService{t: t, changes: changes, done: done}
-	go Notify(m, "", "me", s)
+	notifyDone := runtime.After(func() { Notify(m, "", "me", s, done) })
 
 	go func() {
+		defer close(done)
 		for i := 0; i < 500; i++ {
 			for _, key := range []string{"me", "notme", "alsonotme"} {
 				m.ChangeMaster(Master(key))
 			}
 		}
-		close(done)
 	}()
 
-	<-done
-	time.Sleep(8 * time.Millisecond)
-
+	<-notifyDone
 	close(changes)
 
 	changeList := []bool{}

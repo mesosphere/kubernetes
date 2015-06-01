@@ -121,8 +121,26 @@ func status(args mock.Arguments, at int) (val mesos.Status) {
 	return
 }
 
-type MockSchedulerDriver struct {
+type extendedMock struct {
 	mock.Mock
+}
+
+// Upon returns a chan that closes upon the execution of the most recently registered call.
+func (m *extendedMock) Upon() <-chan struct{} {
+	ch := make(chan struct{})
+	call := &m.ExpectedCalls[len(m.ExpectedCalls)-1]
+	f := call.Run
+	call.Run = func(args mock.Arguments) {
+		defer close(ch)
+		if f != nil {
+			f(args)
+		}
+	}
+	return ch
+}
+
+type MockSchedulerDriver struct {
+	extendedMock
 }
 
 func (m *MockSchedulerDriver) Init() error {

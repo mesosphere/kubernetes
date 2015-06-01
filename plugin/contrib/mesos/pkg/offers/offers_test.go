@@ -18,6 +18,7 @@ package offers
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,10 +92,11 @@ func TestTimedOffer(t *testing.T) {
 
 func TestOfferStorage(t *testing.T) {
 	ttl := time.Second / 4
-	declinedNum := 0
+	var declinedNum int32
+	getDeclinedNum := func() int32 { return atomic.LoadInt32(&declinedNum) }
 	config := RegistryConfig{
 		DeclineOffer: func(offerId string) <-chan error {
-			declinedNum = declinedNum + 1
+			atomic.AddInt32(&declinedNum, 1)
 			return proc.ErrorChan(nil)
 		},
 		Compat: func(o *mesos.Offer) bool {
@@ -128,7 +130,7 @@ func TestOfferStorage(t *testing.T) {
 
 	// Deleted offer lingers in storage, is acquired and declined
 	offer, _ := storage.Get(id.GetValue())
-	declinedNumBefore := declinedNum
+	declinedNumBefore := getDeclinedNum()
 	storage.Delete(id.GetValue(), "deleted for test")
 	if obj, _ := storage.Get(id.GetValue()); obj == nil {
 		t.Error("deleted offer is not lingering")
@@ -139,7 +141,7 @@ func TestOfferStorage(t *testing.T) {
 	if ok := offer.Acquire(); ok {
 		t.Error("deleted offer can be acquired")
 	}
-	if declinedNum <= declinedNumBefore {
+	if getDeclinedNum() <= declinedNumBefore {
 		t.Error("deleted offer was not declined")
 	}
 
@@ -148,16 +150,16 @@ func TestOfferStorage(t *testing.T) {
 	o = &mesos.Offer{Id: id}
 	storage.Add([]*mesos.Offer{o})
 	offer, _ = storage.Get(id.GetValue())
-	declinedNumBefore = declinedNum
+	declinedNumBefore = getDeclinedNum()
 	offer.Acquire()
 	storage.Delete(id.GetValue(), "deleted for test")
-	if declinedNum > declinedNumBefore {
+	if getDeclinedNum() > declinedNumBefore {
 		t.Error("acquired offer is declined")
 	}
 
 	offer.Release()
 	time.Sleep(3 * ttl)
-	if declinedNum <= declinedNumBefore {
+	if getDeclinedNum() <= declinedNumBefore {
 		t.Error("released offer is not declined after 2*ttl")
 	}
 
@@ -185,12 +187,12 @@ func TestOfferStorage(t *testing.T) {
 	id = util.NewOfferID("foo4")
 	incompatibleHostname := "incompatiblehost"
 	o = &mesos.Offer{Id: id, Hostname: &incompatibleHostname}
-	declinedNumBefore = declinedNum
+	declinedNumBefore = getDeclinedNum()
 	storage.Add([]*mesos.Offer{o})
 	if obj, ok := storage.Get(id.GetValue()); obj != nil || ok {
 		t.Error("incompatible offer not rejected")
 	}
-	if declinedNum <= declinedNumBefore {
+	if getDeclinedNum() <= declinedNumBefore {
 		t.Error("incompatible offer is not declined")
 	}
 
@@ -199,12 +201,12 @@ func TestOfferStorage(t *testing.T) {
 	o = &mesos.Offer{Id: id}
 	storage.Add([]*mesos.Offer{o})
 	offer, _ = storage.Get(id.GetValue())
-	declinedNumBefore = declinedNum
+	declinedNumBefore = getDeclinedNum()
 	storage.Invalidate(id.GetValue())
 	if obj, _ := storage.Get(id.GetValue()); !obj.HasExpired() {
 		t.Error("invalidated offer is not expired")
 	}
-	if declinedNum > declinedNumBefore {
+	if getDeclinedNum() > declinedNumBefore {
 		t.Error("invalidated offer is declined")
 	}
 	if ok := offer.Acquire(); ok {

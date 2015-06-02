@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package queue implements a FIFO queue based on pkg/client/cache/fifo.go@release-0.6
+// Package queue provides several queue implementations, originally
+// inspired by Kubernetes pkg/client/cache/fifo.
 package queue

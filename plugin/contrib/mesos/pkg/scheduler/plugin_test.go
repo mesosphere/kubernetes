@@ -557,7 +557,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 		status.Message = &message
 		testScheduler.StatusUpdate(mockDriver, status)
 
-		// TODO(sttts): the following is true on k8sm branch, but not on upstream
+		// wait until pod is looked up at the apiserver
 		assert.EventuallyTrue(time.Second, func() bool {
 			return testApiServer.Stats(pod.Name) == beforePodLookups+1
 		}, "expect that reconcilePod will access apiserver for pod %v", pod.Name)

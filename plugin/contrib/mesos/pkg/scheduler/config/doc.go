@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package config exposes configuration routines for package scheduler.
+// Package config provides mechanisms for low-level scheduler tuning.
 package config

@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package meta defines framework constants used as annotation keys.
+// Package meta defines framework constants used as annotation keys.
 package meta

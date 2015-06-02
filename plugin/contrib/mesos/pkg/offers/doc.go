@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package offers contains code that manages Mesos offers.
+// Package offers contains code that manages Mesos offers.
 package offers

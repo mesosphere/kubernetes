@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package scheduler implements the Mesos Kubernetes scheduler.
+// Package scheduler implements the Mesos Kubernetes scheduler.
 package scheduler

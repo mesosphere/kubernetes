@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package constraint exposes Kubernetes label constraints.
+// Package constraint exposes Kubernetes label constraints.
 package constraint

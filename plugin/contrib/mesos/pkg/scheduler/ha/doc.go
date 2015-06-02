@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package ha encapsulates high-availability scheduler concerns.
+// Package ha encapsulates high-availability scheduler concerns.
 package ha

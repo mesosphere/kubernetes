@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package metrics defines and exposes instrumentation metrics of the scheduler.
+// Package metrics defines and exposes instrumentation metrics of the scheduler.
 package metrics

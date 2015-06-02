@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package service contains the cmd/k8sm-executor glue code.
+// Package service contains the cmd/k8sm-executor glue code.
 package service

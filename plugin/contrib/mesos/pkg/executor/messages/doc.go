@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package messages exposes executor event/message names as constants.
+// Package messages exposes executor event/message names as constants.
 package messages

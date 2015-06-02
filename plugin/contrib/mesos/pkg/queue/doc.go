@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package queue implements a FIFO queue based on pkg/client/cache/fifo.go@release-0.6
+// Package queue implements a FIFO queue based on pkg/client/cache/fifo.go@release-0.6
 package queue

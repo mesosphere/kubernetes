@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// package proc is an utility package for managing and running UNIX processes.
+// Package proc is an utility package for managing and running UNIX processes.
 package proc

@@ -356,7 +356,7 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 
 	executor.LaunchTask(mockDriver, taskInfo)
 
-	assertext.EventuallyTrue(t, 5 * time.Second, func () bool {
+	assertext.EventuallyTrue(t, 5*time.Second, func() bool {
 		executor.lock.Lock()
 		defer executor.lock.Unlock()
 		return len(executor.tasks) == 1 && len(executor.pods) == 1
@@ -391,7 +391,7 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 
 	executor.KillTask(mockDriver, taskInfo.TaskId)
 
-	assertext.EventuallyTrue(t, 5 * time.Second, func () bool {
+	assertext.EventuallyTrue(t, 5*time.Second, func() bool {
 		executor.lock.Lock()
 		defer executor.lock.Unlock()
 		return len(executor.tasks) == 0 && len(executor.pods) == 0
@@ -453,8 +453,11 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(func(_ mock.Arguments) { close(called) }).Once()
 
 	executor.FrameworkMessage(mockDriver, "task-lost:foo")
-	assert.Equal(t, 0, len(executor.tasks),
-		"executor must clean up task state when it is lost")
+	assertext.EventuallyTrue(t, 5*time.Second, func() bool {
+		executor.lock.Lock()
+		defer executor.lock.Unlock()
+		return len(executor.tasks) == 0 && len(executor.pods) == 0
+	}, "executor must be able to kill a created task and pod")
 
 	select {
 	case <-called:

@@ -25,7 +25,7 @@ import (
 
 // EventuallyTrue asserts that the given predicate becomes true within the given timeout. It
 // checks the predicate regularly each 100ms.
-func EventuallyTrue(t * testing.T, timeout time.Duration, fn func() bool, msgAndArgs ...interface{}) bool {
+func EventuallyTrue(t *testing.T, timeout time.Duration, fn func() bool, msgAndArgs ...interface{}) bool {
 	start := time.Now()
 	for {
 		if fn() {

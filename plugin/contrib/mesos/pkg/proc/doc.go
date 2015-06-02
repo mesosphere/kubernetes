@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package proc provides opinionated utilities for processing background
+// operations and future errors, somewhat inspired by libprocess.
+package proc

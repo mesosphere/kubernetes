@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package assert is an utility package containing reusable testing functionality
+// extending github.com/stretchr/testify/assert
+package assert

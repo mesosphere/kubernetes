@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package messages exposes executor event/message names as constants.
+package messages

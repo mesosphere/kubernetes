@@ -14,5 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// This package main is used for testing the redirfd package.
+// Inspired by http://skarnet.org/software/execline/redirfd.html.
+// Usage:
+//     k8sm-redirfb [-n] [-b] {mode} {fd} {file} {prog...}
+package main

@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package backoff provides backoff functionality with a simple API.
+// Originally copied from Kubernetes: plugin/pkg/scheduler/factory/factory.go
+package backoff

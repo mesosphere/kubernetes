@@ -14,5 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package hyperkube facilitates the combination of multiple
+// kubernetes-mesos components into a single binary form, providing a
+// simple mechanism for intra-component discovery as per the original
+// Kubernetes hyperkube package.
+package hyperkube

@@ -14,9 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// used for testing the redirfd package. inspired by http://skarnet.org/software/execline/redirfd.html.
-// usage:
-//     k8sm-redirfb [-n] [-b] {mode} {fd} {file} {prog...}
 package main
 
 import (

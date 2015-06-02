@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package runtime provides utilities for semaphores (chan struct{}),
+// a simple Latch implementation, and metrics for reporting handled panics.
+package runtime

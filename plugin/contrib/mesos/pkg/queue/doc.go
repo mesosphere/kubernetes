@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package scheduler implements the Kubernetes Mesos scheduler.
-package scheduler
+// Package queue provides several queue implementations, originally
+// inspired by Kubernetes pkg/client/cache/fifo.
+package queue

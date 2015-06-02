@@ -32,6 +32,7 @@ import (
 	kutil "github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
 
+	assertext "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/assert"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/queue"
 	schedcfg "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/config"
@@ -321,22 +322,6 @@ func (a *EventAssertions) EventWithReason(observer *EventObserver, reason string
 		return e.Reason == reason
 	}, msgAndArgs...)
 }
-func (a *EventAssertions) EventuallyTrue(timeout time.Duration, fn func() bool, msgAndArgs ...interface{}) bool {
-	start := time.Now()
-	for {
-		if fn() {
-			return true
-		}
-		if time.Now().Sub(start) > timeout {
-			if len(msgAndArgs) > 0 {
-				return a.Fail(msgAndArgs[0].(string), msgAndArgs[1:]...)
-			} else {
-				return a.Fail("predicate fn has not been true after %v", timeout.String())
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
 
 type joinableDriver struct {
 	MockSchedulerDriver
@@ -558,7 +543,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 		testScheduler.StatusUpdate(mockDriver, status)
 
 		// wait until pod is looked up at the apiserver
-		assert.EventuallyTrue(time.Second, func() bool {
+		assertext.EventuallyTrue(t, time.Second, func() bool {
 			return testApiServer.Stats(pod.Name) == beforePodLookups+1
 		}, "expect that reconcilePod will access apiserver for pod %v", pod.Name)
 	}

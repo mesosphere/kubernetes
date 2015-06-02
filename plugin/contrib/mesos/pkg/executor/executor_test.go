@@ -34,6 +34,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
+	assertext "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/assert"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/executor/messages"
 	kmruntime "github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/contrib/mesos/pkg/scheduler/podtask"
@@ -354,13 +355,12 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(statusUpdateDone).Once()
 
 	executor.LaunchTask(mockDriver, taskInfo)
-	assert.Equal(t, 1, len(executor.tasks),
-		"executor must be able to create a task")
 
-	// Allow some time for asynchronous requests to the testApiServer.
-	time.Sleep(time.Second)
-	assert.Equal(t, 1, len(executor.pods),
-		"executor must be able to create a pod")
+	assertext.EventuallyTrue(t, 5 * time.Second, func () bool {
+		executor.lock.Lock()
+		defer executor.lock.Unlock()
+		return len(executor.tasks) == 1 && len(executor.pods) == 1
+	}, "executor must be able to create a task and a pod")
 
 	gotPodUpdate := false
 	select {
@@ -375,6 +375,14 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 		"the executor should send an update about a new pod to "+
 			"the updates chan when creating a new one.")
 
+	// Allow some time for asynchronous requests to the driver.
+	finished := kmruntime.After(statusUpdateCalls.Wait)
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for status update calls to finish")
+	}
+
 	statusUpdateCalls.Add(1)
 	mockDriver.On(
 		"SendStatusUpdate",
@@ -382,13 +390,15 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 	).Return(mesosproto.Status_DRIVER_RUNNING, nil).Run(statusUpdateDone).Once()
 
 	executor.KillTask(mockDriver, taskInfo.TaskId)
-	assert.Equal(t, 0, len(executor.tasks),
-		"executor must be able to kill a created task")
-	assert.Equal(t, 0, len(executor.pods),
-		"executor must be able to kill a created pod")
+
+	assertext.EventuallyTrue(t, 5 * time.Second, func () bool {
+		executor.lock.Lock()
+		defer executor.lock.Unlock()
+		return len(executor.tasks) == 0 && len(executor.pods) == 0
+	}, "executor must be able to kill a created task and pod")
 
 	// Allow some time for asynchronous requests to the driver.
-	finished := kmruntime.After(statusUpdateCalls.Wait)
+	finished = kmruntime.After(statusUpdateCalls.Wait)
 	select {
 	case <-finished:
 	case <-time.After(5 * time.Second):

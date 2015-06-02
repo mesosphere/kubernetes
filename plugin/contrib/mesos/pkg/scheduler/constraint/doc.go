@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package constraint exposes Kubernetes label constraints.
+// Package constraint exposes Marathon-like constraints for scheduling pods.
+// Incomplete.
 package constraint

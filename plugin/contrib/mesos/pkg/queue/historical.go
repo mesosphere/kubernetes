@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// evolution of: github.com/GoogleCloudPlatform/kubernetes/blob/release-0.6/pkg/client/cache/fifo.go
 package queue
 
 import (

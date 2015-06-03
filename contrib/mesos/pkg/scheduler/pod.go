@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/queue"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/queue"
 )
 
 // wrapper for the k8s pod type so that we can define additional methods on a "pod"

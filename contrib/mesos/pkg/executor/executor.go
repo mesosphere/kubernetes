@@ -24,6 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/messages"
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
@@ -31,8 +33,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/messages"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"

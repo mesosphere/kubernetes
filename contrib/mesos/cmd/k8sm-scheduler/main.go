@@ -21,10 +21,10 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/version/verflag"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/hyperkube"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/service"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/version/verflag"
 	"github.com/spf13/pflag"
 )
 

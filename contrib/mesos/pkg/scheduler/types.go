@@ -19,9 +19,9 @@ package scheduler
 import (
 	"errors"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/offers"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/algorithm"
 )
 

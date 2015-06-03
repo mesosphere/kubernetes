@@ -26,6 +26,10 @@ import (
 	"testing"
 	"time"
 
+	assertext "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/assert"
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/messages"
+	kmruntime "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/runtime"
+	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
@@ -34,10 +38,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
-	assertext "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/assert"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/messages"
-	kmruntime "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 
 	"github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"

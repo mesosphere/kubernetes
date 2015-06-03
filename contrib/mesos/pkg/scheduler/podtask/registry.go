@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/metrics"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 )

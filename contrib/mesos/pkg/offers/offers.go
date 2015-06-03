@@ -23,12 +23,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/offers/metrics"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/proc"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/queue"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/runtime"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 )

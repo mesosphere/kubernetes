@@ -29,6 +29,8 @@ readonly KUBE_SERVER_TARGETS=(
   plugin/cmd/kube-scheduler
   contrib/mesos/cmd/k8sm-scheduler
   contrib/mesos/cmd/k8sm-executor
+  contrib/mesos/cmd/k8sm-controller-manager
+  contrib/mesos/cmd/km
 )
 readonly KUBE_SERVER_BINARIES=("${KUBE_SERVER_TARGETS[@]##*/}")
 

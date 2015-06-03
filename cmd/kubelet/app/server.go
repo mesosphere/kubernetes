@@ -254,7 +254,7 @@ func (s *KubeletServer) Run(_ []string) error {
 		glog.Warning(err)
 	}
 
-	client, err := s.createAPIServerClient()
+	client, _, err := s.CreateAPIServerClient()
 	if err != nil && len(s.APIServerList) > 0 {
 		glog.Warningf("No API client: %v", err)
 	}
@@ -285,25 +285,10 @@ func (s *KubeletServer) Run(_ []string) error {
 		return err
 	}
 
-	if s.TLSCertFile == "" && s.TLSPrivateKeyFile == "" {
-		s.TLSCertFile = path.Join(s.CertDirectory, "kubelet.crt")
-		s.TLSPrivateKeyFile = path.Join(s.CertDirectory, "kubelet.key")
-		if err := util.GenerateSelfSignedCert(nodeutil.GetHostname(s.HostnameOverride), s.TLSCertFile, s.TLSPrivateKeyFile); err != nil {
-			return fmt.Errorf("unable to generate self signed cert: %v", err)
-		}
-		glog.V(4).Infof("Using self-signed cert (%s, %s)", s.TLSCertFile, s.TLSPrivateKeyFile)
+	tlsOptions, err := s.InitializeTLS()
+	if err != nil {
+		return err
 	}
-	tlsOptions := &kubelet.TLSOptions{
-		Config: &tls.Config{
-			// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
-			MinVersion: tls.VersionTLS10,
-			// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
-			ClientAuth: tls.RequestClientCert,
-		},
-		CertFile: s.TLSCertFile,
-		KeyFile:  s.TLSPrivateKeyFile,
-	}
-
 	mounter := mount.New()
 	if s.Containerized {
 		glog.V(2).Info("Running kubelet in containerized mode (experimental)")
@@ -392,6 +377,30 @@ func (s *KubeletServer) Run(_ []string) error {
 	select {}
 }
 
+// InitializeTLS checks for a configured TLSCertFile and TLSPrivateKeyFile: if unspecified a new self-signed
+// certificate and key file are generated. Returns a configured kubelet.TLSOptions object.
+func (s *KubeletServer) InitializeTLS() (*kubelet.TLSOptions, error) {
+	if s.TLSCertFile == "" && s.TLSPrivateKeyFile == "" {
+		s.TLSCertFile = path.Join(s.CertDirectory, "kubelet.crt")
+		s.TLSPrivateKeyFile = path.Join(s.CertDirectory, "kubelet.key")
+		if err := util.GenerateSelfSignedCert(nodeutil.GetHostname(s.HostnameOverride), s.TLSCertFile, s.TLSPrivateKeyFile); err != nil {
+			return nil, fmt.Errorf("unable to generate self signed cert: %v", err)
+		}
+		glog.V(4).Infof("Using self-signed cert (%s, %s)", s.TLSCertFile, s.TLSPrivateKeyFile)
+	}
+	tlsOptions := &kubelet.TLSOptions{
+		Config: &tls.Config{
+			// Change default from SSLv3 to TLSv1.0 (because of POODLE vulnerability).
+			MinVersion: tls.VersionTLS10,
+			// Populate PeerCertificates in requests, but don't yet reject connections without certificates.
+			ClientAuth: tls.RequestClientCert,
+		},
+		CertFile: s.TLSCertFile,
+		KeyFile:  s.TLSPrivateKeyFile,
+	}
+	return tlsOptions, nil
+}
+
 func (s *KubeletServer) authPathClientConfig(useDefaults bool) (*client.Config, error) {
 	authInfo, err := clientauth.LoadFromFile(s.AuthPath.Value())
 	if err != nil && !useDefaults {
@@ -444,9 +453,9 @@ func (s *KubeletServer) createClientConfig() (*client.Config, error) {
 	return clientConfig, nil
 }
 
-func (s *KubeletServer) createAPIServerClient() (*client.Client, error) {
+func (s *KubeletServer) CreateAPIServerClient() (*client.Client, *client.Config, error) {
 	if len(s.APIServerList) < 1 {
-		return nil, fmt.Errorf("no api servers specified")
+		return nil, nil, fmt.Errorf("no api servers specified")
 	}
 	// TODO: adapt Kube client to support LB over several servers
 	if len(s.APIServerList) > 1 {
@@ -455,14 +464,14 @@ func (s *KubeletServer) createAPIServerClient() (*client.Client, error) {
 
 	clientConfig, err := s.createClientConfig()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.addChaosToClientConfig(clientConfig)
 	client, err := client.New(clientConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return client, nil
+	return client, clientConfig, nil
 }
 
 // addChaosToClientConfig injects random errors into client connections if configured.

@@ -1,0 +1,30 @@
+{
+  "kind": "Pod",
+  "apiVersion": "v1beta3",
+  "metadata": {
+    "name": "nginx-id-01",
+    "labels": {
+      "name": "foo"
+    }
+  },
+  "spec": {
+    "containers": [{
+      "name": "nginx-01",
+      "image": "library/nginx",
+      "ports": [{
+        "containerPort": 80,
+        "protocol": "TCP",
+        "name": "http"
+      }],
+      "livenessProbe": {
+        "enabled": true,
+        "type": "http",
+        "initialDelaySeconds": 30,
+        "httpGet": {
+          "path": "/",
+          "port": "80"
+        }
+      }
+    }]
+  }
+}

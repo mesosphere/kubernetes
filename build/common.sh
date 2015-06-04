@@ -310,6 +310,7 @@ function kube::build::source_targets() {
     api
     build
     cmd
+    contrib/mesos
     docs/getting-started-guides
     examples
     Godeps/_workspace/src

@@ -14,11 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Bring up a Kubernetes cluster.
-#
-# If the full release name (gs://<bucket>/<release>) is passed in then we take
-# that directly.  If not then we assume we are doing development stuff and take
-# the defaults in the release config.
+# Tests a running Kubernetes cluster.
+# TODO: move code from hack/ginkgo-e2e.sh to here
 
 set -o errexit
 set -o nounset
@@ -26,21 +23,11 @@ set -o pipefail
 
 KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "${KUBE_ROOT}/cluster/kube-env.sh"
-source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/util.sh"
 
-echo "Starting cluster using provider: $KUBERNETES_PROVIDER" >&2
+echo "Testing cluster with provider: ${KUBERNETES_PROVIDER}" 1>&2
 
-echo "... calling verify-prereqs" >&2
-verify-prereqs
+TEST_ARGS="$@"
 
-echo "... calling kube-up" >&2
-kube-up
-
-echo "... calling validate-cluster" >&2
-validate-cluster
-
-echo -e "Done, listing cluster services:\n" >&2
-"${KUBE_ROOT}/cluster/kubectl.sh" cluster-info
-echo
-
-exit 0
+echo "Running e2e tests:" 1>&2
+echo "./hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
+exec "${KUBE_ROOT}/hack/ginkgo-e2e.sh" ${TEST_ARGS}

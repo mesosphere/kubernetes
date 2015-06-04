@@ -85,6 +85,8 @@ if [[ ${GINKGO_PARALLEL} =~ ^[yY]$ ]]; then
   ginkgo_args+=("-p")
 fi
 
+KUBE_SERVER="${KUBE_SERVER:-https://${KUBE_MASTER_IP}}"
+
 
 # The --host setting is used only when providing --auth_config
 # If --kubeconfig is used, the host to use is retrieved from the .kubeconfig
@@ -93,7 +95,7 @@ fi
 export PATH=$(dirname "${e2e_test}"):"${PATH}"
 "${ginkgo}" "${ginkgo_args[@]:+${ginkgo_args[@]}}" "${e2e_test}" -- \
   "${auth_config[@]:+${auth_config[@]}}" \
-  --host="https://${KUBE_MASTER_IP-}" \
+  --host="${KUBE_SERVER}" \
   --provider="${KUBERNETES_PROVIDER}" \
   --gce-project="${PROJECT:-}" \
   --gce-zone="${ZONE:-}" \

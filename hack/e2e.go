@@ -33,6 +33,15 @@ import (
 	"strings"
 )
 
+const (
+	serverTarName   = "kubernetes-server-linux-amd64.tar.gz"
+	saltTarName     = "kubernetes-salt.tar.gz"
+	downloadDirName = "_output/downloads"
+	tarDirName      = "server"
+	tempDirName     = "upgrade-e2e-temp-dir"
+	minMinionCount  = 2
+)
+
 var (
 	isup             = flag.Bool("isup", false, "Check to see if the e2e cluster is up, then exit.")
 	build            = flag.Bool("build", false, "If true, build a new release. Otherwise, use whatever is there.")
@@ -49,17 +58,9 @@ var (
 		"By default, verify that client and server have exact version match. "+
 		"You can explicitly set to false if you're, e.g., testing client changes "+
 		"for which the server version doesn't make a difference.")
+	checkClusterSize = flag.Bool("check_cluster_size", true, fmt.Sprintf("By default, verify that at there are at least %d nodes running.", minMinionCount))
 
 	ctlCmd = flag.String("ctl", "", "If nonempty, pass this as an argument, and call kubectl. Implies -v. (-test, -cfg, -ctl are mutually exclusive)")
-)
-
-const (
-	serverTarName   = "kubernetes-server-linux-amd64.tar.gz"
-	saltTarName     = "kubernetes-salt.tar.gz"
-	downloadDirName = "_output/downloads"
-	tarDirName      = "server"
-	tempDirName     = "upgrade-e2e-temp-dir"
-	minMinionCount  = 2
 )
 
 var (
@@ -267,7 +268,9 @@ func Test() bool {
 		log.Fatal("Testing requested, but e2e cluster not up!")
 	}
 
-	ValidateClusterSize()
+	if *checkClusterSize {
+		ValidateClusterSize()
+	}
 
 	return finishRunning("Ginkgo tests", exec.Command(filepath.Join(*root, "hack/ginkgo-e2e.sh"), strings.Fields(*testArgs)...))
 }

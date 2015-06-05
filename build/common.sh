@@ -311,6 +311,7 @@ function kube::build::build_image() {
     api
     build
     cmd
+    contrib/mesos
     docs/getting-started-guides
     examples
     Godeps/_workspace/src

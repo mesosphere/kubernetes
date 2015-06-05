@@ -27,6 +27,8 @@ readonly KUBE_SERVER_TARGETS=(
   cmd/hyperkube
   cmd/kubernetes
   plugin/cmd/kube-scheduler
+  contrib/mesos/cmd/k8sm-scheduler
+  contrib/mesos/cmd/k8sm-executor
 )
 readonly KUBE_SERVER_BINARIES=("${KUBE_SERVER_TARGETS[@]##*/}")
 
@@ -53,6 +55,7 @@ readonly KUBE_TEST_TARGETS=(
   examples/k8petstore/web-server
   github.com/onsi/ginkgo/ginkgo
   test/e2e/e2e.test
+  contrib/mesos/cmd/k8sm-redirfd
 )
 readonly KUBE_TEST_BINARIES=("${KUBE_TEST_TARGETS[@]##*/}")
 readonly KUBE_TEST_BINARIES_WIN=("${KUBE_TEST_BINARIES[@]/%/.exe}")

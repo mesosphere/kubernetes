@@ -1088,7 +1088,7 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, runningPod kubecont
 			// exist yet.
 			return
 		}
-		status, err := kl.generatePodStatus(pod)
+		status, err := kl.GeneratePodStatus(pod)
 		if err != nil {
 			glog.Errorf("Unable to generate status for pod with name %q and uid %q info with error(%v)", podFullName, uid, err)
 		} else {
@@ -1129,7 +1129,7 @@ func (kl *Kubelet) syncPod(pod *api.Pod, mirrorPod *api.Pod, runningPod kubecont
 	}
 	kl.volumeManager.SetVolumes(pod.UID, podVolumes)
 
-	podStatus, err := kl.generatePodStatus(pod)
+	podStatus, err := kl.GeneratePodStatus(pod)
 	if err != nil {
 		glog.Errorf("Unable to get status for pod %q (uid %q): %v", podFullName, uid, err)
 		return err
@@ -2062,7 +2062,7 @@ func getPodReadyCondition(spec *api.PodSpec, statuses []api.ContainerStatus) []a
 
 // By passing the pod directly, this method avoids pod lookup, which requires
 // grabbing a lock.
-func (kl *Kubelet) generatePodStatus(pod *api.Pod) (api.PodStatus, error) {
+func (kl *Kubelet) GeneratePodStatus(pod *api.Pod) (api.PodStatus, error) {
 	podFullName := kubecontainer.GetPodFullName(pod)
 	glog.V(3).Infof("Generating status for %q", podFullName)
 

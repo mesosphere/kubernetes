@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	offerSubsystem = "offers"
+	offerSubsystem = "mesos_offers"
 )
 
 type OfferDeclinedReason string

@@ -113,7 +113,7 @@ func (s *CMServer) Run(_ []string) error {
 
 	//TODO(jdef) should eventually support more cloud providers here
 	if s.CloudProvider != mesos.ProviderName {
-		glog.Fatalf("Unsupported cloud provider: %v", s.CloudProvider)
+		glog.Fatalf("Only provider %v is supported, you specified %v", mesos.ProviderName, s.CloudProvider)
 	}
 	cloud := cloudprovider.InitCloudProvider(s.CloudProvider, s.CloudConfigFile)
 

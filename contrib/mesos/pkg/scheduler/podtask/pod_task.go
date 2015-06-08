@@ -229,6 +229,14 @@ func (t *T) AcceptOffer(offer *mesos.Offer) bool {
 		log.V(3).Info(err)
 		return false
 	}
+	
+	// for now hard-coded, constant values are used for cpus and mem. This is necessary
+	// until parent-cgroup integration is finished for mesos and k8sm. Then the k8sm
+	// executor can become the parent of pods and subsume their resource usage and
+	// therefore be compliant with expectations of mesos executors w/ respect to
+	// resource allocation and management.
+	//
+	// TODO(jdef): remove hardcoded values and make use of actual pod resource settings
 	if (cpus < containerCpus) || (mem < containerMem) {
 		log.V(3).Infof("not enough resources: cpus: %f mem: %f", cpus, mem)
 		return false

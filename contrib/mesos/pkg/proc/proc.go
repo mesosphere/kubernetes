@@ -137,7 +137,7 @@ func (self *procImpl) begin() runtime.Signal {
 	})
 }
 
-// execute some action in the context of the current lifecycle. actions
+// execute some action in the context of the current process. Actions
 // executed via this func are to be executed in a concurrency-safe manner:
 // no two actions should execute at the same time. invocations of this func
 // should not block for very long, unless the action backlog is full or the

@@ -14,5 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package meta defines framework constants used as annotation keys.
+// Package meta defines framework constants used as keys in k8s annotations
+// that are attached to k8s pods
 package meta

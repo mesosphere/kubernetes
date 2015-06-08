@@ -547,6 +547,10 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Fatalf("misconfigured executor: %v", err)
 	}
 
+	// TODO(jdef): remove the dependency on etcd as soon as
+	// (1) the generic config store is available for the FrameworkId storage
+	// (2) the generic master election is provided by the apiserver
+	// Compare docs/proposals/high-availability.md
 	etcdClient, err := newEtcd(s.EtcdConfigFile, s.EtcdServerList)
 	if err != nil {
 		log.Fatalf("misconfigured etcd: %v", err)

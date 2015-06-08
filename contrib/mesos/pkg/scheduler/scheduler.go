@@ -164,7 +164,7 @@ type Config struct {
 	ReconcileCooldown time.Duration
 }
 
-// New create a new KubernetesScheduler
+// New creates a new KubernetesScheduler
 func New(config Config) *KubernetesScheduler {
 	var k *KubernetesScheduler
 	k = &KubernetesScheduler{
@@ -304,6 +304,7 @@ func (k *KubernetesScheduler) Registered(drv bindings.SchedulerDriver, fid *meso
 }
 
 func (k *KubernetesScheduler) storeFrameworkId() {
+	// TODO(jdef): port FrameworkId store to generic Kubernetes config store as soon as available
 	_, err := k.etcdClient.Set(meta.FrameworkIDKey, k.frameworkId.GetValue(), uint64(k.failoverTimeout))
 	if err != nil {
 		log.Errorf("failed to renew frameworkId TTL: %v", err)

@@ -234,7 +234,7 @@ type kubeScheduler struct {
 	podUpdates queue.FIFO
 }
 
-// Schedule implements the Scheduler interface of the Kubernetes.
+// Schedule implements the Scheduler interface of Kubernetes.
 // It returns the selectedMachine's name and error (if there's any).
 func (k *kubeScheduler) Schedule(pod *api.Pod, unused algorithm.MinionLister) (string, error) {
 	log.Infof("Try to schedule pod %v\n", pod.Name)

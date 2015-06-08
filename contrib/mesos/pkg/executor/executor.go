@@ -101,7 +101,7 @@ type podStatusFunc func() (api.PodStatus, error)
 // in a minion machine.
 type KubernetesExecutor struct {
 	kl                  *kubelet.Kubelet // the kubelet instance.
-	updateChan          chan<- interface{}
+	updateChan          chan<- interface{} // to send pod config updates to the kubelet
 	state               stateType
 	tasks               map[string]*kuberTask
 	pods                map[string]*api.Pod
@@ -110,7 +110,7 @@ type KubernetesExecutor struct {
 	client              *client.Client
 	events              <-chan watch.Event
 	done                chan struct{} // signals shutdown
-	outgoing            chan func() (mesos.Status, error)
+	outgoing            chan func() (mesos.Status, error) // outgoing queue to the mesos driver
 	dockerClient        dockertools.DockerInterface
 	suicideWatch        suicideWatcher
 	suicideTimeout      time.Duration
@@ -123,14 +123,14 @@ type KubernetesExecutor struct {
 
 type Config struct {
 	Kubelet         *kubelet.Kubelet
-	Updates         chan<- interface{}
+	Updates         chan<- interface{} // to send pod config updates to the kubelet
 	SourceName      string
 	APIClient       *client.Client
 	Watch           watch.Interface
 	Docker          dockertools.DockerInterface
 	ShutdownAlert   func()
 	SuicideTimeout  time.Duration
-	KubeletFinished <-chan struct{}
+	KubeletFinished <-chan struct{} // signals that kubelet Run() died
 	ExitFunc        func(int)
 	PodStatusFunc   func(*kubelet.Kubelet, *api.Pod) (api.PodStatus, error)
 }
@@ -231,7 +231,7 @@ func (k *KubernetesExecutor) onInitialRegistration() {
 	}
 }
 
-// Disconnected is called when the executor is disconnected with the slave.
+// Disconnected is called when the executor is disconnected from the slave.
 func (k *KubernetesExecutor) Disconnected(driver bindings.ExecutorDriver) {
 	if k.isDone() {
 		return
@@ -243,6 +243,11 @@ func (k *KubernetesExecutor) Disconnected(driver bindings.ExecutorDriver) {
 }
 
 // LaunchTask is called when the executor receives a request to launch a task.
+// The happens when the k8sm scheduler has decided to schedule the pod
+// (which corresponds to a Mesos Task) onto the node where this executor
+// is running, but the binding is not recorded in the Kubernetes store yet.
+// This function is invoked to tell the executor to record the binding in the
+// Kubernetes store and start the pod via the Kubelet.
 func (k *KubernetesExecutor) LaunchTask(driver bindings.ExecutorDriver, taskInfo *mesos.TaskInfo) {
 	if k.isDone() {
 		return
@@ -467,7 +472,7 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 	task.podName = podFullName
 	k.pods[podFullName] = pod
 
-	// Send the pod updates to the channel.
+	// send the latest snapshot of the set of pods to the kubelet via the pod update channel
 	update := kubelet.PodUpdate{Op: kubelet.SET}
 	for _, p := range k.pods {
 		update.Pods = append(update.Pods, p)

@@ -21,8 +21,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/offers"
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/podtask"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/algorithm"
 )
 
 // PodScheduleFunc implements how to schedule pods among slaves.
@@ -45,13 +43,6 @@ var (
 	noSuchPodErr        = errors.New("No such pod exists")
 	noSuchTaskErr       = errors.New("No such task exists")
 )
-
-// adapter for k8s pkg/scheduler/Scheduler interface
-type SchedulerFunc func(api.Pod, algorithm.MinionLister) (selectedMachine string, err error)
-
-func (f SchedulerFunc) Schedule(pod api.Pod, lister algorithm.MinionLister) (string, error) {
-	return f(pod, lister)
-}
 
 type SlaveIndex interface {
 	slaveFor(id string) (*Slave, bool)

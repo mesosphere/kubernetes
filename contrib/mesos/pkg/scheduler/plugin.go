@@ -729,7 +729,7 @@ func (s *schedulingPlugin) Run(done <-chan struct{}) {
 func (s *schedulingPlugin) scheduleOne() {
 	pod := s.config.NextPod()
 	log.V(3).Infof("Attempting to schedule: %v", pod)
-	dest, err := s.config.Algorithm.Schedule(pod, s.config.MinionLister)
+	dest, err := s.config.Algorithm.Schedule(pod, s.config.MinionLister) // call kubeScheduler.Schedule
 	if err != nil {
 		log.V(1).Infof("Failed to schedule: %v", pod)
 		s.config.Recorder.Eventf(pod, "failedScheduling", "Error scheduling: %v", err)

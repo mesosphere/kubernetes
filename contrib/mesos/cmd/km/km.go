@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// clone of the upstream cmd/hypercube/main.go
 package main
 
 import (

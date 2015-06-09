@@ -47,7 +47,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// CMServer is the mail context object for the controller manager.
+// CMServer is the main context object for the controller manager.
 type CMServer struct {
 	*app.CMServer
 	UseHostPortEndpoints bool

@@ -21,12 +21,14 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/cloudprovider/mesos"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/healthz"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/version/verflag"
 
 	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/controllermanager"
 
+	"github.com/golang/glog"
 	"github.com/spf13/pflag"
 )
 
@@ -45,6 +47,10 @@ func main() {
 	defer util.FlushLogs()
 
 	verflag.PrintAndExitIfRequested()
+
+	if s.CloudProvider != mesos.ProviderName {
+		glog.Fatalf("Only provider %v is supported, you specified %v", mesos.ProviderName, s.CloudProvider)
+	}
 
 	if err := s.Run(pflag.CommandLine.Args()); err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())

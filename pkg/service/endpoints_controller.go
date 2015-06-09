@@ -54,7 +54,7 @@ var (
 )
 
 // NewEndpointController returns a new *EndpointController.
-func NewEndpointController(client *client.Client) *EndpointController {
+func NewEndpointController(client *client.Client) RunnableEndpointController {
 	e := &EndpointController{
 		client: client,
 		queue:  workqueue.New(),
@@ -99,6 +99,10 @@ func NewEndpointController(client *client.Client) *EndpointController {
 	)
 
 	return e
+}
+
+type RunnableEndpointController interface {
+	Run(workers int, stopCh <-chan struct{})
 }
 
 // EndpointController manages selector-based service endpoints.

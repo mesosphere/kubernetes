@@ -44,10 +44,6 @@ var (
 	keyFunc = framework.DeletionHandlingMetaNamespaceKeyFunc
 )
 
-type EndpointController interface {
-	Run(workers int, stopCh <-chan struct{})
-}
-
 // NewEndpointController returns a new *EndpointController.
 func NewEndpointController(client *client.Client) *endpointController {
 	e := &endpointController{

@@ -79,6 +79,8 @@ type CMServer struct {
 	Master     string
 	Kubeconfig string
 
+	NewEndpointController func(client *client.Client) service.RunnableEndpointController
+
 	// The following fields are deprecated and unused except in flag parsing.
 	MinionRegexp   string
 	MachineList    util.StringList
@@ -103,6 +105,7 @@ func NewCMServer() *CMServer {
 		PodEvictionTimeout:      5 * time.Minute,
 		SyncNodeList:            true,
 		ClusterName:             "kubernetes",
+		NewEndpointController:	 service.NewEndpointController,
 	}
 	return &s
 }
@@ -195,7 +198,7 @@ func (s *CMServer) Run(_ []string) error {
 		glog.Fatal(server.ListenAndServe())
 	}()
 
-	endpoints := service.NewEndpointController(kubeClient)
+	endpoints := s.NewEndpointController(kubeClient)
 	go endpoints.Run(s.ConcurrentEndpointSyncs, util.NeverStop)
 
 	controllerManager := replicationControllerPkg.NewReplicationManager(kubeClient, replicationControllerPkg.BurstReplicas)

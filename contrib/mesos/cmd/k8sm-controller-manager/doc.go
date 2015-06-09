@@ -15,4 +15,9 @@ limitations under the License.
 */
 
 // This package main implements the executable Kubernetes Mesos controller manager.
+//
+// It is mainly a clone of the upstream cmd/hyperkube module right now because
+// the upstream hyperkube module is not reusable.
+//
+// TODO(jdef,sttts): refactor upstream cmd/kube-controller-manager to be reusable with the necessary mesos changes
 package main

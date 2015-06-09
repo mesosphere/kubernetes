@@ -15,6 +15,10 @@ limitations under the License.
 */
 
 // This package main morphs all binaries under cmd/ and several other stock
-// Kubernetes binaries into a single executable. It is mainly a clone of the
-// upstream cmd/hyperkube module.
+// Kubernetes binaries into a single executable.
+//
+// It is mainly a clone of the upstream cmd/hyperkube module right now because
+// the upstream hyperkube module is not reusable.
+//
+// TODO(jdef,sttts): refactor upstream cmd/hyperkube to be reusable with the necessary mesos changes
 package main

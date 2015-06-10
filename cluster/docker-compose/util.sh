@@ -25,8 +25,6 @@ source "${KUBE_ROOT}/cluster/docker-compose/${KUBE_CONFIG_FILE-"config-default.s
 source "${KUBE_ROOT}/cluster/common.sh"
 source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 
-KUBE_PREPARED=false
-
 # Generate kubeconfig data for the created cluster.
 # Assumed vars:
 #   KUBE_ROOT
@@ -64,53 +62,12 @@ function is-pod-running {
   return 0
 }
 
-# Create & Delete a test pod to ensure a Kublet is running (on a Mesos slave)
-function init-kublets {
-  local kubectl="${KUBE_ROOT}/cluster/kubectl.sh"
-  local pod="${KUBE_ROOT}/cluster/docker-compose/pod-nginx.json"
-  local pod_name=$(jq '.metadata.name' --raw-output < ${pod})
-  #TODO: use gcr.io/google_containers/pause:0.8.0 "/pause" ?
-
-  if is-pod-running "${pod_name}"; then
-    echo "Test pod '${pod_name}' is already running." 1>&2
-    return 0
-  fi
-
-  echo "Creating test pod '${pod_name}'" 1>&2
-  "${kubectl}" create -f "${pod}" 1> /dev/null
-
-  echo "Waiting for pod '${pod_name}' to come up..." 1>&2
-  next_wait_time=0
-  until is-pod-running "${pod_name}" || [ ${next_wait_time} -eq 10 ]; do
-    [ ${next_wait_time} -gt 1 ] && echo "Sleeping ${next_wait_time} seconds..." 1>&2
-    sleep $(( next_wait_time++ ))
-  done
-
-  if ! is-pod-running "${pod_name}"; then
-    echo "ERROR: Test pod '${pod_name}' never came up!" 1>&2
-    return 1
-  fi
-
-  echo "Pod '${pod_name}' is Running" 1>&2
-
-  echo "Deleting test pod '${pod_name}'" 1>&2
-  "${kubectl}" delete -f "${pod}" 1> /dev/null
-}
-
 # Perform preparations required to run e2e tests
 function prepare-e2e {
-  if [ "${KUBE_PREPARED}" = true ]; then
-    echo "Skipping preparing e2e environment" 1>&2
-    return 0
-  fi
-
   echo "Preparing e2e environment" 1>&2
   detect-master
   detect-minions
   create-kubeconfig
-  init-kublets
-
-  KUBE_PREPARED=true
 }
 
 # Execute prior to running tests to build a release if required for env

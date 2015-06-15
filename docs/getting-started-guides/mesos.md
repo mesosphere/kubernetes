@@ -5,11 +5,11 @@
 Mesos allows dynamic sharing of cluster resources between Kubernetes and other first-class Mesos frameworks such as [Hadoop][1], [Spark][2], and [Chronos][3].
 Mesos also ensures applications from different frameworks running on your cluster are isolated and that resources are allocated fairly.
 
-Running Kubernetes on Mesos allows you to easily move Kubernetes workloads from one cloud provider to another to your own physical datacenter.
+Running Kubernetes on Mesos allows you to easily move Kubernetes workloads from one cloud provider to another or to your own physical datacenter.
 
 This tutorial will walk you through setting up Kubernetes on a Mesos cluster.
 It provides a step by step walk through of adding Kubernetes to a Mesos cluster and running the classic GuestBook demo application.
-The walkthrough presented here is based on the v0.4.x series of the Kubernetes-Mesos project, which itself is based on Kubernetes v0.11.0.
+The walkthrough presented here is based on the v0.5.x series of the Kubernetes-Mesos project, which itself is based on Kubernetes v1.0.
 
 **NOTE:** There are [known issues with the current implementation][11].
 Please [file an issue against the kubernetes-mesos project][12] if you have problems completing the steps below.
@@ -31,10 +31,8 @@ ssh jclouds@${ip_address_of_master_node}
 Build Kubernetes-Mesos.
 
 ```bash
-$ git clone https://github.com/mesosphere/kubernetes-mesos k8sm
-$ mkdir -p bin && sudo docker run --rm -v $(pwd)/bin:/target \
-  -v $(pwd)/k8sm:/snapshot -e GIT_BRANCH=release-0.4 \
-  mesosphere/kubernetes-mesos:build
+$ git clone https://github.com/mGoogleCloudPlatform/kubernetes k8s
+$ KUBERNETES_CONTRIB=mesos make
 ```
 
 Set some environment variables.
@@ -42,9 +40,9 @@ The internal IP address of the master may be obtained via `hostname -i`.
 
 ```bash
 $ export servicehost=$(hostname -i)
-$ export mesos_master=${servicehost}:5050
 $ export KUBERNETES_MASTER=http://${servicehost}:8888
 ```
+
 ### Deploy etcd
 Start etcd and verify that it is running:
 
@@ -64,26 +62,41 @@ curl -L http://$servicehost:4001/v2/keys/
 If connectivity is OK, you will see an output of the available keys in etcd (if any).
 
 ### Start Kubernetes-Mesos Services
-Start the kubernetes-mesos API server, controller manager, and scheduler on a Mesos master node:
+Go into the build directory:
+```bash
+$ cd _output/local/go
+```
+Create a cloud_config file `mesos-cloud.conf` in the current directory with the following contents:
+```
+[mesos-cloud]
+        mesos-master        = <mesos_master>
+        http-client-timeout = 5s
+        state-cache-ttl     = 20s
+```
+
+Replace `<mesos_master>` with the url of the Mesos master. Depending on your Mesos installation this is either an HTTP url like `http://${servicehost}:5050`or a ZooKeeper URL like `zk://${servicehost}/mesos`. In order to let Kubernetes survive Mesos master changes, the ZooKeeper URL is recommended for production environments.
+
+Now start the kubernetes-mesos API server, controller manager, and scheduler on a Mesos master node. Replace `<mesos_master>` with the Mesos master URL used above in the `mesos-cloud.conf`:
 
 ```bash
-$ ./bin/km apiserver \
+$ bin/km apiserver \
   --address=${servicehost} \
-  --mesos_master=${mesos_master} \
   --etcd_servers=http://${servicehost}:4001 \
   --service-cluster-ip-range=10.10.10.0/24 \
   --port=8888 \
   --cloud_provider=mesos \
+  --cloud_config=mesos-cloud.conf \
   --v=1 >apiserver.log 2>&1 &
 
-$ ./bin/km controller-manager \
+$ bin/km controller-manager \
   --master=$servicehost:8888 \
-  --mesos_master=${mesos_master} \
+  --cloud_provider=mesos \
+  --cloud_config=./mesos-cloud.conf  \
   --v=1 >controller.log 2>&1 &
 
-$ ./bin/km scheduler \
+$ bin/km scheduler \
   --address=${servicehost} \
-  --mesos_master=${mesos_master} \
+  --mesos_master=<mesos_master> \
   --etcd_servers=http://${servicehost}:4001 \
   --mesos_user=root \
   --api_servers=$servicehost:8888 \

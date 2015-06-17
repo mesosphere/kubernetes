@@ -14,14 +14,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Example: KUBERNETES_PROVIDER=docker-compose go run hack/e2e.go --v --test --check_version_skew=false
+# Example:
+# export KUBERNETES_PROVIDER=mesos/docker
+# go run hack/e2e.go -v -up -check_cluster_size=false
+# go run hack/e2e.go -v -test -check_version_skew=false
+# go run hack/e2e.go -v -down
 
 set -o errexit
 set -o nounset
 set -o pipefail
 
-KUBE_ROOT=$(dirname "${BASH_SOURCE}")/../..
-source "${KUBE_ROOT}/cluster/docker-compose/${KUBE_CONFIG_FILE-"config-default.sh"}"
+KUBE_ROOT=$(cd "$(dirname "${BASH_SOURCE}")/../../.." && pwd)
+source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/${KUBE_CONFIG_FILE-"config-default.sh"}"
 source "${KUBE_ROOT}/cluster/common.sh"
 source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 
@@ -37,7 +41,7 @@ source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 function create-kubeconfig {
   local kubectl="${KUBE_ROOT}/cluster/kubectl.sh"
 
-  export CONTEXT="docker-compose"
+  export CONTEXT="${KUBERNETES_PROVIDER}"
   export KUBECONFIG=${KUBECONFIG:-$DEFAULT_KUBECONFIG}
   # KUBECONFIG determines the file we write to, but it may not exist yet
   if [[ ! -e "${KUBECONFIG}" ]]; then
@@ -64,10 +68,7 @@ function is-pod-running {
 
 # Perform preparations required to run e2e tests
 function prepare-e2e {
-  echo "Preparing e2e environment" 1>&2
-  detect-master
-  detect-minions
-  create-kubeconfig
+  echo "TODO: prepare-e2e" 1>&2
 }
 
 # Execute prior to running tests to build a release if required for env
@@ -78,7 +79,7 @@ function test-build-release {
 
 # Must ensure that the following ENV vars are set
 function detect-master {
-  echo "KUBE_MASTER: $KUBE_MASTER" 1>&2
+#  echo "KUBE_MASTER: $KUBE_MASTER" 1>&2
 
   docker_id=$(docker ps --filter="name=docker_apiserver" --quiet)
   if [[ "${docker_id}" == *'\n'* ]]; then
@@ -113,6 +114,77 @@ function detect-minions {
 
   done <<< "$docker_ids"
   echo "KUBE_MINION_IP_ADDRESSES: [${KUBE_MINION_IP_ADDRESSES[*]}]" 1>&2
+}
+
+# Verify prereqs on host machine
+function verify-prereqs {
+	echo "TODO: verify-prereqs" 1>&2
+	# Verify that docker, docker-compose, and jq exist
+	# Verify that all the right docker images exist:
+	# mesosphere/kubernetes-mesos-test, etc.
+}
+
+# Instantiate a kubernetes cluster
+function kube-up {
+    echo "Starting docker-compose cluster" 1>&2
+	(
+	  cd "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
+	  docker-compose up -d
+	)
+
+	detect-master
+    detect-minions
+    create-kubeconfig
+}
+
+function validate-cluster {
+  # Do not validate cluster size. There will be zero k8s minions until a pod is created.
+
+  echo "Listing cluster services:" 1>&2
+  # docker ips can only be reached from inside docker (when not in host networking mode)
+  docker run \
+    --rm \
+    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
+    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
+    -v "/var/run/docker.sock:/var/run/docker.sock" \
+    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh" \
+    mesosphere/kubernetes-mesos-test \
+    cluster-info
+}
+
+# Delete a kubernetes cluster
+function kube-down {
+	echo "Stopping docker-compose cluster" 1>&2
+	# TODO: cleanup containers owned by kubernetes
+	# Nuclear option: docker ps -q -a | xargs docker rm -f
+	(
+	  cd "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
+	  docker-compose stop
+	  docker-compose rm -f
+	)
+	# TODO: delete /Users/<user>/.kube/config
+}
+
+function test-e2e {
+  # test version skew?
+
+  DEFAULT_TEST_ARGS="--ginkgo.noColor"
+  echo "Running e2e tests:" 1>&2
+  # docker ips can only be reached from inside docker (when not in host networking mode)
+  docker run \
+    --rm \
+    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
+    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
+    -v "/var/run/docker.sock:/var/run/docker.sock" \
+    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/hack/ginkgo-e2e.sh" \
+    mesosphere/kubernetes-mesos-test \
+    "${TEST_ARGS:-$DEFAULT_TEST_ARGS}"
+}
+
+# Execute after running tests to perform any required clean-up
+function test-teardown {
+	echo "test-teardown" 1>&2
+	kube-down
 }
 
 ## Below functions used by hack/e2e-suite/services.sh

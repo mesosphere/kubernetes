@@ -16,6 +16,8 @@
 
 # A library of helper functions that each provider hosting Kubernetes must implement to use cluster/kube-*.sh scripts.
 
+KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+
 # Must ensure that the following ENV vars are set
 function detect-master {
 	echo "KUBE_MASTER_IP: $KUBE_MASTER_IP" 1>&2
@@ -35,6 +37,15 @@ function detect-minions {
 # Verify prereqs on host machine
 function verify-prereqs {
 	echo "TODO: verify-prereqs" 1>&2
+}
+
+# Validate that cluster is up
+function validate-cluster {
+	echo "Validating cluster" 1>&2
+	"${KUBE_ROOT}/cluster/validate-cluster.sh"
+
+	echo "Validating cluster-info" 1>&2
+	"${KUBE_ROOT}/cluster/kubectl.sh" cluster-info
 }
 
 # Instantiate a kubernetes cluster

@@ -18,5 +18,5 @@
 #Set NUM_MINIONS to minimum required for testing.
 NUM_MINIONS=2
 
-KUBE_ROOT=$(dirname "${BASH_SOURCE}")/../..
-source "${KUBE_ROOT}/cluster/docker-compose/config-default.sh"
+KUBE_ROOT=$(dirname "${BASH_SOURCE}")/../../..
+source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/config-default.sh"

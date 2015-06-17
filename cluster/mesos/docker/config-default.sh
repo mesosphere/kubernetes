@@ -17,7 +17,7 @@
 ## Contains configuration values for interacting with the Vagrant cluster
 
 
-KUBE_MASTER="docker-compose" # config context passed to kubectrl
+#KUBE_MASTER="docker-compose" # config context passed to kubectrl
 #MASTER_IP="$(boot2docker ip):8888"
 #KUBE_MASTER_IP=${MASTER_IP}
 #KUBE_SERVER="http://${KUBE_MASTER_IP}"

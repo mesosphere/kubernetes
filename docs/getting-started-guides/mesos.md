@@ -117,7 +117,8 @@ NAME      READY     REASON    RESTARTS   AGE
 ```
 
 ```bash
-$ kubectl get services       # your service IPs will likely differ
+# NOTE: your service IPs will likely differ
+$ kubectl get services
 NAME             LABELS                                    SELECTOR   IP(S)          PORT(S)
 k8sm-scheduler   component=scheduler,provider=k8sm         <none>     10.10.10.113   10251/TCP
 kubernetes       component=apiserver,provider=kubernetes   <none>     10.10.10.1     443/TCP

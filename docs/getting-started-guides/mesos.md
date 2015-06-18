@@ -31,7 +31,8 @@ ssh jclouds@${ip_address_of_master_node}
 Build Kubernetes-Mesos.
 
 ```bash
-$ git clone https://github.com/GoogleCloudPlatform/kubernetes k8s
+$ git clone https://github.com/GoogleCloudPlatform/kubernetes
+$ cd kubernetes
 $ export KUBERNETES_CONTRIB=mesos
 $ make
 ```
@@ -58,7 +59,7 @@ fd7bac9e2301   coreos/etcd:latest   "/etcd"   5s ago    Up 3s    2379/tcp, 2380/
 ```
 It's also a good idea to ensure your etcd instance is reachable by testing it
 ```bash
-curl -L http://$servicehost:4001/v2/keys/
+curl -L http://${servicehost}:4001/v2/keys/
 ```
 If connectivity is OK, you will see an output of the available keys in etcd (if any).
 
@@ -67,15 +68,18 @@ Update your PATH to more easily run the Kubernetes-Mesos binaries:
 ```bash
 $ export PATH="$(pwd)/_output/local/go/bin:$PATH"
 ```
+Identify your Mesos master: depending on your Mesos installation this is either an HTTP url like `http://${servicehost}:5050`or a ZooKeeper URL like `zk://${servicehost}/mesos`.
+In order to let Kubernetes survive Mesos master changes, the ZooKeeper URL is recommended for production environments.
+```bash
+$ export MESOS_MASTER=<http://hostname:port or zk:// url>
+```
 Create a cloud_config file `mesos-cloud.conf` in the current directory with the following contents:
 ```
 [mesos-cloud]
-        mesos-master        = <mesos_master>
+        mesos-master        = ${MESOS_MASTER}
 ```
 
-Replace `<mesos_master>` with the url of the Mesos master. Depending on your Mesos installation this is either an HTTP url like `http://${servicehost}:5050`or a ZooKeeper URL like `zk://${servicehost}/mesos`. In order to let Kubernetes survive Mesos master changes, the ZooKeeper URL is recommended for production environments.
-
-Now start the kubernetes-mesos API server, controller manager, and scheduler on a Mesos master node. Replace `<mesos_master>` with the Mesos master URL used above in the `mesos-cloud.conf`:
+Now start the kubernetes-mesos API server, controller manager, and scheduler on a Mesos master node:
 
 ```bash
 $ km apiserver \
@@ -88,18 +92,17 @@ $ km apiserver \
   --v=1 >apiserver.log 2>&1 &
 
 $ km controller-manager \
-  --master=$servicehost:8888 \
+  --master=${servicehost}:8888 \
   --cloud-provider=mesos \
   --cloud-config=./mesos-cloud.conf  \
   --v=1 >controller.log 2>&1 &
 
-# NOTE: <mesos_master> here should match the one in your mesos-cloud.conf file
 $ km scheduler \
   --address=${servicehost} \
-  --mesos-master=<mesos_master> \
+  --mesos-master=${MESOS_MASTER} \
   --etcd-servers=http://${servicehost}:4001 \
   --mesos-user=root \
-  --api-servers=$servicehost:8888 \
+  --api-servers=${servicehost}:8888 \
   --v=2 >scheduler.log 2>&1 &
 ```
 
@@ -125,7 +128,7 @@ kubernetes       component=apiserver,provider=kubernetes   <none>     10.10.10.1
 ```
 
 Lastly, look for Kubernetes in the Mesos web GUI by pointing your browser to
-`http://${mesos_master}`. Make sure you have an active VPN connection.
+`http://<mesos_master_ip:port>`. Make sure you have an active VPN connection.
 Go to the Frameworks tab, and look for an active framework named "Kubernetes".
 
 ## Spin up a pod

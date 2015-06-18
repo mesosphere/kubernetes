@@ -104,7 +104,7 @@ $ km controller-manager \
 
 $ km scheduler \
   --address=${servicehost} \
-  --mesos-master=${MESOS_MASTER} \
+  --mesos-master=${servicehost}:5050 \
   --etcd-servers=http://${servicehost}:4001 \
   --mesos-user=root \
   --api-servers=${servicehost}:8888 \

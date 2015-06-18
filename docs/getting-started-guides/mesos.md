@@ -18,7 +18,10 @@ Please [file an issue against the kubernetes-mesos project][8] if you have probl
 
 * Understanding of [Apache Mesos][6]
 * Mesos cluster on [Google Compute Engine][5]
-* A VPN connection to the cluster.
+* A VPN connection to the cluster
+* On the master node:
+  * GoLang > 1.2 
+  * make (i.e. build-essential) 
 
 ### Deploy Kubernetes-Mesos
 

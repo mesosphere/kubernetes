@@ -100,7 +100,7 @@ KUBE_SERVER="${KUBE_SERVER:-https://${KUBE_MASTER_IP}}"
 # file and the one provided with --host is ignored.
 # Add path for things like running kubectl binary.
 export PATH=$(dirname "${e2e_test}"):"${PATH}"
-"${ginkgo}" "${ginkgo_args[@]:+${ginkgo_args[@]}}" "${e2e_test}" -- \
+exec "${ginkgo}" "${ginkgo_args[@]:+${ginkgo_args[@]}}" "${e2e_test}" -- \
   "${auth_config[@]:+${auth_config[@]}}" \
   --host="${KUBE_SERVER}" \
   --provider="${KUBERNETES_PROVIDER}" \

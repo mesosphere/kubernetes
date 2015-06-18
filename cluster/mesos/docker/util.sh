@@ -74,7 +74,8 @@ function prepare-e2e {
 # Execute prior to running tests to build a release if required for env
 function test-build-release {
   # Make a release
-  "${KUBE_ROOT}/build/release.sh"
+  # TODO: KUBE_RELEASE_RUN_TESTS=N?
+  exec KUBERNETES_CONTRIB=mesos "${KUBE_ROOT}/build/release.sh"
 }
 
 # Must ensure that the following ENV vars are set
@@ -167,18 +168,20 @@ function kube-down {
 
 function test-e2e {
   # test version skew?
+  TEST_ARGS="$@"
 
-  DEFAULT_TEST_ARGS="--ginkgo.noColor"
   echo "Running e2e tests:" 1>&2
+  echo "hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
   # docker ips can only be reached from inside docker (when not in host networking mode)
   docker run \
     --rm \
+    -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
     -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
     -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
     -v "/var/run/docker.sock:/var/run/docker.sock" \
     --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/hack/ginkgo-e2e.sh" \
     mesosphere/kubernetes-mesos-test \
-    "${TEST_ARGS:-$DEFAULT_TEST_ARGS}"
+    ${TEST_ARGS}
 }
 
 # Execute after running tests to perform any required clean-up

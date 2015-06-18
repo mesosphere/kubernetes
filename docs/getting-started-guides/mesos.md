@@ -185,6 +185,6 @@ Future work will add instructions to this guide to enable support for Kubernetes
 [6]: http://mesos.apache.org/
 [7]: https://github.com/mesosphere/kubernetes-mesos/blob/master/docs/issues.md
 [8]: https://github.com/mesosphere/kubernetes-mesos/issues
-[9]: ../../examples/README.md
+[9]: ../../examples/
 
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/docs/getting-started-guides/mesos.md?pixel)]()

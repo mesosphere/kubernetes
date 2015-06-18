@@ -73,7 +73,7 @@ In order to let Kubernetes survive Mesos master changes, the ZooKeeper URL is re
 ```bash
 $ export MESOS_MASTER=<http://hostname:port or zk:// url>
 ```
-Create a cloud_config file `mesos-cloud.conf` in the current directory with the following contents:
+Create a cloud config file `mesos-cloud.conf` in the current directory with the following contents:
 ```
 $ cat <<EOF >mesos-cloud.conf
 [mesos-cloud]

@@ -75,8 +75,10 @@ $ export MESOS_MASTER=<http://hostname:port or zk:// url>
 ```
 Create a cloud_config file `mesos-cloud.conf` in the current directory with the following contents:
 ```
+$ cat <<EOF >mesos-cloud.conf
 [mesos-cloud]
         mesos-master        = ${MESOS_MASTER}
+EOF
 ```
 
 Now start the kubernetes-mesos API server, controller manager, and scheduler on a Mesos master node:

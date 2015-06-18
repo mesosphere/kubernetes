@@ -63,9 +63,9 @@ curl -L http://$servicehost:4001/v2/keys/
 If connectivity is OK, you will see an output of the available keys in etcd (if any).
 
 ### Start Kubernetes-Mesos Services
-Go into the build directory:
+Update your PATH to more easily run the Kubernetes-Mesos binaries:
 ```bash
-$ cd _output/local/go
+$ export PATH="$(pwd)/_output/local/go/bin:$PATH"
 ```
 Create a cloud_config file `mesos-cloud.conf` in the current directory with the following contents:
 ```
@@ -80,7 +80,7 @@ Replace `<mesos_master>` with the url of the Mesos master. Depending on your Mes
 Now start the kubernetes-mesos API server, controller manager, and scheduler on a Mesos master node. Replace `<mesos_master>` with the Mesos master URL used above in the `mesos-cloud.conf`:
 
 ```bash
-$ bin/km apiserver \
+$ km apiserver \
   --address=${servicehost} \
   --etcd_servers=http://${servicehost}:4001 \
   --service-cluster-ip-range=10.10.10.0/24 \
@@ -89,13 +89,13 @@ $ bin/km apiserver \
   --cloud_config=mesos-cloud.conf \
   --v=1 >apiserver.log 2>&1 &
 
-$ bin/km controller-manager \
+$ km controller-manager \
   --master=$servicehost:8888 \
   --cloud_provider=mesos \
   --cloud_config=./mesos-cloud.conf  \
   --v=1 >controller.log 2>&1 &
 
-$ bin/km scheduler \
+$ km scheduler \
   --address=${servicehost} \
   --mesos_master=<mesos_master> \
   --etcd_servers=http://${servicehost}:4001 \
@@ -109,7 +109,7 @@ public-facing service router, for testing the web interface a little
 later on.
 
 ```bash
-$ sudo ./bin/km proxy \
+$ sudo km proxy \
   --bind_address=${servicehost} \
   --etcd_servers=http://${servicehost}:4001 \
   --logtostderr=true >proxy.log 2>&1 &
@@ -124,12 +124,12 @@ $ disown -a
 Interact with the kubernetes-mesos framework via `kubectl`:
 
 ```bash
-$ bin/kubectl get pods
+$ kubectl get pods
 POD        IP        CONTAINER(S)        IMAGE(S)        HOST        LABELS        STATUS
 ```
 
 ```bash
-$ bin/kubectl get services       # your service IPs will likely differ
+$ kubectl get services       # your service IPs will likely differ
 NAME            LABELS                                    SELECTOR            IP             PORT
 kubernetes      component=apiserver,provider=kubernetes   <none>              10.10.10.2     443
 ```
@@ -182,7 +182,7 @@ EOPOD
 Send the pod description to Kubernetes using the `kubectl` CLI:
 
 ```bash
-$ bin/kubectl create -f nginx.json
+$ kubectl create -f nginx.json
 nginx-id-01
 ```
 
@@ -190,7 +190,7 @@ Wait a minute or two while `dockerd` downloads the image layers from the interne
 We can use the `kubectl` interface to monitor the status of our pod:
 
 ```bash
-$ bin/kubectl get pods
+$ kubectl get pods
 POD          IP           CONTAINER(S)  IMAGE(S)          HOST                       LABELS                STATUS
 nginx-id-01  172.17.5.27  nginx-01      nginx             10.72.72.178/10.72.72.178  cluster=gce,name=foo  Running
 ```
@@ -205,11 +205,11 @@ Following the instructions from the kubernetes-mesos [examples/guestbook][6]:
 
 ```bash
 $ export ex=k8sm/examples/guestbook
-$ bin/kubectl create -f $ex/redis-master.json
-$ bin/kubectl create -f $ex/redis-master-service.json
-$ bin/kubectl create -f $ex/redis-slave-controller.json
-$ bin/kubectl create -f $ex/redis-slave-service.json
-$ bin/kubectl create -f $ex/frontend-controller.json
+$ kubectl create -f $ex/redis-master.json
+$ kubectl create -f $ex/redis-master-service.json
+$ kubectl create -f $ex/redis-slave-controller.json
+$ kubectl create -f $ex/redis-slave-service.json
+$ kubectl create -f $ex/frontend-controller.json
 
 $ cat <<EOS >/tmp/frontend-service
 {
@@ -225,13 +225,13 @@ $ cat <<EOS >/tmp/frontend-service
   ]
 }
 EOS
-$ bin/kubectl create -f /tmp/frontend-service
+$ kubectl create -f /tmp/frontend-service
 ```
 
 Watch your pods transition from `Pending` to `Running`:
 
 ```bash
-$ watch 'bin/kubectl get pods'
+$ watch 'kubectl get pods'
 ```
 
 Review your Mesos cluster's tasks:
@@ -247,12 +247,12 @@ $ mesos ps
  0:00:10    R    41.93 MB  0.75  65.51    none   root  fa1da063-d825-11e4-9162-42010acb46e2
  0:00:08    R    41.58 MB  0.5   64.97    none   root  b9b2e0b2-d825-11e4-9162-42010acb46e2
 ```
-The number of Kubernetes pods listed earlier (from `bin/kubectl get pods`) should equal to the number active Mesos tasks listed the previous listing (`mesos ps`).
+The number of Kubernetes pods listed earlier (from `kubectl get pods`) should equal to the number active Mesos tasks listed the previous listing (`mesos ps`).
 
 Next, determine the internal IP address of the front end [service][7]:
 
 ```bash
-$ bin/kubectl get services
+$ kubectl get services
 NAME            LABELS                                    SELECTOR            IP             PORT
 kubernetes      component=apiserver,provider=kubernetes   <none>              10.10.10.2     443
 redismaster     <none>                                    name=redis-master   10.10.10.49    10000

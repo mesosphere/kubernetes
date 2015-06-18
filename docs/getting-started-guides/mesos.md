@@ -9,7 +9,7 @@ Running Kubernetes on Mesos allows you to easily move Kubernetes workloads from 
 
 This tutorial will walk you through setting up Kubernetes on a Mesos cluster.
 It provides a step by step walk through of adding Kubernetes to a Mesos cluster and running the classic GuestBook demo application.
-The walkthrough presented here is based on the v0.5.x series of the Kubernetes-Mesos project, which itself is based on Kubernetes v1.0.
+The walkthrough presented here is based on the v0.6.x series of the Kubernetes-Mesos project, which itself is based on Kubernetes v1.0.
 
 **NOTE:** There are [known issues with the current implementation][11].
 Please [file an issue against the kubernetes-mesos project][12] if you have problems completing the steps below.
@@ -31,8 +31,9 @@ ssh jclouds@${ip_address_of_master_node}
 Build Kubernetes-Mesos.
 
 ```bash
-$ git clone https://github.com/mGoogleCloudPlatform/kubernetes k8s
-$ KUBERNETES_CONTRIB=mesos make
+$ git clone https://github.com/GoogleCloudPlatform/kubernetes k8s
+$ export KUBERNETES_CONTRIB=mesos
+$ make
 ```
 
 Set some environment variables.

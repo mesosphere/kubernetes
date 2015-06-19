@@ -16,6 +16,7 @@ cd <kubernetes>
 KUBERNETES_CONTRIB=mesos KUBE_RELEASE_RUN_TESTS=N ./build/release.sh
 export KUBERNETES_PROVIDER=mesos/docker
 ./cluster/kube-up.sh
+(cd cluster/mesos/docker; ./deployAddons.sh)
 ./cluster/test-e2e.sh -alsologtostderr=true -v=0 # optionally focus: -ginkgo.focus=Pods
 ./cluster/kube-down.sh
 ```

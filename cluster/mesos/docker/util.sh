@@ -74,8 +74,9 @@ function prepare-e2e {
 # Execute prior to running tests to build a release if required for env
 function test-build-release {
   # Make a release
-  # TODO: KUBE_RELEASE_RUN_TESTS=N?
-  exec KUBERNETES_CONTRIB=mesos "${KUBE_ROOT}/build/release.sh"
+  export KUBERNETES_CONTRIB=mesos
+  export KUBE_RELEASE_RUN_TESTS=N
+  "${KUBE_ROOT}/build/release.sh"
 }
 
 # Must ensure that the following ENV vars are set
@@ -127,7 +128,7 @@ function verify-prereqs {
 
 # Instantiate a kubernetes cluster
 function kube-up {
-    echo "Starting docker-compose cluster" 1>&2
+    kube::log::status "Starting ${KUBERNETES_PROVIDER} cluster"
 	(
 	  cd "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
 	  docker-compose up -d
@@ -139,23 +140,41 @@ function kube-up {
 }
 
 function validate-cluster {
-  # Do not validate cluster size. There will be zero k8s minions until a pod is created.
+  kube::log::status "Validating ${KUBERNETES_PROVIDER} cluster"
 
-  echo "Listing cluster services:" 1>&2
+  # Do not validate cluster size. There will be zero k8s minions until a pod is created.
+  docker_name="kubernetes-mesos-validate"
+
   # docker ips can only be reached from inside docker (when not in host networking mode)
   docker run \
+    --name="${docker_name}" \
     --rm \
     -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
     -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
     -v "/var/run/docker.sock:/var/run/docker.sock" \
     --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh" \
     mesosphere/kubernetes-mesos-test \
-    cluster-info
+    cluster-info \
+    &
+  test_pid=$!
+
+  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
+  trap 'kube::log::status "Killing docker run..." && docker kill ${docker_name} && kube::log::status "VALIDATION SUITE KILLED"' INT TERM
+  wait ${test_pid}
+  trap - INT TERM
+  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
+  exit_status=$!
+
+  if [ ${exit_status} = 0 ]; then
+    kube::log::status "VALIDATION SUITE SUCCESSFUL"
+  el
+    kube::log::status "VALIDATION SUITE FAILED"
+  fi
 }
 
 # Delete a kubernetes cluster
 function kube-down {
-	echo "Stopping docker-compose cluster" 1>&2
+	kube::log::status "Stopping ${KUBERNETES_PROVIDER} cluster"
 	# TODO: cleanup containers owned by kubernetes
 	# Nuclear option: docker ps -q -a | xargs docker rm -f
 	(
@@ -166,14 +185,23 @@ function kube-down {
 	# TODO: delete /Users/<user>/.kube/config
 }
 
+function test-setup {
+  kube::log::status "Building required docker images"
+  "${KUBE_ROOT}/cluster/mesos/docker/km/build.sh"
+  "${KUBE_ROOT}/cluster/mesos/docker/test/build.sh"
+  "${KUBE_ROOT}/cluster/mesos/docker/mesos-slave/build.sh"
+}
+
 function test-e2e {
   # test version skew?
   TEST_ARGS="$@"
+  docker_name="kubernetes-mesos-e2e"
 
-  echo "Running e2e tests:" 1>&2
+  kube::log::status "Running e2e tests"
   echo "hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
   # docker ips can only be reached from inside docker (when not in host networking mode)
   docker run \
+    --name="${docker_name}" \
     --rm \
     -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
     -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
@@ -181,7 +209,22 @@ function test-e2e {
     -v "/var/run/docker.sock:/var/run/docker.sock" \
     --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/hack/ginkgo-e2e.sh" \
     mesosphere/kubernetes-mesos-test \
-    ${TEST_ARGS}
+    ${TEST_ARGS} \
+    &
+  test_pid=$!
+
+  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
+  trap 'kube::log::status "Killing docker run..." && docker kill ${docker_name} && kube::log::status "TEST SUITE KILLED"' INT TERM
+  wait ${test_pid}
+  trap - INT TERM
+  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
+  exit_status=$!
+
+  if [ ${exit_status} = 0 ]; then
+    kube::log::status "TEST SUITE SUCCESSFUL"
+  el
+    kube::log::status "TEST SUITE FAILED"
+  fi
 }
 
 # Execute after running tests to perform any required clean-up

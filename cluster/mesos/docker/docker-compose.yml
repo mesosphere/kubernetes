@@ -93,8 +93,6 @@ apiserver:
   links:
   - etcd
   - mesosmaster1
-  - mesosslave1
-  - mesosslave2
 controller:
   hostname: controller
   image: mesosphere/kubernetes-mesos
@@ -104,7 +102,6 @@ controller:
   - >
     echo "Hostname: $(hostname -f) ($(hostname -f | xargs resolveip))" &&
     (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = mesosmaster1:5050" >> /opt/mesos-cloud.conf) &&
-    await-health-check http://etcd:4001/health &&
     await-health-check http://mesosmaster1:5050/health &&
     await-health-check -t=60 http://apiserver:8888/healthz &&
     km controller-manager
@@ -112,10 +109,7 @@ controller:
     --cloud-config=/opt/mesos-cloud.conf
     --v=2
   links:
-  - etcd
   - mesosmaster1
-  - mesosslave1
-  - mesosslave2
   - apiserver
 scheduler:
   hostname: scheduler

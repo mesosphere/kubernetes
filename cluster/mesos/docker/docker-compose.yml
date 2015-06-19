@@ -30,7 +30,6 @@ mesosslave1:
   hostname: mesosslave1
   privileged: true
   image: mesosphere/kubernetes-mesos-slave:latest
-  ports: [ "5051:5051" ]
   environment:
   - MESOS_HOSTNAME=mesosslave1
   - MESOS_MASTER=mesosmaster1:5050
@@ -40,34 +39,35 @@ mesosslave1:
   - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[21000-21099]
   - MESOS_SWITCH_USER=0
   - MESOS_CONTAINERIZERS=docker,mesos
-  - DOCKER_DAEMON_ARGS="--log-level=error"
+  - DOCKER_NETWORK_OFFSET=0.0.1.0
+  - DOCKER_DAEMON_ARGS=--log-level=error
   links:
   - etcd
   - mesosmaster1
   - "ambassador:apiserver"
   volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
+  - /var/tmp/mesosslave1:/var/lib/docker
 mesosslave2:
   hostname: mesosslave2
   privileged: true
   image: mesosphere/kubernetes-mesos-slave:latest
-  ports: [ "5052:5052" ]
   environment:
   - MESOS_HOSTNAME=mesosslave2
   - MESOS_MASTER=mesosmaster1:5050
-  - MESOS_PORT=5052
+  - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
-  - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[22000-22099]
+  - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[21000-21099]
   - MESOS_SWITCH_USER=0
   - MESOS_CONTAINERIZERS=docker,mesos
-  - DOCKER_DAEMON_ARGS="--log-level=error"
+  - DOCKER_NETWORK_OFFSET=0.0.2.0
+  - DOCKER_DAEMON_ARGS=--log-level=error
   links:
   - etcd
   - mesosmaster1
   - "ambassador:apiserver"
   volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
+  - /var/tmp/mesosslave1:/var/lib/docker
 apiserver:
   hostname: apiserver
   image: mesosphere/kubernetes-mesos

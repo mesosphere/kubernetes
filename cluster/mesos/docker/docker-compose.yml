@@ -130,6 +130,8 @@ scheduler:
     --mesos-user=root
     --api-servers=http://apiserver:8888
     --mesos-master=mesosmaster1:5050
+    --cluster-dns=10.10.10.10
+    --cluster-domain=cluster.local
     --v=2
   links:
   - etcd

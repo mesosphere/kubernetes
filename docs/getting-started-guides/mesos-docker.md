@@ -7,19 +7,15 @@ allowing most end-to-end tests to pass.
 
 - [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 - [Docker CLI](https://docs.docker.com/)
-- [Docker Engine](https://docs.docker.com/)
-
+- [Docker Engine](https://docs.docker.com/)<br/>
     On Mac, use [Boot2Docker](http://boot2docker.io/) or [Docker Machine](https://docs.docker.com/machine/install-machine/)
     to run Docker Engine in a linux VM.
-- [Optional] [Virtual Box](https://www.virtualbox.org/wiki/Downloads)
-
+- [Optional] [Virtual Box](https://www.virtualbox.org/wiki/Downloads)<br/>
     Required by Boot2Docker and Docker Machine
-- [Optional] [etcd](https://github.com/coreos/etcd)
-
+- [Optional] [etcd](https://github.com/coreos/etcd)<br/>
     Only used locally by integration tests, when building without `KUBE_RELEASE_RUN_TESTS=N`.
 
-Note: On Mac, it's possible to install all the above via [Homebrew](http://brew.sh/).
-
+Note: On Mac, it's possible to install all the above via [Homebrew](http://brew.sh/).<br/>
 Follow any printed instructions after each step to make sure each is configured correctly.
 
 ```

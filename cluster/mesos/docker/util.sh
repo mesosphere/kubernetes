@@ -128,7 +128,7 @@ function verify-prereqs {
 
 # Instantiate a kubernetes cluster
 function kube-up {
-    kube::log::status "Starting ${KUBERNETES_PROVIDER} cluster"
+    echo "Starting ${KUBERNETES_PROVIDER} cluster" 1>&2
 	(
 	  cd "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
 	  docker-compose up -d
@@ -140,12 +140,13 @@ function kube-up {
 }
 
 function validate-cluster {
-  kube::log::status "Validating ${KUBERNETES_PROVIDER} cluster"
+  echo "Validating ${KUBERNETES_PROVIDER} cluster" 1>&2
 
   # Do not validate cluster size. There will be zero k8s minions until a pod is created.
   docker_name="kubernetes-mesos-validate"
 
-  # docker ips can only be reached from inside docker (when not in host networking mode)
+  # Run kubectl from inside docker
+  # This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
   docker run \
     --name="${docker_name}" \
     --rm \
@@ -158,23 +159,24 @@ function validate-cluster {
     &
   test_pid=$!
 
+  # trap and kill for better signal handing
   # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
-  trap 'kube::log::status "Killing docker run..." && docker kill ${docker_name} && kube::log::status "VALIDATION SUITE KILLED"' INT TERM
+  trap 'echo "Killing ${docker_name}" 1>&2 && docker kill ${docker_name} && echo "VALIDATION SUITE KILLED" 1>&2' INT TERM
   wait ${test_pid}
   trap - INT TERM
   wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
   exit_status=$!
 
   if [ ${exit_status} = 0 ]; then
-    kube::log::status "VALIDATION SUITE SUCCESSFUL"
+    echo "VALIDATION SUITE SUCCESSFUL" 1>&2
   el
-    kube::log::status "VALIDATION SUITE FAILED"
+    echo "VALIDATION SUITE FAILED" 1>&2
   fi
 }
 
 # Delete a kubernetes cluster
 function kube-down {
-	kube::log::status "Stopping ${KUBERNETES_PROVIDER} cluster"
+	echo "Stopping ${KUBERNETES_PROVIDER} cluster" 1>&2
 	# TODO: cleanup containers owned by kubernetes
 	# Nuclear option: docker ps -q -a | xargs docker rm -f
 	(
@@ -186,7 +188,7 @@ function kube-down {
 }
 
 function test-setup {
-  kube::log::status "Building required docker images"
+  echo "Building required docker images" 1>&2
   "${KUBE_ROOT}/cluster/mesos/docker/km/build.sh"
   "${KUBE_ROOT}/cluster/mesos/docker/test/build.sh"
   "${KUBE_ROOT}/cluster/mesos/docker/mesos-slave/build.sh"
@@ -197,9 +199,10 @@ function test-e2e {
   TEST_ARGS="$@"
   docker_name="kubernetes-mesos-e2e"
 
-  kube::log::status "Running e2e tests"
+  echo "Running e2e tests" 1>&2
   echo "hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
-  # docker ips can only be reached from inside docker (when not in host networking mode)
+  # Run e2e tests from inside docker
+  # This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
   docker run \
     --name="${docker_name}" \
     --rm \
@@ -213,17 +216,18 @@ function test-e2e {
     &
   test_pid=$!
 
+  # trap and kill for better signal handing
   # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
-  trap 'kube::log::status "Killing docker run..." && docker kill ${docker_name} && kube::log::status "TEST SUITE KILLED"' INT TERM
+  trap 'echo "Killing docker run..." 1>&2 && docker kill ${docker_name} && echo "TEST SUITE KILLED" 1>&2' INT TERM
   wait ${test_pid}
   trap - INT TERM
   wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
   exit_status=$!
 
   if [ ${exit_status} = 0 ]; then
-    kube::log::status "TEST SUITE SUCCESSFUL"
+    echo "TEST SUITE SUCCESSFUL" 1>&2
   el
-    kube::log::status "TEST SUITE FAILED"
+    echo "TEST SUITE FAILED" 1>&2
   fi
 }
 

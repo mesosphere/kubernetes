@@ -139,32 +139,46 @@ function kube-up {
     create-kubeconfig
 }
 
+# Run kubernetes scripts inside docker.
+# This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
+# Trap signals and kills the docker container for better signal handing
+function cluster::mesos::docker::run_in_docker {
+  cmd="$1"
+  shift
+  args="$@"
+  docker_name="kubectl-${RANDOM}"
+
+  docker run \
+    --name="${docker_name}" \
+    --rm \
+    -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
+    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
+    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
+    -v "/var/run/docker.sock:/var/run/docker.sock" \
+    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/${cmd}" \
+    mesosphere/kubernetes-mesos-test \
+    ${args} \
+    &
+  test_pid=$!
+
+  # trap and kill for better signal handing
+  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
+  trap 'echo "Killing ${docker_name}" 1>&2 && docker kill ${docker_name}' INT TERM
+  wait ${test_pid}
+  trap - INT TERM
+  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
+  exit_status=$!
+
+  return ${exit_status}
+}
+
 function validate-cluster {
   echo "Validating ${KUBERNETES_PROVIDER} cluster" 1>&2
 
   # Do not validate cluster size. There will be zero k8s minions until a pod is created.
   docker_name="kubernetes-mesos-validate"
 
-  # Run kubectl from inside docker
-  # This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
-  docker run \
-    --name="${docker_name}" \
-    --rm \
-    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
-    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
-    -v "/var/run/docker.sock:/var/run/docker.sock" \
-    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh" \
-    mesosphere/kubernetes-mesos-test \
-    cluster-info \
-    &
-  test_pid=$!
-
-  # trap and kill for better signal handing
-  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
-  trap 'echo "Killing ${docker_name}" 1>&2 && docker kill ${docker_name} && echo "VALIDATION SUITE KILLED" 1>&2' INT TERM
-  wait ${test_pid}
-  trap - INT TERM
-  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
+  cluster::mesos::docker::run_in_docker ./cluster/kubectl.sh cluster-info
   exit_status=$!
 
   if [ ${exit_status} = 0 ]; then
@@ -201,27 +215,8 @@ function test-e2e {
 
   echo "Running e2e tests" 1>&2
   echo "hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
-  # Run e2e tests from inside docker
-  # This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
-  docker run \
-    --name="${docker_name}" \
-    --rm \
-    -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
-    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
-    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
-    -v "/var/run/docker.sock:/var/run/docker.sock" \
-    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/hack/ginkgo-e2e.sh" \
-    mesosphere/kubernetes-mesos-test \
-    ${TEST_ARGS} \
-    &
-  test_pid=$!
 
-  # trap and kill for better signal handing
-  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
-  trap 'echo "Killing docker run..." 1>&2 && docker kill ${docker_name} && echo "TEST SUITE KILLED" 1>&2' INT TERM
-  wait ${test_pid}
-  trap - INT TERM
-  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
+  cluster::mesos::docker::run_in_docker ./hack/ginkgo-e2e.sh ${TEST_ARGS}
   exit_status=$!
 
   if [ ${exit_status} = 0 ]; then

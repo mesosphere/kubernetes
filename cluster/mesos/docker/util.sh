@@ -29,6 +29,40 @@ source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/${KUBE_CONFIG_FILE-"config-d
 source "${KUBE_ROOT}/cluster/common.sh"
 source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 
+
+# Run kubernetes scripts inside docker.
+# This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
+# Trap signals and kills the docker container for better signal handing
+function cluster::mesos::docker::run_in_docker {
+  cmd="$1"
+  shift
+  args="$@"
+  docker_name="kubectl-${RANDOM}"
+
+  docker run \
+    --name="${docker_name}" \
+    --rm \
+    -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
+    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
+    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
+    -v "/var/run/docker.sock:/var/run/docker.sock" \
+    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/${cmd}" \
+    mesosphere/kubernetes-mesos-test \
+    ${args} \
+    &
+  test_pid=$!
+
+  # trap and kill for better signal handing
+  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
+  trap 'echo "Killing ${docker_name}" 1>&2 && docker kill ${docker_name}' INT TERM
+  wait ${test_pid}
+  trap - INT TERM
+  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
+  exit_status=$!
+
+  return ${exit_status}
+}
+
 # Generate kubeconfig data for the created cluster.
 # Assumed vars:
 #   KUBE_ROOT
@@ -137,39 +171,9 @@ function kube-up {
 	detect-master
     detect-minions
     create-kubeconfig
-}
 
-# Run kubernetes scripts inside docker.
-# This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
-# Trap signals and kills the docker container for better signal handing
-function cluster::mesos::docker::run_in_docker {
-  cmd="$1"
-  shift
-  args="$@"
-  docker_name="kubectl-${RANDOM}"
-
-  docker run \
-    --name="${docker_name}" \
-    --rm \
-    -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
-    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
-    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
-    -v "/var/run/docker.sock:/var/run/docker.sock" \
-    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/${cmd}" \
-    mesosphere/kubernetes-mesos-test \
-    ${args} \
-    &
-  test_pid=$!
-
-  # trap and kill for better signal handing
-  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
-  trap 'echo "Killing ${docker_name}" 1>&2 && docker kill ${docker_name}' INT TERM
-  wait ${test_pid}
-  trap - INT TERM
-  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
-  exit_status=$!
-
-  return ${exit_status}
+    echo "Deploying Addons" 1>&2
+    cluster::mesos::docker::run_in_docker "./cluster/${KUBERNETES_PROVIDER}/deploy-addons.sh"
 }
 
 function validate-cluster {

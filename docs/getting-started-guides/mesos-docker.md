@@ -5,6 +5,7 @@ allowing most end-to-end tests to pass.
 
 ### Prerequisites
 
+- [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 - [Docker CLI](https://docs.docker.com/)
 - [Docker Engine](https://docs.docker.com/)
 
@@ -19,7 +20,10 @@ allowing most end-to-end tests to pass.
 
 Note: On Mac, it's possible to install all the above via [Homebrew](http://brew.sh/).
 
+Follow any printed instructions after each step to make sure each is configured correctly.
+
 ```
+brew install git
 brew install caskroom/cask/brew-cask
 brew cask install virtualbox
 brew install docker
@@ -29,7 +33,20 @@ boot2docker up
 brew install etcd
 ```
 
+***TODO***: apt & yum instructions
+
 ### Walkthrough
+
+1. Checkout the Kubernetes source
+
+    ```
+    git clone https://github.com/GoogleCloudPlatform/kubernetes
+    cd kubernetes
+    ```
+
+    By default, that will get you the bleeding edge of master branch.
+    You may want a [release branch](https://github.com/GoogleCloudPlatform/kubernetes/releases) instead,
+    if you have trouble with master.
 
 1. Build Kubernetes-Mesos binaries (cross-compiled)
 

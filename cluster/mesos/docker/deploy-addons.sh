@@ -14,25 +14,68 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# deploy the add-on services after the cluster is available
+# Deploy the addon services after the cluster is available
+# TODO: integrate with or use /cluster/saltbase/salt/kube-addons/kube-addons.sh
 
 set -o errexit
 set -o nounset
 set -o pipefail
+set -xe
 
 KUBE_ROOT=$(cd "$(dirname "${BASH_SOURCE}")/../../.." && pwd)
 source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/${KUBE_CONFIG_FILE-"config-default.sh"}"
+kubectl="${KUBE_ROOT}/cluster/kubectl.sh"
+
+function deploy_dns {
+  echo "Deploying DNS Addon" 1>&2
+
+  # create temp workspace to place compiled pod yamls
+  # create temp workspace dir in KUBE_ROOT to avoid permission issues of TMPDIR on mac os x
+  local -r workspace=$(env TMPDIR=$PWD mktemp -d -t "k8sm-dns-XXXXXX")
+  echo "Workspace created: ${workspace}" 1>&2
+
+  cleanup() {
+    rm -rf "${workspace}"
+    echo "Workspace deleted: ${workspace}" 1>&2
+  }
+  trap 'cleanup' EXIT
+
+  echo "Processing DNS files" 1>&2
+
+  # Process salt pillar templates manually
+  sed -e "s/{{ pillar\['dns_replicas'\] }}/${DNS_REPLICAS}/g;s/{{ pillar\['dns_domain'\] }}/${DNS_DOMAIN}/g" "${KUBE_ROOT}/cluster/addons/dns/skydns-rc.yaml.in" > "${workspace}/skydns-rc.yaml"
+  sed -e "s/{{ pillar\['dns_server'\] }}/${DNS_SERVER_IP}/g" "${KUBE_ROOT}/cluster/addons/dns/skydns-svc.yaml.in" > "${workspace}/skydns-svc.yaml"
+
+  echo "Processing DNS secrets" 1>&2
+
+  # Process config secrets (ssl certs) into a mounted Secret volume
+  local -r kubeconfig_base64=$("${KUBE_ROOT}/cluster/kubectl.sh" config view --raw | base64 -w0)
+  cat > "${workspace}/skydns-secret.yaml" <<EOF
+apiVersion: v1beta3
+data:
+  kubeconfig: ${kubeconfig_base64}
+kind: Secret
+metadata:
+  name: token-system-dns
+  namespace: default
+type: Opaque
+EOF
+
+  echo "Starting DNS pod & service" 1>&2
+
+  # Use kubectl to create skydns rc and service
+  "${kubectl}" create -f "${workspace}/skydns-secret.yaml"
+  "${kubectl}" create -f "${workspace}/skydns-rc.yaml"
+  "${kubectl}" create -f "${workspace}/skydns-svc.yaml"
+
+  echo "Listing DNS pod & service" 1>&2
+
+  "${kubectl}" get pods,services
+
+  trap - EXIT
+  cleanup
+}
 
 if [ "${ENABLE_CLUSTER_DNS}" == true ]; then
-  echo "Deploying DNS on kubernetes" 1>&2
-  sed -e "s/{{ pillar\['dns_replicas'\] }}/${DNS_REPLICAS}/g;s/{{ pillar\['dns_domain'\] }}/${DNS_DOMAIN}/g" $KUBE_ROOT/cluster/addons/dns/skydns-rc.yaml.in > dns/skydns-rc.yaml
-  sed -e "s/{{ pillar\['dns_server'\] }}/${DNS_SERVER_IP}/g" $KUBE_ROOT/cluster/addons/dns/skydns-svc.yaml.in > dns/skydns-svc.yaml
-
-  KUBECONFIG=$("${KUBE_ROOT}/cluster/kubectl.sh" config view | base64)
-  sed -e "s,KUBECONFIG,$KUBECONFIG," dns/skydns-secret.yaml.in > dns/skydns-secret.yaml
-
-  # use kubectl to create skydns rc and service
-  "${KUBE_ROOT}/cluster/kubectl.sh" create -f dns/skydns-secret.yaml
-  "${KUBE_ROOT}/cluster/kubectl.sh" create -f dns/skydns-rc.yaml
-  "${KUBE_ROOT}/cluster/kubectl.sh" create -f dns/skydns-svc.yaml
+  deploy_dns
 fi

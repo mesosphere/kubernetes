@@ -115,6 +115,39 @@ brew install etcd
     ```
 
 
+### Using Kubernetes
+
+When compiling from source, it's simplest to use the `./cluster/kubectl.sh` script which detects your platform &
+architecture and proxies commands to the appropriate `kubectl` binary.
+
+#### Local Docker Engine
+
+When using a local Docker Engine (linux-only), docker IPs should be accessible from the host.
+
+In this case, `~/.kube/config` will reference the docker IP of the API Server, and kubectl will "just work".
+
+#### Remote Docker Engine
+
+When using a remote Docker Engine (e.g. boot2docker or Docker Machine) the docker IPs are not accessible from the host.
+
+In this case, there are two options:
+
+- Run kubectl configured to talk to boot2bocker, which exposes the API Server port
+
+```
+export KUBERNETES_MASTER=http://$(boot2docker ip):8888/api
+./cluster/kubectl.sh get pods
+```
+
+- Run kubectl within docker:
+
+```
+export KUBE_ROOT=${PWD}
+alias kubectl="docker run --rm -v '${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes' -v '${HOME}/.kube/config:/root/.kube/config' --entrypoint='/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh' mesosphere/kubernetes-mesos-test"
+kubectl get pods
+```
+
+
 ### Helpful scripts
 
 - Kill all docker containers

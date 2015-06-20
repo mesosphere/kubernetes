@@ -1,15 +1,33 @@
-## Getting Started
+## Getting Started With Kubernetes on Mesos on Docker
+
+Since all of the required components can run in docker, this cluster requires the least possible resources while still
+allowing most end-to-end tests to pass.
 
 ### Prerequisites
 
-- [Docker CLI](https://docs.docker.com/installation/)
-- [Docker Engine]
-    On Mac, use [boot2docker](http://boot2docker.io/) or [Docker Machine](https://docs.docker.com/machine/install-machine/)
+- [Docker CLI](https://docs.docker.com/)
+- [Docker Engine](https://docs.docker.com/)
+
+    On Mac, use [Boot2Docker](http://boot2docker.io/) or [Docker Machine](https://docs.docker.com/machine/install-machine/)
     to run Docker Engine in a linux VM.
 - [Optional] [Virtual Box](https://www.virtualbox.org/wiki/Downloads)
-    Required by boot2docker and Docker Machine
-- [Optional] etcd
-    (Only used locally by integration tests, when building without `KUBE_RELEASE_RUN_TESTS=N`.)
+
+    Required by Boot2Docker and Docker Machine
+- [Optional] [etcd](https://github.com/coreos/etcd)
+
+    Only used locally by integration tests, when building without `KUBE_RELEASE_RUN_TESTS=N`.
+
+Note: On Mac, it's possible to install all the above via [Homebrew](http://brew.sh/).
+
+```
+brew install caskroom/cask/brew-cask
+brew cask install virtualbox
+brew install docker
+brew install boot2docker
+boot2docker init
+boot2docker up
+brew install etcd
+```
 
 ### Walkthrough
 
@@ -25,13 +43,13 @@
 
 1. Build docker images
 
-    Test image is used for running e2e tests.
+    Test image includes all the dependencies required for running e2e tests.
 
     ```
     ./cluster/mesos/docker/test/build.sh
     ```
 
-    Mesos-Slave image includes iptables & docker-in-docker.
+    Mesos-Slave image extends the Mesosphere mesos-slave image to include iptables & docker-in-docker.
 
     ```
     ./cluster/mesos/docker/mesos-slave/build.sh
@@ -48,6 +66,18 @@
     ```
     export KUBERNETES_PROVIDER=mesos/docker
     ```
+
+    ***Resources***
+
+    It's optionally possible to modify the amount of resources the mesos-slaves will offer for Kubernetes to use.
+    To do so, find the `MESOS_RESOURCES` environment variables in `./cluster/mesos/docker/docker-compose.yml` and modify
+    them to your liking. Because mesos-slave resource auto-detection overlaps work when multiple slaves are on the same
+    node, these have to be explicitly configured.
+
+    ***Important***: The default mesos resource may or may not actually be available on your Docker Engine machine.
+    You may have to increase you VM disk, memory, or cpu allocation in VirtualBox,
+    [Docker Machine](https://docs.docker.com/machine/#oracle-virtualbox), or
+    [Boot2Docker](https://ryanfb.github.io/etc/2015/01/28/increasing_boot2docker_allocations_on_os_x.html).
 
 1. Create cluster
 

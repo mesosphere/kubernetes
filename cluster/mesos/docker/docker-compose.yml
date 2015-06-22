@@ -14,7 +14,7 @@ etcd:
 mesosmaster1:
   hostname: mesosmaster1
   image: mesosphere/mesos:0.22.0-1.0.ubuntu1404
-  entrypoint: mesos-master
+  entrypoint: [ "mesos-master" ]
   ports: [ "5050:5050" ]
   environment:
   - MESOS_HOSTNAME=mesosmaster1
@@ -85,7 +85,7 @@ apiserver:
     --etcd-servers=http://etcd:4001
     --portal-net=10.10.10.0/24
     --port=8888
-    --service-node-port-range=22075-22125
+    --service-node-port-range=30000-32767
     --cloud-provider=mesos
     --cloud-config=/opt/mesos-cloud.conf
     --v=2
@@ -130,6 +130,8 @@ scheduler:
     --mesos-user=root
     --api-servers=http://apiserver:8888
     --mesos-master=mesosmaster1:5050
+    --cluster-dns=10.10.10.10
+    --cluster-domain=cluster.local
     --v=2
   links:
   - etcd

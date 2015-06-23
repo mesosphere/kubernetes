@@ -105,7 +105,7 @@ brew install etcd
     ```
 
     Notable parameters:
-    - Increase the logging verbosity: `-v=0`
+    - Increase the logging verbosity: `-v=2`
     - Run only a subset of the tests (regex matching): `-ginkgo.focus=<pattern>`
 
 1. Destroy cluster
@@ -143,7 +143,7 @@ export KUBERNETES_MASTER=http://$(boot2docker ip):8888/api
 
 ```
 export KUBE_ROOT=${PWD}
-alias kubectl="docker run --rm -v '${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes' -v '${HOME}/.kube/config:/root/.kube/config' --entrypoint='/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh' mesosphere/kubernetes-mesos-test"
+alias kubectl="docker run --rm -v '/var/run/docker.sock:/var/run/docker.sock' -v '${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes' -v '${HOME}/.kube/config:/root/.kube/config' --entrypoint='/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh' --link docker_mesosslave1_1:mesosslave1 --link docker_mesosslave2_1:mesosslave2 --link docker_apiserver_1:apiserver mesosphere/kubernetes-mesos-test"
 kubectl get pods
 ```
 

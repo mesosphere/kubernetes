@@ -34,31 +34,42 @@ source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 # This bypasses the need to set up network routing when running docker in a VM (e.g. boot2docker).
 # Trap signals and kills the docker container for better signal handing
 function cluster::mesos::docker::run_in_docker {
-  cmd="$1"
+  entrypoint="$1"
+  if [[ "${entrypoint}" = "./"* ]]; then
+    # relative to project root
+    entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/${entrypoint}"
+  fi
   shift
   args="$@"
-  docker_name="kubectl-${RANDOM}"
 
-  docker run \
-    --name="${docker_name}" \
-    --rm \
-    -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
-    -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
-    -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
-    -v "/var/run/docker.sock:/var/run/docker.sock" \
-    --entrypoint="/go/src/github.com/GoogleCloudPlatform/kubernetes/${cmd}" \
-    mesosphere/kubernetes-mesos-test \
-    ${args} \
-    &
-  test_pid=$!
+  container_id=$(
+    docker run \
+      -d \
+      -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
+      -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
+      -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
+      -v "/var/run/docker.sock:/var/run/docker.sock" \
+      --link docker_mesosmaster1_1:mesosmaster1 \
+      --link docker_mesosslave1_1:mesosslave1 \
+      --link docker_mesosslave2_1:mesosslave2 \
+      --link docker_apiserver_1:apiserver \
+      --entrypoint="${entrypoint}" \
+      mesosphere/kubernetes-mesos-test \
+      ${args}
+  )
+
+  docker logs -f ${container_id} &
 
   # trap and kill for better signal handing
-  # propegation details: http://veithen.github.io/2014/11/16/sigterm-propagation.html
-  trap 'echo "Killing ${docker_name}" 1>&2 && docker kill ${docker_name}' INT TERM
-  wait ${test_pid}
+  trap 'echo "Killing container ${container_id}" 1>&2 && docker kill ${container_id}' INT TERM
+  exit_status=$(docker wait ${container_id})
   trap - INT TERM
-  wait ${test_pid} # 2nd wait to return exit status of test regarless of signal
-  exit_status=$!
+
+  if [ "$exit_status" != 0 ]; then
+    echo "Exited ${exit_status}" 1>&2
+  fi
+
+  docker rm -f ${container_id} > /dev/null
 
   return ${exit_status}
 }
@@ -172,6 +183,8 @@ function kube-up {
     detect-minions
     create-kubeconfig
 
+    cluster::mesos::docker::run_in_docker await-health-check -t=120 http://apiserver:8888/healthz
+
     echo "Deploying Addons" 1>&2
     cluster::mesos::docker::run_in_docker "./cluster/${KUBERNETES_PROVIDER}/deploy-addons.sh"
 }
@@ -183,11 +196,11 @@ function validate-cluster {
   docker_name="kubernetes-mesos-validate"
 
   cluster::mesos::docker::run_in_docker ./cluster/kubectl.sh cluster-info
-  exit_status=$!
+  exit_status=$?
 
   if [ ${exit_status} = 0 ]; then
     echo "VALIDATION SUITE SUCCESSFUL" 1>&2
-  el
+  else
     echo "VALIDATION SUITE FAILED" 1>&2
   fi
 }
@@ -221,7 +234,7 @@ function test-e2e {
   echo "hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
 
   cluster::mesos::docker::run_in_docker ./hack/ginkgo-e2e.sh ${TEST_ARGS}
-  exit_status=$!
+  exit_status=$?
 
   if [ ${exit_status} = 0 ]; then
     echo "TEST SUITE SUCCESSFUL" 1>&2

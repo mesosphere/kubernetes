@@ -44,11 +44,12 @@ if [ -z "$km_path" ]; then
   echo "Failed to find km binary" 1>&2
   exit 1
 fi
-bin_path=$(dirname ${km_path})
+kube_bin_path=$(dirname ${km_path})
+common_bin_path=$(cd ${script_dir}/../common/bin && pwd -P)
 
 cd "${KUBE_ROOT}"
 
-# create temp workspace to place compiled binaries with provided scripts
+# create temp workspace to place compiled binaries with image-specific scripts
 # create temp workspace dir in KUBE_ROOT to avoid permission issues of TMPDIR on mac os x
 workspace=$(env TMPDIR=$PWD mktemp -d -t "k8sm-workspace-XXXXXX")
 echo "Workspace created: ${workspace}"
@@ -61,11 +62,25 @@ trap 'cleanup' EXIT
 
 # setup workspace to mirror script dir (dockerfile expects /bin & /opt)
 echo "Copying files to workspace"
-cp -r "${script_dir}/"* "${workspace}/"
-cp "${bin_path}/"* "${workspace}/bin/"
+
+# binaries & scripts
+mkdir -p "${workspace}/bin"
+#cp "${script_dir}/bin/"* "${workspace}/bin/"
+cp "${common_bin_path}/"* "${workspace}/bin/"
+cp "${kube_bin_path}/"* "${workspace}/bin/"
+
+# config
+mkdir -p "${workspace}/opt"
+cp "${script_dir}/opt/"* "${workspace}/opt/"
+
+# docker
+cp "${script_dir}/Dockerfile" "${workspace}/"
 
 cd "${workspace}"
 
 # build docker image
-echo "Building docker image ${IMAGE_REPO}:${IMAGE_TAG}"
-exec docker build -t ${IMAGE_REPO}:${IMAGE_TAG} "$@" .
+echo "Building docker image"
+set -o xtrace
+docker build -t ${IMAGE_REPO}:${IMAGE_TAG} "$@" .
+set +o xtrace
+echo "Built docker image ${IMAGE_REPO}:${IMAGE_TAG}"

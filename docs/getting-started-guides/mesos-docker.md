@@ -1,7 +1,52 @@
 ## Getting Started With Kubernetes on Mesos on Docker
 
-Since all of the required components can run in docker, this cluster requires the least possible resources while still
-allowing most end-to-end tests to pass.
+The mesos/docker provider uses docker-compose to launch Kubernetes as a Mesos framework, running in docker with its
+dependencies (etcd & mesos).
+
+### Cluster Goals
+
+- kubernetes development
+- pod/service development
+- demoing
+- fast deployment
+- minimal hardware requirements
+- minimal configuration
+- entry point for exploration
+- simplified networking
+- fast end-to-end tests
+- local deployment
+
+Non-Goals:
+- high availability
+- fault tolerance
+- remote deployment
+- production usage
+- monitoring
+- long running
+- state persistence across restarts
+
+### Cluster Topology
+
+The cluster consists of several docker containers linked together by docker-managed hostnames:
+
+|-------------------------------|--------------|---------------------------------------------------------------|
+| Component                     | Hostname     | Description                                                   |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| docker-grand-ambassador       |              | Proxy to allow circular hostname dependencies in docker       |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| etcd                          | etcd         | Key/Value store used by Mesos                                 |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| Mesos Master                  | mesosmaster1 | REST endpoint for interacting with Mesos                      |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| Mesos Slave (x2)              | mesosslave1  | Mesos agents that offer resources and run framework executors |
+|                               | mesosslave2  | (e.g. Kubernetes Kublets)                                     |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| Kubernetes API Server         | apiserver    | REST endpoint for interacting with Kubernetes                 |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| Kubernetes Controller Manager | controller   |                                                               |
+|-------------------------------|--------------|---------------------------------------------------------------|
+| Kubernetes Scheduler          | scheduler    | Schedules container deployment by accepting Mesos offers      |
+|-------------------------------|--------------|---------------------------------------------------------------|
 
 ### Prerequisites
 

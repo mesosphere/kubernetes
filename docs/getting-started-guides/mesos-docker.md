@@ -29,24 +29,15 @@ Non-Goals:
 
 The cluster consists of several docker containers linked together by docker-managed hostnames:
 
-|-------------------------------|--------------|---------------------------------------------------------------|
-| Component                     | Hostname     | Description                                                   |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| docker-grand-ambassador       |              | Proxy to allow circular hostname dependencies in docker       |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| etcd                          | etcd         | Key/Value store used by Mesos                                 |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| Mesos Master                  | mesosmaster1 | REST endpoint for interacting with Mesos                      |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| Mesos Slave (x2)              | mesosslave1  | Mesos agents that offer resources and run framework executors |
-|                               | mesosslave2  | (e.g. Kubernetes Kublets)                                     |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| Kubernetes API Server         | apiserver    | REST endpoint for interacting with Kubernetes                 |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| Kubernetes Controller Manager | controller   |                                                               |
-|-------------------------------|--------------|---------------------------------------------------------------|
-| Kubernetes Scheduler          | scheduler    | Schedules container deployment by accepting Mesos offers      |
-|-------------------------------|--------------|---------------------------------------------------------------|
+| Component                     | Hostname                    | Description                                                                             |
+|-------------------------------|-----------------------------|-----------------------------------------------------------------------------------------|
+| docker-grand-ambassador       |                             | Proxy to allow circular hostname linking in docker                                      |
+| etcd                          | etcd                        | Key/Value store used by Mesos                                                           |
+| Mesos Master                  | mesosmaster1                | REST endpoint for interacting with Mesos                                                |
+| Mesos Slave (x2)              | mesosslave1<br/>mesosslave2 | Mesos agents that offer resources and run framework executors (e.g. Kubernetes Kublets) |
+| Kubernetes API Server         | apiserver                   | REST endpoint for interacting with Kubernetes                                           |
+| Kubernetes Controller Manager | controller                  |                                                                                         |
+| Kubernetes Scheduler          | scheduler                   | Schedules container deployment by accepting Mesos offers                                |
 
 ### Prerequisites
 

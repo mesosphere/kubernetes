@@ -24,7 +24,7 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 script_dir=$(cd $(dirname "${BASH_SOURCE}") && pwd -P)
 common_bin_path=$(cd ${script_dir}/../common/bin && pwd -P)
 
-cd "${KUBE_ROOT}"
+cd "$script_dir/../../../.."
 
 # create temp workspace to place common scripts with image-specific scripts
 # create temp workspace dir in KUBE_ROOT to avoid permission issues of TMPDIR on mac os x

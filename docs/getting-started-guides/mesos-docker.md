@@ -122,7 +122,11 @@ host machine (mac).
     - `KUBERNETES_CONTRIB=mesos` enables building of the mesos-specific binaries.
     - `KUBE_RELEASE_RUN_TESTS=N` disables the unit and integration tests that are by default run after the binaries are built.
 
-1. Build docker images
+1. [Optional] Build docker images
+
+    The following docker images are built as part of `./cluster/kube-up.sh`, but it may make sense to build them manually
+    the first time because it may take a while. In the future some of these may be hosted publicly, but you will always
+    need to at least rebuild the Kubernetes-Mesos image when using locally built binaries.
 
     Test image includes all the dependencies required for running e2e tests.
 
@@ -171,7 +175,7 @@ host machine (mac).
 1. Run End-To-End Tests
 
     ```
-    ./hack/ginkgo-e2e.sh
+    ./cluster/test-e2e.sh
     ```
 
     Notable parameters:
@@ -183,6 +187,14 @@ host machine (mac).
     ```
     ./cluster/kube-down.sh
     ```
+
+### End To End Testing
+
+The above walkthrough builds, deploys, tests, and destroys. To do all of that in one command (plus unit & integration tests):
+
+```
+make test_e2e
+```
 
 
 ### Using Kubernetes

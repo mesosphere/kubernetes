@@ -26,7 +26,7 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 script_dir=$(cd $(dirname "${BASH_SOURCE}") && pwd -P)
 cd ${script_dir}
 
-echo "Building docker image"
+echo "Building docker image ${IMAGE_REPO}:${IMAGE_TAG}"
 set -o xtrace
 docker build -t ${IMAGE_REPO}:${IMAGE_TAG} "$@" .
 set +o xtrace

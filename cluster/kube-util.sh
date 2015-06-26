@@ -94,17 +94,6 @@ function test-teardown {
 	echo "TODO: test-teardown" 1>&2
 }
 
-# Execute the end-to-end tests.
-# Passes through function arguments to test command.
-# Default behavior included.
-function test-e2e {
-  TEST_ARGS="$@"
-
-  echo "Running e2e tests:" 1>&2
-  echo "./hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
-  exec "${KUBE_ROOT}/hack/ginkgo-e2e.sh" "${TEST_ARGS}"
-}
-
 # Set the {KUBE_USER} and {KUBE_PASSWORD} environment values required to interact with provider
 function get-password {
 	echo "TODO: get-password" 1>&2

@@ -25,7 +25,9 @@ set -o nounset
 set -o pipefail
 
 KUBE_ROOT=$(cd "$(dirname "${BASH_SOURCE}")/../../.." && pwd)
-source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/${KUBE_CONFIG_FILE-"config-default.sh"}"
+provider_root="${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
+
+source "${provider_root}/${KUBE_CONFIG_FILE-"config-default.sh"}"
 source "${KUBE_ROOT}/cluster/common.sh"
 source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 
@@ -100,17 +102,6 @@ function create-kubeconfig {
    echo "Wrote config for ${CONTEXT} to ${KUBECONFIG}" 1>&2
 }
 
-function is-pod-running {
-  local pod_name="$1"
-  local kubectl="${KUBE_ROOT}/cluster/kubectl.sh"
-  phase=$("${kubectl}" get pod "${pod_name}" -o template --template="{{.status.phase}}" 2>&1)
-#  echo "Pod '${pod_name}' status: ${phase}" 1>&2
-  if [ "${phase}" != "Running" ]; then
-    return 1
-  fi
-  return 0
-}
-
 # Perform preparations required to run e2e tests
 function prepare-e2e {
   echo "TODO: prepare-e2e" 1>&2
@@ -126,7 +117,7 @@ function test-build-release {
 
 # Must ensure that the following ENV vars are set
 function detect-master {
-#  echo "KUBE_MASTER: $KUBE_MASTER" 1>&2
+  #  echo "KUBE_MASTER: $KUBE_MASTER" 1>&2
 
   docker_id=$(docker ps --filter="name=docker_apiserver" --quiet)
   if [[ "${docker_id}" == *'\n'* ]]; then
@@ -165,37 +156,47 @@ function detect-minions {
 
 # Verify prereqs on host machine
 function verify-prereqs {
-	echo "TODO: verify-prereqs" 1>&2
-	# Verify that docker, docker-compose, and jq exist
-	# Verify that all the right docker images exist:
-	# mesosphere/kubernetes-mesos-test, etc.
+  echo "TODO: verify-prereqs" 1>&2
+  # Verify that docker, docker-compose, and jq exist
+  # Verify that all the right docker images exist:
+  # mesosphere/kubernetes-mesos-test, etc.
 }
 
 # Instantiate a kubernetes cluster
 function kube-up {
-    echo "Starting ${KUBERNETES_PROVIDER} cluster" 1>&2
-	(
-	  cd "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
-	  docker-compose up -d
-	)
+  echo "Building Docker images" 1>&2
+  # TODO: version images (k8s version, git sha, and dirty state) to avoid re-building them every time.
+  "${provider_root}/km/build.sh"
+  "${provider_root}/mesos-slave/build.sh"
+  "${provider_root}/test/build.sh"
 
-	detect-master
-    detect-minions
-    create-kubeconfig
+  echo "Starting ${KUBERNETES_PROVIDER} cluster" 1>&2
+  pushd "${provider_root}" > /dev/null
+  docker-compose up -d
+  popd > /dev/null
 
-    cluster::mesos::docker::run_in_docker await-health-check -t=120 http://apiserver:8888/healthz
+  detect-master
+  detect-minions
 
-    echo "Deploying Addons" 1>&2
-    cluster::mesos::docker::run_in_docker "./cluster/${KUBERNETES_PROVIDER}/deploy-addons.sh"
+  # await-health-check could be run locally, but it would require GNU timeout installed on mac...
+  # "${provider_root}/common/bin/await-health-check" -t=120 ${KUBE_SERVER}/healthz
+  cluster::mesos::docker::run_in_docker await-health-check -t=120 http://apiserver:8888/healthz
+
+  create-kubeconfig
+
+  echo "Deploying Addons" 1>&2
+  # deploy-addons could be run locally, but BSD base64 is has different behavior/arguments than GNU...
+  # "${provider_root}/deploy-addons.sh"
+  cluster::mesos::docker::run_in_docker "./cluster/${KUBERNETES_PROVIDER}/deploy-addons.sh"
 }
 
 function validate-cluster {
   echo "Validating ${KUBERNETES_PROVIDER} cluster" 1>&2
 
   # Do not validate cluster size. There will be zero k8s minions until a pod is created.
-  docker_name="kubernetes-mesos-validate"
 
-  cluster::mesos::docker::run_in_docker ./cluster/kubectl.sh cluster-info
+  # Validate cluster reachability and responsiveness
+  "${KUBE_ROOT}/cluster/kubectl.sh" cluster-info
   exit_status=$?
 
   if [ ${exit_status} = 0 ]; then
@@ -207,15 +208,14 @@ function validate-cluster {
 
 # Delete a kubernetes cluster
 function kube-down {
-	echo "Stopping ${KUBERNETES_PROVIDER} cluster" 1>&2
-	# TODO: cleanup containers owned by kubernetes
-	# Nuclear option: docker ps -q -a | xargs docker rm -f
-	(
-	  cd "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
-	  docker-compose stop
-	  docker-compose rm -f
-	)
-	# TODO: delete /Users/<user>/.kube/config
+  echo "Stopping ${KUBERNETES_PROVIDER} cluster" 1>&2
+  # TODO: cleanup containers owned by kubernetes
+  # Nuclear option: docker ps -q -a | xargs docker rm -f
+  pushd "${provider_root}" > /dev/null
+  docker-compose stop
+  docker-compose rm -f
+  popd > /dev/null
+  # TODO: delete /Users/<user>/.kube/config ?
 }
 
 function test-setup {
@@ -225,28 +225,10 @@ function test-setup {
   "${KUBE_ROOT}/cluster/mesos/docker/mesos-slave/build.sh"
 }
 
-function test-e2e {
-  # test version skew?
-  TEST_ARGS="$@"
-  docker_name="kubernetes-mesos-e2e"
-
-  echo "Running e2e tests" 1>&2
-  echo "hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
-
-  cluster::mesos::docker::run_in_docker ./hack/ginkgo-e2e.sh ${TEST_ARGS}
-  exit_status=$?
-
-  if [ ${exit_status} = 0 ]; then
-    echo "TEST SUITE SUCCESSFUL" 1>&2
-  el
-    echo "TEST SUITE FAILED" 1>&2
-  fi
-}
-
 # Execute after running tests to perform any required clean-up
 function test-teardown {
-	echo "test-teardown" 1>&2
-	kube-down
+  echo "test-teardown" 1>&2
+  kube-down
 }
 
 ## Below functions used by hack/e2e-suite/services.sh

@@ -50,7 +50,7 @@ cp "${script_dir}/Dockerfile" "${workspace}/"
 
 cd "${workspace}"
 
-echo "Building docker image"
+echo "Building docker image ${IMAGE_REPO}:${IMAGE_TAG}"
 set -o xtrace
 docker build -t ${IMAGE_REPO}:${IMAGE_TAG} "$@" .
 set +o xtrace

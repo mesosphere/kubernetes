@@ -41,21 +41,25 @@ The cluster consists of several docker containers linked together by docker-mana
 
 ### Prerequisites
 
-- [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
-- [Docker CLI](https://docs.docker.com/)
-- [Docker Engine](https://docs.docker.com/)<br/>
+- [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) - version control system
+- [Docker CLI](https://docs.docker.com/) - container management command line client
+- [Docker Engine](https://docs.docker.com/) - container management daemon<br/>
     On Mac, use [Boot2Docker](http://boot2docker.io/) or [Docker Machine](https://docs.docker.com/machine/install-machine/)
     to run Docker Engine in a linux VM.
-- [Optional] [Virtual Box](https://www.virtualbox.org/wiki/Downloads)<br/>
+- [jq](http://stedolan.github.io/jq/) - command line JSON parser
+- [Optional] [Virtual Box](https://www.virtualbox.org/wiki/Downloads) - x86 hardware virtualizer <br/>
     Required by Boot2Docker and Docker Machine
-- [Optional] [etcd](https://github.com/coreos/etcd)<br/>
+- [Optional] [etcd](https://github.com/coreos/etcd) - key/value store<br/>
     Only used locally by integration tests, when building without `KUBE_RELEASE_RUN_TESTS=N`.
+
+#### Install with Homebrew (Mac)
 
 Note: On Mac, it's possible to install all the above via [Homebrew](http://brew.sh/).<br/>
 Follow any printed instructions after each step to make sure each is configured correctly.
 
 ```
 brew install git
+brew install jq
 brew install caskroom/cask/brew-cask
 brew cask install virtualbox
 brew install docker
@@ -66,6 +70,34 @@ brew install etcd
 ```
 
 ***TODO***: apt & yum instructions
+
+#### Boot2Docker Config
+
+If on a mac using boot2docker, the following steps will make the docker IPs (in the virtualbox VM) reachable from the
+host machine (mac).
+
+1. Set the VM's host-only network to "promiscuous mode":
+
+    ```
+    boot2docker stop
+    VBoxManage modifyvm boot2docker-vm --nicpromisc2 allow-all
+    boot2docker start
+    ```
+
+    This allows the VM to accept packets that were sent to a different IP.
+
+    Since the host-only network routes traffic between VMs and the host, other VMs will also be able to access the docker
+    IPs, if they have the following route.
+
+1. Route traffic to docker through the boot2docker IP:
+
+    ```
+    sudo route -n add -net 172.17.0.0 $(boot2docker ip)
+    ```
+
+    Since the boot2docker IP can change when the VM is restarted, this route may need to be updated over time.
+    To delete the route later: `sudo route delete 172.17.0.0`
+
 
 ### Walkthrough
 
@@ -134,10 +166,12 @@ brew install etcd
     ./cluster/kube-up.sh
     ```
 
+    After deploying th cluster, `~/.kube/config` will be created or updated to configure kubectl to target the new cluster.
+
 1. Run End-To-End Tests
 
     ```
-    ./cluster/test-e2e.sh
+    ./hack/ginkgo-e2e.sh
     ```
 
     Notable parameters:
@@ -153,35 +187,10 @@ brew install etcd
 
 ### Using Kubernetes
 
-When compiling from source, it's simplest to use the `./cluster/kubectl.sh` script which detects your platform &
+When compiling from source, it's simplest to use the `./cluster/kubectl.sh` script, which detects your platform &
 architecture and proxies commands to the appropriate `kubectl` binary.
 
-#### Local Docker Engine
-
-When using a local Docker Engine (linux-only), docker IPs should be accessible from the host.
-
-In this case, `~/.kube/config` will reference the docker IP of the API Server, and kubectl will "just work".
-
-#### Remote Docker Engine
-
-When using a remote Docker Engine (e.g. boot2docker or Docker Machine) the docker IPs are not accessible from the host.
-
-In this case, there are two options:
-
-- Run kubectl configured to talk to boot2bocker, which exposes the API Server port
-
-```
-export KUBERNETES_MASTER=http://$(boot2docker ip):8888/api
-./cluster/kubectl.sh get pods
-```
-
-- Run kubectl within docker:
-
-```
-export KUBE_ROOT=${PWD}
-alias kubectl="docker run --rm -v '/var/run/docker.sock:/var/run/docker.sock' -v '${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes' -v '${HOME}/.kube/config:/root/.kube/config' --entrypoint='/go/src/github.com/GoogleCloudPlatform/kubernetes/cluster/kubectl.sh' --link docker_mesosslave1_1:mesosslave1 --link docker_mesosslave2_1:mesosslave2 --link docker_apiserver_1:apiserver mesosphere/kubernetes-mesos-test"
-kubectl get pods
-```
+ex: `./cluster/kubectl.sh get pods`
 
 
 ### Helpful scripts

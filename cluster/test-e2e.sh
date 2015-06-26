@@ -15,8 +15,7 @@
 # limitations under the License.
 
 # Tests a running Kubernetes cluster.
-#
-# /cluster/${KUBERNETES_PROVIDER}/util.sh must provide test-e2e function.
+# TODO: move code from hack/ginkgo-e2e.sh to here
 
 set -o errexit
 set -o nounset
@@ -24,8 +23,11 @@ set -o pipefail
 
 KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "${KUBE_ROOT}/cluster/kube-env.sh"
-source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/util.sh"
 
-echo "Testing cluster with provider: ${KUBERNETES_PROVIDER}" >&2
+echo "Testing cluster with provider: ${KUBERNETES_PROVIDER}" 1>&2
 
-test-e2e "$@"
+TEST_ARGS="$@"
+
+echo "Running e2e tests:" 1>&2
+echo "./hack/ginkgo-e2e.sh ${TEST_ARGS}" 1>&2
+exec "${KUBE_ROOT}/hack/ginkgo-e2e.sh" ${TEST_ARGS}

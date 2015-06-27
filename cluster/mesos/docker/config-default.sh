@@ -63,4 +63,3 @@ DNS_REPLICAS=1
 
 # Optional: Enable setting flags for kube-apiserver to turn on behavior in active-dev
 RUNTIME_CONFIG=""
-#RUNTIME_CONFIG="api/v1beta3"

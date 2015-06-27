@@ -46,7 +46,7 @@ function deploy_dns {
   # Process config secrets (ssl certs) into a mounted Secret volume
   local -r kubeconfig_base64=$("${KUBE_ROOT}/cluster/kubectl.sh" config view --raw | base64 -w0)
   cat > "${workspace}/skydns-secret.yaml" <<EOF
-apiVersion: v1beta3
+apiVersion: v1
 data:
   kubeconfig: ${kubeconfig_base64}
 kind: Secret

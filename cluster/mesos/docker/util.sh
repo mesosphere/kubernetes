@@ -51,9 +51,6 @@ function cluster::mesos::docker::run_in_docker {
       -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
       -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
       -v "/var/run/docker.sock:/var/run/docker.sock" \
-      --link docker_mesosmaster1_1:mesosmaster1 \
-      --link docker_mesosslave1_1:mesosslave1 \
-      --link docker_mesosslave2_1:mesosslave2 \
       --link docker_apiserver_1:apiserver \
       --entrypoint="${entrypoint}" \
       mesosphere/kubernetes-mesos-test \
@@ -139,7 +136,7 @@ function detect-master {
 # These Mesos slaves MAY host Kublets,
 # but might not have a Kublet running unless a kubernetes task has been scheduled on them.
 function detect-minions {
-  docker_ids=$(docker ps --filter="name=docker_mesosslave" --quiet)
+  docker_ids=$(docker ps --filter="name=docker_mesosslave" --quiet; docker ps --filter="name=docker_minion" --quiet)
   while read -r docker_id; do
 
     details_json=$(docker inspect ${docker_id})
@@ -169,10 +166,11 @@ function kube-up {
   "${provider_root}/km/build.sh"
   "${provider_root}/mesos-slave/build.sh"
   "${provider_root}/test/build.sh"
+  "${provider_root}/minion-dind/build.sh"
 
   echo "Starting ${KUBERNETES_PROVIDER} cluster" 1>&2
   pushd "${provider_root}" > /dev/null
-  docker-compose up -d
+  docker-compose -f ${DOCKER_COMPOSE_FILE:-docker-compose.yml} up -d
   popd > /dev/null
 
   detect-master
@@ -223,6 +221,7 @@ function test-setup {
   "${KUBE_ROOT}/cluster/mesos/docker/km/build.sh"
   "${KUBE_ROOT}/cluster/mesos/docker/test/build.sh"
   "${KUBE_ROOT}/cluster/mesos/docker/mesos-slave/build.sh"
+  "${KUBE_ROOT}/cluster/mesos/docker/minion-dind/build.sh"
 }
 
 # Execute after running tests to perform any required clean-up

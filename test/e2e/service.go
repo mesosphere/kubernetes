@@ -84,6 +84,11 @@ var _ = Describe("Services", func() {
 			Expect(err).NotTo(HaveOccurred())
 		}()
 
+		// Named ports are used to identify the endpoints for the given service ports.
+		// This is necessary because we don't want to rely on the fact that the
+		// numeric port of an endpoint matches the numeric service port. In setups
+		// like kubernetes-mesos different numeric ports are used by the endpoint
+		// controller.
 		portname1 := "portname1"
 
 		service := &api.Service{
@@ -152,6 +157,11 @@ var _ = Describe("Services", func() {
 		svc1port := "svc1"
 		svc2port := "svc2"
 
+		// Named ports are used to identify the endpoints for the given service ports.
+		// This is necessary because we don't want to rely on the fact that the
+		// numeric port of an endpoint matches the numeric service port. In setups
+		// like kubernetes-mesos different numeric ports are used by the endpoint
+		// controller.
 		portname1 := "portname1"
 		portname2 := "portname2"
 

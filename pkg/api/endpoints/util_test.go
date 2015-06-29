@@ -21,8 +21,15 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
+
 	"github.com/davecgh/go-spew/spew"
 )
+
+func podRef(uid string) *api.ObjectReference {
+	ref := api.ObjectReference{ UID: types.UID(uid) }
+	return &ref
+}
 
 func TestPackSubsets(t *testing.T) {
 	// The downside of table-driven tests is that some things have to live outside the table.
@@ -54,6 +61,16 @@ func TestPackSubsets(t *testing.T) {
 			}},
 			expect: []api.EndpointSubset{{
 				Addresses: []api.EndpointAddress{{IP: "1.2.3.4"}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+		}, {
+			name: "one set, one ip, one UID, one port",
+			given: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+			expect: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
 				Ports:     []api.EndpointPort{{Port: 111}},
 			}},
 		}, {
@@ -136,6 +153,19 @@ func TestPackSubsets(t *testing.T) {
 				Ports:     []api.EndpointPort{{Port: 111}, {Port: 222}},
 			}},
 		}, {
+			name: "two sets, dup ip, dup uids, two ports",
+			given: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}, {
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 222}},
+			}},
+			expect: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 111}, {Port: 222}},
+			}},
+		}, {
 			name: "two sets, two ips, dup port",
 			given: []api.EndpointSubset{{
 				Addresses: []api.EndpointAddress{{IP: "1.2.3.4"}},
@@ -146,6 +176,38 @@ func TestPackSubsets(t *testing.T) {
 			}},
 			expect: []api.EndpointSubset{{
 				Addresses: []api.EndpointAddress{{IP: "1.2.3.4"}, {IP: "5.6.7.8"}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+		}, {
+			name: "two set, dup ip, two uids, dup ports",
+			given: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}, {
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-2")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+			expect: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{
+					{IP: "1.2.3.4", TargetRef: podRef("uid-1") },
+					{IP: "1.2.3.4", TargetRef: podRef("uid-2")},
+				},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+		}, {
+			name: "two set, dup ip, with and without uid, dup ports",
+			given: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4" }},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}, {
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-2")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+			expect: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{
+					{IP: "1.2.3.4" },
+					{IP: "1.2.3.4", TargetRef: podRef("uid-2")},
+				},
 				Ports:     []api.EndpointPort{{Port: 111}},
 			}},
 		}, {

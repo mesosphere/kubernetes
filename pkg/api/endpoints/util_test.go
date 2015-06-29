@@ -211,6 +211,30 @@ func TestPackSubsets(t *testing.T) {
 				Ports:     []api.EndpointPort{{Port: 111}},
 			}},
 		}, {
+			name: "two sets, two ips, two dup ip with uid, dup port, wrong order",
+			given: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "5.6.7.8"}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}, {
+				Addresses: []api.EndpointAddress{{IP: "5.6.7.8", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}, {
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("uid-1")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}, {
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4"}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+			expect: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{
+					{IP: "1.2.3.4"},
+					{IP: "1.2.3.4", TargetRef: podRef("uid-1")},
+					{IP: "5.6.7.8"},
+					{IP: "5.6.7.8", TargetRef: podRef("uid-1")},
+				},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+		}, {
 			name: "two sets, two ips, two ports",
 			given: []api.EndpointSubset{{
 				Addresses: []api.EndpointAddress{{IP: "1.2.3.4"}},

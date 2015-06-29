@@ -107,7 +107,7 @@ var _ = Describe("Services", func() {
 		_, err := c.Services(ns).Create(service)
 		Expect(err).NotTo(HaveOccurred())
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{})
 
 		var names []string
 		defer func() {
@@ -121,25 +121,25 @@ var _ = Describe("Services", func() {
 		addEndpointPodOrFail(c, ns, name1, labels, []api.ContainerPort{{ContainerPort: 80}})
 		names = append(names, name1)
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{name1: {portname1}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{name1: {portname1}})
 
 		name2 := "test2"
 		addEndpointPodOrFail(c, ns, name2, labels, []api.ContainerPort{{ContainerPort: 80}})
 		names = append(names, name2)
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{name1: {portname1}, name2: {portname1}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{name1: {portname1}, name2: {portname1}})
 
 		err = c.Pods(ns).Delete(name1, nil)
 		Expect(err).NotTo(HaveOccurred())
 		names = []string{name2}
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{name2: {portname1}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{name2: {portname1}})
 
 		err = c.Pods(ns).Delete(name2, nil)
 		Expect(err).NotTo(HaveOccurred())
 		names = []string{}
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{})
 	})
 
 	It("should serve multiport endpoints from pods", func() {
@@ -215,35 +215,35 @@ var _ = Describe("Services", func() {
 		podname1 := "podname1"
 		addEndpointPodOrFail(c, ns, podname1, labels, containerPorts1)
 		names = append(names, podname1)
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{podname1: {portname1}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{podname1: {portname1}})
 
 		podname2 := "podname2"
 		addEndpointPodOrFail(c, ns, podname2, labels, containerPorts2)
 		names = append(names, podname2)
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{podname1: {portname1}, podname2: {portname2}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{podname1: {portname1}, podname2: {portname2}})
 
 		podname3 := "podname3"
 		addEndpointPodOrFail(c, ns, podname3, labels, append(containerPorts1, containerPorts2...))
 		names = append(names, podname3)
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{podname1: {portname1}, podname2: {portname2}, podname3: {portname1, portname2}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{podname1: {portname1}, podname2: {portname2}, podname3: {portname1, portname2}})
 
 		err = c.Pods(ns).Delete(podname1, nil)
 		Expect(err).NotTo(HaveOccurred())
 		names = []string{podname2, podname3}
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{podname2: {portname2}, podname3: {portname1, portname2}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{podname2: {portname2}, podname3: {portname1, portname2}})
 
 		err = c.Pods(ns).Delete(podname2, nil)
 		Expect(err).NotTo(HaveOccurred())
 		names = []string{podname3}
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{podname3: {portname1, portname2}})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{podname3: {portname1, portname2}})
 
 		err = c.Pods(ns).Delete(podname3, nil)
 		Expect(err).NotTo(HaveOccurred())
 		names = []string{}
 
-		validateEndpointsOrFail(c, ns, serviceName, map[string][]string{})
+		validateEndpointsOrFail(c, ns, serviceName, PortNamesByPodName{})
 	})
 
 	It("should be able to create a functioning external load balancer", func() {
@@ -878,8 +878,11 @@ func getPortNamesByPodUID(subsets []api.EndpointSubset) map[types.UID][]string {
 	return m
 }
 
-func translatePodNameToUIDOrFail(c *client.Client, ns string, expectedEndpoints map[string][]string) map[types.UID][]string {
-	portNamesByUID := make(map[types.UID][]string)
+type PortNamesByPodName map[string][]string
+type PortNamesByPodUID map[types.UID][]string
+
+func translatePodNameToUIDOrFail(c *client.Client, ns string, expectedEndpoints PortNamesByPodName) PortNamesByPodUID {
+	portNamesByUID := make(PortNamesByPodUID)
 
 	for name, portList := range expectedEndpoints {
 		pod, err := c.Pods(ns).Get(name)
@@ -893,7 +896,7 @@ func translatePodNameToUIDOrFail(c *client.Client, ns string, expectedEndpoints 
 	return portNamesByUID
 }
 
-func validatePortNamesOrFail(endpoints map[types.UID][]string, expectedEndpoints map[types.UID][]string) {
+func validatePortNamesOrFail(endpoints PortNamesByPodUID, expectedEndpoints PortNamesByPodUID) {
 	if len(endpoints) != len(expectedEndpoints) {
 		// should not happen because we check this condition before
 		Failf("invalid number of endpoints got %v, expected %v", endpoints, expectedEndpoints)
@@ -915,7 +918,7 @@ func validatePortNamesOrFail(endpoints map[types.UID][]string, expectedEndpoints
 	}
 }
 
-func validateEndpointsOrFail(c *client.Client, ns, serviceName string, expectedEndpoints map[string][]string) {
+func validateEndpointsOrFail(c *client.Client, ns, serviceName string, expectedEndpoints PortNamesByPodName) {
 	By(fmt.Sprintf("Validating endpoints %v with on service %s/%s", expectedEndpoints, ns, serviceName))
 	for {
 		endpoints, err := c.Endpoints(ns).Get(serviceName)

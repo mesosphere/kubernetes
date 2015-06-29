@@ -24,8 +24,8 @@ import (
 	"sort"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 )
 
 // RepackSubsets takes a slice of EndpointSubset objects, expands it to the full
@@ -36,7 +36,7 @@ func RepackSubsets(subsets []api.EndpointSubset) []api.EndpointSubset {
 	// First map each unique port definition to the sets of hosts that
 	// offer it.  The sets of hosts must be de-duped, using IP+UID as the key.
 	type addressKey struct {
-		ip string
+		ip  string
 		uid types.UID
 	}
 	allAddrs := map[addressKey]*api.EndpointAddress{}
@@ -120,10 +120,10 @@ func LessEndpointAddress(a, b *api.EndpointAddress) bool {
 	if ipComparison != 0 {
 		return ipComparison < 0
 	}
-	if (b.TargetRef == nil) {
+	if b.TargetRef == nil {
 		return false
 	}
-	if (a.TargetRef == nil) {
+	if a.TargetRef == nil {
 		return true
 	}
 	return a.TargetRef.UID < b.TargetRef.UID

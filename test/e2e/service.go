@@ -98,7 +98,7 @@ var _ = Describe("Services", func() {
 			Spec: api.ServiceSpec{
 				Selector: labels,
 				Ports: []api.ServicePort{{
-					Name:		portname1,
+					Name:       portname1,
 					Port:       80,
 					TargetPort: util.NewIntOrStringFromInt(80),
 				}},

@@ -25,6 +25,18 @@ KUBE_ROOT=$(cd "$(dirname "${BASH_SOURCE}")/../../.." && pwd)
 source "${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/${KUBE_CONFIG_FILE-"config-default.sh"}"
 kubectl="${KUBE_ROOT}/cluster/kubectl.sh"
 
+function base64_nowrap {
+  input="$1"
+  # detect base64 version
+  if [ "$(echo test | base64 -b0 2>&1 || echo failed)" = "dGVzdAo=" ]; then
+    # BSD base64 (mac)
+    echo "${input}" | base64 -b0
+  else
+    # GNU base64 (linux)
+    echo "${input}" | base64 -w0
+  fi
+}
+
 function deploy_dns {
   echo "Deploying DNS Addon" 1>&2
 
@@ -44,7 +56,8 @@ function deploy_dns {
   sed -e "s/{{ pillar\['dns_server'\] }}/${DNS_SERVER_IP}/g" "${KUBE_ROOT}/cluster/addons/dns/skydns-svc.yaml.in" > "${workspace}/skydns-svc.yaml"
 
   # Process config secrets (ssl certs) into a mounted Secret volume
-  local -r kubeconfig_base64=$("${KUBE_ROOT}/cluster/kubectl.sh" config view --raw | base64 -w0)
+  local -r kubeconfig=$("${KUBE_ROOT}/cluster/kubectl.sh" config view --raw)
+  local -r kubeconfig_base64=$(base64_nowrap "${kubeconfig}")
   cat > "${workspace}/skydns-secret.yaml" <<EOF
 apiVersion: v1
 data:

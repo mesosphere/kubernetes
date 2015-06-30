@@ -185,9 +185,7 @@ function kube-up {
   create-kubeconfig
 
   echo "Deploying Addons" 1>&2
-  # deploy-addons could be run locally, but BSD base64 is has different behavior/arguments than GNU...
-  # "${provider_root}/deploy-addons.sh"
-  cluster::mesos::docker::run_in_docker "./cluster/${KUBERNETES_PROVIDER}/deploy-addons.sh"
+  "${provider_root}/deploy-addons.sh"
 }
 
 function validate-cluster {

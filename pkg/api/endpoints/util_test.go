@@ -74,6 +74,16 @@ func TestPackSubsets(t *testing.T) {
 				Ports:     []api.EndpointPort{{Port: 111}},
 			}},
 		}, {
+			name: "one set, one ip, empty UID, one port",
+			given: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+			expect: []api.EndpointSubset{{
+				Addresses: []api.EndpointAddress{{IP: "1.2.3.4", TargetRef: podRef("")}},
+				Ports:     []api.EndpointPort{{Port: 111}},
+			}},
+		}, {
 			name: "one set, two ips, one port",
 			given: []api.EndpointSubset{{
 				Addresses: []api.EndpointAddress{{IP: "1.2.3.4"}, {IP: "5.6.7.8"}},

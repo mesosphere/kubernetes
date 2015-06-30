@@ -24,7 +24,34 @@ IMAGE_REPO=${IMAGE_REPO:-mesosphere/kubernetes-mesos-slave}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 
 script_dir=$(cd $(dirname "${BASH_SOURCE}") && pwd -P)
-cd ${script_dir}
+common_bin_path=$(cd ${script_dir}/../common/bin && pwd -P)
+KUBE_ROOT=$(cd ${script_dir}/../../../.. && pwd -P)
+
+cd "${KUBE_ROOT}"
+
+# create temp workspace to place common scripts with image-specific scripts
+# create temp workspace dir in KUBE_ROOT to avoid permission issues of TMPDIR on mac os x
+workspace=$(env TMPDIR=$PWD mktemp -d -t "k8sm-slave-workspace-XXXXXX")
+echo "Workspace created: ${workspace}"
+
+cleanup() {
+  rm -rf "${workspace}"
+  echo "Workspace deleted: ${workspace}"
+}
+trap 'cleanup' EXIT
+
+# setup workspace to mirror script dir (dockerfile expects /bin)
+echo "Copying files to workspace"
+
+# binaries & scripts
+mkdir -p "${workspace}/bin"
+cp "${common_bin_path}/"* "${workspace}/bin/"
+cp "${script_dir}/bin/"* "${workspace}/bin/"
+
+# docker
+cp "${script_dir}/Dockerfile" "${workspace}/"
+
+cd "${workspace}"
 
 echo "Building docker image ${IMAGE_REPO}:${IMAGE_TAG}"
 set -o xtrace

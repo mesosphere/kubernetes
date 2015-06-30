@@ -23,8 +23,9 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 
 script_dir=$(cd $(dirname "${BASH_SOURCE}") && pwd -P)
 common_bin_path=$(cd ${script_dir}/../common/bin && pwd -P)
+KUBE_ROOT=$(cd ${script_dir}/../../../.. && pwd -P)
 
-cd "$script_dir/../../../.."
+cd "${KUBE_ROOT}"
 
 # create temp workspace to place common scripts with image-specific scripts
 # create temp workspace dir in KUBE_ROOT to avoid permission issues of TMPDIR on mac os x
@@ -37,13 +38,13 @@ cleanup() {
 }
 trap 'cleanup' EXIT
 
-# setup workspace to mirror script dir (dockerfile expects /bin & /opt)
+# setup workspace to mirror script dir (dockerfile expects /bin)
 echo "Copying files to workspace"
 
 # binaries & scripts
 mkdir -p "${workspace}/bin"
-cp "${script_dir}/bin/"* "${workspace}/bin/"
 cp "${common_bin_path}/"* "${workspace}/bin/"
+cp "${script_dir}/bin/"* "${workspace}/bin/"
 
 # docker
 cp "${script_dir}/Dockerfile" "${workspace}/"

@@ -30,8 +30,9 @@ mesosslave1:
   hostname: mesosslave1
   privileged: true
   image: mesosphere/kubernetes-mesos-slave:latest
+  entrypoint: [ "bash", "-c", "wrapdocker mesos-slave --hostname=$(resolveip mesosslave1)" ]
+  command: ~
   environment:
-  - MESOS_HOSTNAME=mesosslave1
   - MESOS_MASTER=mesosmaster1:5050
   - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos
@@ -51,8 +52,9 @@ mesosslave2:
   hostname: mesosslave2
   privileged: true
   image: mesosphere/kubernetes-mesos-slave:latest
+  entrypoint: [ "bash", "-c", "wrapdocker mesos-slave --hostname=$(resolveip mesosslave2)" ]
+  command: ~
   environment:
-  - MESOS_HOSTNAME=mesosslave2
   - MESOS_MASTER=mesosmaster1:5050
   - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos

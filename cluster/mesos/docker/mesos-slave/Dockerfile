@@ -24,9 +24,7 @@ RUN apt-get update -qq && \
         && \
     apt-get clean
 
-# Install docker-in-docker wrapper
-ADD ./bin/wrapdocker /usr/local/bin/wrapdocker
-RUN chmod +x /usr/local/bin/wrapdocker
+COPY ./bin/* /usr/local/bin/
 
 # Create volume where docker will mount loop devices
 VOLUME /var/lib/docker

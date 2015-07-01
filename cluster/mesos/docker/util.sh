@@ -49,7 +49,7 @@ function cluster::mesos::docker::run_in_docker {
       -d \
       -e "KUBERNETES_PROVIDER=${KUBERNETES_PROVIDER}" \
       -v "${KUBE_ROOT}:/go/src/github.com/GoogleCloudPlatform/kubernetes" \
-      -v "${DEFAULT_KUBECONFIG}:/root/.kube/config" \
+      -v "$(dirname ${KUBECONFIG}):/root/.kube" \
       -v "/var/run/docker.sock:/var/run/docker.sock" \
       --link docker_mesosmaster1_1:mesosmaster1 \
       --link docker_mesosslave1_1:mesosslave1 \
@@ -177,6 +177,8 @@ function kube-up {
 
   detect-master
   detect-minions
+
+  export KUBECONFIG=${KUBECONFIG:-${DEFAULT_KUBECONFIG}}
 
   # await-health-check could be run locally, but it would require GNU timeout installed on mac...
   # "${provider_root}/common/bin/await-health-check" -t=120 ${KUBE_SERVER}/healthz

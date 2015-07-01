@@ -113,16 +113,20 @@ kubectl delete pod nginx
 
 That's great for a simple static web server, but what about persistent storage?
 
-The container file system only lives as long as the container does. So if your app's state needs to survive reboots or crashes you'll need to configure some persistent storage.  To do so, declare a ```volume``` in the pod definition, and mount it into one or more of the pod containers:
+The container file system only lives as long as the container does. So if your app's state needs to survive relocation, reboots, and crashes, you'll need to configure some persistent storage.
 
-Added a volume:
-```
-  volumes:
-  - name: redis-persistent-storage
-    emptyDir: {}
-```
+For this example, we'll be creating a Redis pod, with a named volume and volume mount that defines the path to mount the volume.
 
-Reference the volume in our container section:
+1. Define a volume:
+
+  ```
+    volumes:
+    - name: redis-persistent-storage
+      emptyDir: {}
+  ```
+
+1. Define a volume mount within a container definition:
+
 ```
     volumeMounts:
     # name must match the volume name below
@@ -131,7 +135,7 @@ Reference the volume in our container section:
       mountPath: /data/redis
 ```
 
-Full definition ([source](pod-redis.yaml)):
+Example Redis pod definition with a persistent storage volume ([pod-redis.yaml](pod-redis.yaml)):
 
 ```yaml
 apiVersion: v1

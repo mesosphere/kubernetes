@@ -41,21 +41,25 @@ The cluster consists of several docker containers linked together by docker-mana
 
 ### Prerequisites
 
+Required:
 - [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) - version control system
 - [Docker CLI](https://docs.docker.com/) - container management command line client
-- [Docker Engine](https://docs.docker.com/) - container management daemon<br/>
-    On Mac, use [Boot2Docker](http://boot2docker.io/) or [Docker Machine](https://docs.docker.com/machine/install-machine/)
-    to run Docker Engine in a linux VM.
+- [Docker Engine](https://docs.docker.com/) - container management daemon
+  - On Mac, use [Boot2Docker](http://boot2docker.io/) or [Docker Machine](https://docs.docker.com/machine/install-machine/)
+- [Docker Compose](https://docs.docker.com/compose/install/) - multi-container application orchestration
 - [jq](http://stedolan.github.io/jq/) - command line JSON parser
-- [Optional] [Virtual Box](https://www.virtualbox.org/wiki/Downloads) - x86 hardware virtualizer <br/>
-    Required by Boot2Docker and Docker Machine
-- [Optional] [etcd](https://github.com/coreos/etcd) - key/value store<br/>
-    Only used locally by integration tests, when building without `KUBE_RELEASE_RUN_TESTS=N`.
 
-#### Install with Homebrew (Mac)
+Optional:
+- [Virtual Box](https://www.virtualbox.org/wiki/Downloads) - x86 hardware virtualizer
+  - Required by Boot2Docker and Docker Machine
+- [etcd](https://github.com/coreos/etcd) - key/value store<br/>
+  - Required to run the integration tests locally (e.g. building without `KUBE_RELEASE_RUN_TESTS=N`)
 
-Note: On Mac, it's possible to install all the above via [Homebrew](http://brew.sh/).<br/>
-Follow any printed instructions after each step to make sure each is configured correctly.
+#### Install on Mac (Homebrew)
+
+It's possible to install all of the above via [Homebrew](http://brew.sh/) on a Mac.
+
+Some steps print instructions for configuring or launching. Make sure each is properly set up before continuing to the next step.
 
 ```
 brew install git
@@ -66,12 +70,20 @@ brew install docker
 brew install boot2docker
 boot2docker init
 boot2docker up
+brew install docker-compose
 brew install etcd
 ```
 
-***TODO***: apt & yum instructions
+#### Install on Linux
 
-#### Boot2Docker Config
+Most of the above are available via apt and yum, but depending on your distribution, you may have to install via other
+means to get the latest versions.
+
+It is recommended to use Ubuntu, simply because it best supports AUFS, used by docker to mount volumes. Alternate file
+systems may not fully support docker-in-docker.
+
+
+#### Boot2Docker Config (Mac)
 
 If on a mac using boot2docker, the following steps will make the docker IPs (in the virtualbox VM) reachable from the
 host machine (mac).
@@ -172,15 +184,12 @@ host machine (mac).
 
     After deploying th cluster, `~/.kube/config` will be created or updated to configure kubectl to target the new cluster.
 
-1. Run End-To-End Tests
+1. Explore Examples
 
-    ```
-    ./cluster/test-e2e.sh
-    ```
+   To learn more about Pods, Volumes, Labels, Services, and Replication Controllers, start with the
+   [Kubernetes Walkthrough](/examples/walkthrough/README.md).
 
-    Notable parameters:
-    - Increase the logging verbosity: `-v=2`
-    - Run only a subset of the tests (regex matching): `-ginkgo.focus=<pattern>`
+   To skip to a more advanced example, see the [Guestbook Example](/examples/guestbook/README.md)
 
 1. Destroy cluster
 
@@ -188,16 +197,29 @@ host machine (mac).
     ./cluster/kube-down.sh
     ```
 
+
 ### End To End Testing
 
-The above walkthrough builds, deploys, tests, and destroys. To do all of that in one command (plus unit & integration tests):
+Warning: e2e tests can take a long time to run. You may not want to run them immediately if you're just getting started.
+
+While your cluster is up, you can run the end-to-end tests:
+
+```
+./cluster/test-e2e.sh
+```
+
+Notable parameters:
+- Increase the logging verbosity: `-v=2`
+- Run only a subset of the tests (regex matching): `-ginkgo.focus=<pattern>`
+
+To build, deploy, test, and destroy, all in one command (plus unit & integration tests):
 
 ```
 make test_e2e
 ```
 
 
-### Using Kubernetes
+### Kubernetes CLI
 
 When compiling from source, it's simplest to use the `./cluster/kubectl.sh` script, which detects your platform &
 architecture and proxies commands to the appropriate `kubectl` binary.
@@ -213,7 +235,7 @@ ex: `./cluster/kubectl.sh get pods`
     docker ps -q -a | xargs docker rm -f
     ```
 
-- Clean up docker volumes
+- Clean up unused docker volumes
 
     ```
     docker run -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/docker:/var/lib/docker --rm martin/docker-cleanup-volumes

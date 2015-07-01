@@ -1,72 +1,148 @@
 # Kubernetes 101 - Walkthrough
 
+## Kubectl CLI
+
+The easiest way to interact with Kubernetes is via the command-line interface.
+
+If you downloaded a pre-compiled release, kubectl should be under `platforms/<os>/<arch>`.
+
+If you built from source, kubectl should be either under `_output/local/bin/<os>/<arch>` or `_output/dockerized/bin/<os>/<arch>`.
+
+### Install
+
+Do one of the following to install kubectl:
+- Add the kubectl binary to your PATH
+- Move kubectl into a dir already in PATH (like `/usr/local/bin`)
+- Use `./cluster/kubectl.sh` instead of kubectl. It will auto-detect the location of kubectl and proxy commands to it.
+
+### Configure
+
+If you used `./cluster/kube-up.sh` to deploy your Kubernetes cluster, kubectl should already be locally configured.
+
+By default, kubectl configuration lives at `~/.kube/config`.
+
+If your cluster was deployed by other means, you may want to configure the path to the Kubernetes apiserver in your shell environment:
+
+```sh
+export KUBERNETES_MASTER=http://<ip>:<port>/api
+```
+
+Check that kubectl is properly configured by getting the cluster state:
+
+```sh
+kubectl cluster-info
+```
+
+
 ## Pods
-The first atom of Kubernetes is a _pod_.  A pod is a collection of containers that are symbiotically grouped.
+In Kubernetes, a group of one or more containers is called a _pod_. Containers in a pod are deployed together, and are started, stopped, and replicated as a group.
 
 See [pods](../../docs/pods.md) for more details.
 
-### Intro
 
-Trivially, a single container might be a pod.  For example, you can express a simple web server as a pod:
+### Pod Definition
+
+The simplest pod definition describes the deployment of a single container.  For example, an nginx web server pod might be defined as such:
 
 ```yaml
 apiVersion: v1
 kind: Pod
 metadata:
-  name: www
+  name: nginx
 spec:
   containers:
-    - name: nginx
-      image: nginx
+  - name: nginx
+    image: nginx
+    ports:
+    - name: http
+      containerPort: 80
 ```
 
 A pod definition is a declaration of a _desired state_.  Desired state is a very important concept in the Kubernetes model.  Many things present a desired state to the system, and it is Kubernetes' responsibility to make sure that the current state matches the desired state.  For example, when you create a Pod, you declare that you want the containers in it to be running.  If the containers happen to not be running (e.g. program failure, ...), Kubernetes will continue to (re-)create them for you in order to drive them to the desired state. This process continues until you delete the Pod.
 
 See the [design document](../../DESIGN.md) for more details.
 
+
+### Managing a Pod
+
+If you have the source checked out, the following command (executed from the root of the project) will create the pod defined above. Otherwise download [the pod definition](pod-nginx.yaml) first.
+
+```sh
+kubectl create -f examples/walkthrough/pod-nginx.yaml
+```
+
+To list all pods:
+
+```sh
+kubectl get pods
+```
+
+To view the pod's http endpoint, first determine which IP the pod was given:
+
+```sh
+kubectl get pod nginx -o=template -t={{.status.podIP}}
+```
+
+Provided your pod IPs are accessible (depending on network setup), you should be able to access the pod's http endpoint in a browser or curl on port 80.
+
+```sh
+curl http://$(kubectl get pod nginx -o=template -t={{.status.podIP}})
+```
+
+To delete the pod by name:
+
+```sh
+kubectl delete pod nginx
+```
+
+
 ### Volumes
 
-Now that's great for a static web server, but what about persistent storage?  We know that the container file system only lives as long as the container does, so we need more persistent storage.  To do this, you also declare a ```volume``` as part of your pod, and mount it into a container:
+That's great for a simple static web server, but what about persistent storage?
+
+The container file system only lives as long as the container does. So if your app's state needs to survive reboots or crashes you'll need to configure some persistent storage.  To do so, declare a ```volume``` in the pod definition, and mount it into one or more of the pod containers:
+
+Added a volume:
+```
+  volumes:
+  - name: redis-persistent-storage
+    emptyDir: {}
+```
+
+Reference the volume in our container section:
+```
+    volumeMounts:
+    # name must match the volume name below
+    - name: redis-persistent-storage
+      # mount path within the container
+      mountPath: /data/redis
+```
+
+Full definition ([source](pod-redis.yaml)):
+
 ```yaml
 apiVersion: v1
 kind: Pod
 metadata:
-  name: storage
+  name: redis
 spec:
   containers:
-    - name: redis
-      image: redis
-      volumeMounts:
-          # name must match the volume name below
-        - name: redis-persistent-storage
-          # mount path within the container
-          mountPath: /data/redis
-  volumes:
+  - name: redis
+    image: redis
+    volumeMounts:
     - name: redis-persistent-storage
-      emptyDir: {}
-```
-
-Ok, so what did we do? We added a volume to our pod:
-```
+      mountPath: /data/redis
   volumes:
-    - name: redis-persistent-storage
-      emptyDir: {}
+  - name: redis-persistent-storage
+    emptyDir: {}
 ```
 
-And we added a reference to that volume to our container:
-```
-      volumeMounts:
-          # name must match the volume name below
-        - name: redis-persistent-storage
-          # mount path within the container
-          mountPath: /data/redis
-```
-
-In Kubernetes, ```emptyDir``` Volumes live for the lifespan of the Pod, which is longer than the lifespan of any one container, so if the container fails and is restarted, our persistent storage will live on.
+In Kubernetes, ```emptyDir``` Volumes live for the lifespan of the Pod, which may be longer than the lifespan of any one container, so if the container fails and is restarted, our persistent storage will live on.
 
 If you want to mount a directory that already exists in the file system (e.g. ```/var/logs```) you can use the ```hostDir``` directive.
 
 See [volumes](../../docs/volumes.md) for more details.
+
 
 ### Multiple Containers
 
@@ -80,7 +156,7 @@ However, often you want to have two different containers that work together.  An
 apiVersion: v1
 kind: Pod
 metadata:
-  name: www
+  name: git-monitor
 spec:
   containers:
   - name: nginx

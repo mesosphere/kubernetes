@@ -178,13 +178,12 @@ function kube-up {
   detect-master
   detect-minions
 
-  export KUBECONFIG=${KUBECONFIG:-${DEFAULT_KUBECONFIG}}
+  # KUBECONFIG needs to exist before run_in_docker mounts it, otherwise it will be owned by root
+  create-kubeconfig
 
   # await-health-check could be run locally, but it would require GNU timeout installed on mac...
   # "${provider_root}/common/bin/await-health-check" -t=120 ${KUBE_SERVER}/healthz
   cluster::mesos::docker::run_in_docker await-health-check -t=120 http://apiserver:8888/healthz
-
-  create-kubeconfig
 
   echo "Deploying Addons" 1>&2
   "${provider_root}/deploy-addons.sh"

@@ -98,3 +98,11 @@ function test-teardown {
 function get-password {
 	echo "TODO: get-password" 1>&2
 }
+
+# Providers util.sh scripts should define functions that override the above default functions impls
+if [ -n "${KUBERNETES_PROVIDER}" ]; then
+	PROVIDER_UTILS="${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}/util.sh"
+	if [ -f ${PROVIDER_UTILS} ]; then
+		source "${PROVIDER_UTILS}"
+	fi
+fi

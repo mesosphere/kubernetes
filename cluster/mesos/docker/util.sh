@@ -29,7 +29,6 @@ provider_root="${KUBE_ROOT}/cluster/${KUBERNETES_PROVIDER}"
 
 source "${provider_root}/${KUBE_CONFIG_FILE-"config-default.sh"}"
 source "${KUBE_ROOT}/cluster/common.sh"
-source "${KUBE_ROOT}/cluster/kube-util.sh" #default no-op method impls
 
 
 # Run kubernetes scripts inside docker.

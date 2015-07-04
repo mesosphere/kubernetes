@@ -185,7 +185,7 @@ function kube-up {
   cluster::mesos::docker::run_in_docker await-health-check -t=120 http://apiserver:8888/healthz
 
   echo "Deploying Addons" 1>&2
-  "${provider_root}/deploy-addons.sh"
+  KUBE_SERVER=${KUBE_SERVER} "${provider_root}/deploy-addons.sh"
 }
 
 function validate-cluster {

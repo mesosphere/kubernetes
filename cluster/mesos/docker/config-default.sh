@@ -61,5 +61,7 @@ DNS_SERVER_IP="10.10.10.10"
 DNS_DOMAIN="cluster.local"
 DNS_REPLICAS=1
 
+ENABLE_CLUSTER_UI=true
+
 # Optional: Enable setting flags for kube-apiserver to turn on behavior in active-dev
 RUNTIME_CONFIG=""

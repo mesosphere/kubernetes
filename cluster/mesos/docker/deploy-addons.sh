@@ -73,7 +73,7 @@ function deploy_dns {
       "${KUBE_ROOT}/cluster/addons/dns/skydns-svc.yaml.sh" > "${WORKSPACE}/skydns-svc.yaml"
 
   # Process config secrets (ssl certs) into a mounted Secret volume
-  local -r kubeconfig=$("${KUBE_ROOT}/cluster/kubectl.sh" config view --raw)
+  local -r kubeconfig=$("${kubectl}" config view --raw)
   local -r kubeconfig_base64=$(base64_nowrap "${kubeconfig}")
   cat > "${WORKSPACE}/skydns-secret.yaml" <<EOF
 apiVersion: v1
@@ -92,6 +92,18 @@ EOF
   "${kubectl}" create -f "${WORKSPACE}/skydns-svc.yaml"
 }
 
+function deploy_ui {
+  echo "Deploying UI Addon" 1>&2
+
+  # Use kubectl to create ui rc and service
+  "${kubectl}" create -f "${KUBE_ROOT}/cluster/addons/kube-ui/kube-ui-rc.yaml"
+  "${kubectl}" create -f "${KUBE_ROOT}/cluster/addons/kube-ui/kube-ui-svc.yaml"
+}
+
 if [ "${ENABLE_CLUSTER_DNS}" == true ]; then
   run_in_temp_dir 'deploy_dns' 'k8sm-dns'
+fi
+
+if [ "${ENABLE_CLUSTER_UI}" == true ]; then
+  deploy_ui
 fi

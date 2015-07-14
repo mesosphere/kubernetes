@@ -30,7 +30,6 @@ import (
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/conversion"
 	"k8s.io/kubernetes/pkg/runtime"

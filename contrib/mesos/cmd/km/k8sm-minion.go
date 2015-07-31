@@ -14,27 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// clone of the upstream cmd/hypercube/k8sm-scheduler.go
 package main
 
 import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/service"
+	"k8s.io/kubernetes/contrib/mesos/pkg/minion"
 )
 
-// NewScheduler creates a new hyperkube Server object that includes the
+// NewMinion creates a new hyperkube Server object that includes the
 // description and flags.
-func NewScheduler() *Server {
-	s := service.NewSchedulerServer()
-
+func NewMinion() *Server {
+	s := minion.NewMinionServer()
 	hks := Server{
-		SimpleUsage: hyperkube.CommandScheduler,
-		Long: `Implements the Kubernetes-Mesos scheduler. This will launch Mesos tasks which
-results in pods assigned to kubelets based on capacity and constraints.`,
+		SimpleUsage: hyperkube.CommandMinion,
+		Long:        `Implements a Kubernetes minion. This will launch the proxy and executor.`,
 		Run: func(hks *Server, args []string) error {
 			return s.Run(hks, args)
 		},
 	}
-	s.AddHyperkubeFlags(hks.Flags())
+	s.AddMinionFlags(hks.Flags())
+	s.AddExecutorFlags(hks.Flags())
+
 	return &hks
 }

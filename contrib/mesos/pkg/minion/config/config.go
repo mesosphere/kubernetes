@@ -14,34 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package config
 
 import (
-	"fmt"
-	"os"
-	"runtime"
-
-	"github.com/spf13/pflag"
-	"k8s.io/kubernetes/contrib/mesos/pkg/executor/service"
-	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
-	"k8s.io/kubernetes/pkg/util"
-	"k8s.io/kubernetes/pkg/version/verflag"
+	"k8s.io/kubernetes/pkg/api/resource"
 )
 
-func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+const (
+	DefaultLogMaxBackups   = 5 // how many backup to keep
+	DefaultLogMaxAgeInDays = 7 // after how many days to rotate at most
+)
 
-	s := service.NewKubeletExecutorServer()
-	s.AddFlags(pflag.CommandLine)
-
-	util.InitFlags()
-	util.InitLogs()
-	defer util.FlushLogs()
-
-	verflag.PrintAndExitIfRequested()
-
-	if err := s.Run(hyperkube.Nil(), pflag.CommandLine.Args()); err != nil {
-		fmt.Fprintf(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+// DefaultLogMaxSize returns the maximal log file size before rotation
+func DefaultLogMaxSize() resource.Quantity {
+	return *resource.NewQuantity(10*1024*1024, resource.BinarySI)
 }

@@ -29,6 +29,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
+	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 )
 
 type fakeSchedulerProcess struct {
@@ -113,6 +114,14 @@ func Test_awaitFailoverDoneFailover(t *testing.T) {
 	if !failoverHandlerCalled {
 		t.Fatalf("expected call to failover handler")
 	}
+}
+
+func Test_DefaultResourceLimits(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSchedulerServer()
+	assert.Equal(s.DefaultContainerCPULimit, mresource.DefaultDefaultContainerCPULimit)
+	assert.Equal(s.DefaultContainerMemLimit, mresource.DefaultDefaultContainerMemLimit)
 }
 
 func Test_StaticPods(t *testing.T) {

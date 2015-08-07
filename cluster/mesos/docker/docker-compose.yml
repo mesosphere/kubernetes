@@ -11,6 +11,12 @@ etcd:
     --listen-client-urls 'http://etcd:4001'
     --advertise-client-urls 'http://etcd:4001'
     --initial-cluster-state new
+zookeeper:
+  hostname: zookeeper
+  image: mesoscloud/zookeeper:3.4.6-ubuntu-14.04
+  environment:
+  - MYID=1
+  - SERVERS=zookeeper
 mesosmaster1:
   hostname: mesosmaster1
   image: mesosphere/mesos:0.22.0-1.0.ubuntu1404
@@ -18,6 +24,7 @@ mesosmaster1:
   ports: [ "5050:5050" ]
   environment:
   - MESOS_HOSTNAME=mesosmaster1
+  - MESOS_ZK=zk://zookeeper:2181/mesos
   - MESOS_PORT=5050
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_QUORUM=1
@@ -26,6 +33,24 @@ mesosmaster1:
   links:
   - etcd
   - "ambassador:apiserver"
+  - zookeeper
+mesosmaster2:
+  hostname: mesosmaster2
+  image: mesosphere/mesos:0.22.0-1.0.ubuntu1404
+  entrypoint: [ "mesos-master" ]
+  ports: [ "5060:5060" ]
+  environment:
+  - MESOS_HOSTNAME=mesosmaster2
+  - MESOS_ZK=zk://zookeeper:2181/mesos
+  - MESOS_PORT=5060
+  - MESOS_LOG_DIR=/var/log/mesos
+  - MESOS_QUORUM=1
+  - MESOS_REGISTRY=in_memory
+  - MESOS_WORK_DIR=/var/lib/mesos
+  links:
+  - etcd
+  - "ambassador:apiserver"
+  - zookeeper
 mesosslave1:
   hostname: mesosslave1
   privileged: true
@@ -33,7 +58,7 @@ mesosslave1:
   entrypoint: [ "bash", "-c", "wrapdocker mesos-slave --hostname=$(getent hosts mesosslave1 | cut -d' ' -f1 | sort -u | tail -1)" ]
   command: ~
   environment:
-  - MESOS_MASTER=mesosmaster1:5050
+  - MESOS_MASTER=zk://zookeeper:2181/mesos
   - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
@@ -44,7 +69,9 @@ mesosslave1:
   - DOCKER_DAEMON_ARGS=--log-level=error
   links:
   - etcd
+  - zookeeper
   - mesosmaster1
+  - mesosmaster2
   - "ambassador:apiserver"
   volumes:
   - /var/tmp/mesosslave1:/var/lib/docker
@@ -55,7 +82,7 @@ mesosslave2:
   entrypoint: [ "bash", "-c", "wrapdocker mesos-slave --hostname=$(getent hosts mesosslave2 | cut -d' ' -f1 | sort -u | tail -1)" ]
   command: ~
   environment:
-  - MESOS_MASTER=mesosmaster1:5050
+  - MESOS_MASTER=zk://zookeeper:2181/mesos
   - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
@@ -66,7 +93,9 @@ mesosslave2:
   - DOCKER_DAEMON_ARGS=--log-level=error
   links:
   - etcd
+  - zookeeper
   - mesosmaster1
+  - mesosmaster2
   - "ambassador:apiserver"
   volumes:
   - /var/tmp/mesosslave2:/var/lib/docker
@@ -78,9 +107,8 @@ apiserver:
   - "-c"
   - >
     echo "Hostname: $(hostname -f) ($(hostname -f | xargs resolveip))" &&
-    (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = mesosmaster1:5050" >> /opt/mesos-cloud.conf) &&
+    (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = zk://zookeeper:2181/mesos" >> /opt/mesos-cloud.conf) &&
     await-health-check http://etcd:4001/health &&
-    await-health-check http://mesosmaster1:5050/health &&
     await-file -t=60 /var/run/kubernetes/auth/apiserver.crt &&
     km apiserver
     --address=$(resolveip apiserver)
@@ -104,7 +132,9 @@ apiserver:
   - ./certs/apiserver:/var/run/kubernetes/auth
   links:
   - etcd
+  - zookeeper
   - mesosmaster1
+  - mesosmaster2
 controller:
   hostname: controller
   image: mesosphere/kubernetes-mesos
@@ -113,8 +143,6 @@ controller:
   - "-c"
   - >
     echo "Hostname: $(hostname -f) ($(hostname -f | xargs resolveip))" &&
-    (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = mesosmaster1:5050" >> /opt/mesos-cloud.conf) &&
-    await-health-check -t=60 http://mesosmaster1:5050/health &&
     await-health-check -t=60 http://apiserver:8888/healthz &&
     km controller-manager
     --master=http://apiserver:8888
@@ -125,7 +153,6 @@ controller:
   volumes:
   - ./certs/controller:/var/run/kubernetes/auth
   links:
-  - mesosmaster1
   - apiserver
 scheduler:
   hostname: scheduler
@@ -135,7 +162,7 @@ scheduler:
   - "-c"
   - >
     echo "Hostname: $(hostname -f) ($(hostname -f | xargs resolveip))" &&
-    (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = mesosmaster1:5050" >> /opt/mesos-cloud.conf) &&
+    (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = zk://zookeeper:2181/mesos" >> /opt/mesos-cloud.conf) &&
     await-health-check http://etcd:4001/health &&
     await-health-check http://mesosmaster1:5050/health &&
     await-health-check -t=60 http://apiserver:8888/healthz &&
@@ -151,7 +178,9 @@ scheduler:
     --v=2
   links:
   - etcd
+  - zookeeper
   - mesosmaster1
+  - mesosmaster2
   - mesosslave1
   - mesosslave2
   - apiserver

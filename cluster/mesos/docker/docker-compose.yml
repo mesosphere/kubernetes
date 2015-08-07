@@ -27,8 +27,7 @@ mesosmaster1:
   - MESOS_ZK=zk://zookeeper:2181/mesos
   - MESOS_PORT=5050
   - MESOS_LOG_DIR=/var/log/mesos
-  - MESOS_QUORUM=1
-  - MESOS_REGISTRY=in_memory
+  - MESOS_QUORUM=2
   - MESOS_WORK_DIR=/var/lib/mesos
   links:
   - etcd
@@ -44,8 +43,23 @@ mesosmaster2:
   - MESOS_ZK=zk://zookeeper:2181/mesos
   - MESOS_PORT=5060
   - MESOS_LOG_DIR=/var/log/mesos
-  - MESOS_QUORUM=1
-  - MESOS_REGISTRY=in_memory
+  - MESOS_QUORUM=2
+  - MESOS_WORK_DIR=/var/lib/mesos
+  links:
+  - etcd
+  - "ambassador:apiserver"
+  - zookeeper
+mesosmaster3:
+  hostname: mesosmaster3
+  image: mesosphere/mesos:0.22.0-1.0.ubuntu1404
+  entrypoint: [ "mesos-master" ]
+  ports: [ "5070:5070" ]
+  environment:
+  - MESOS_HOSTNAME=mesosmaster3
+  - MESOS_ZK=zk://zookeeper:2181/mesos
+  - MESOS_PORT=5070
+  - MESOS_LOG_DIR=/var/log/mesos
+  - MESOS_QUORUM=2
   - MESOS_WORK_DIR=/var/lib/mesos
   links:
   - etcd
@@ -70,8 +84,6 @@ mesosslave1:
   links:
   - etcd
   - zookeeper
-  - mesosmaster1
-  - mesosmaster2
   - "ambassador:apiserver"
   volumes:
   - /var/tmp/mesosslave1:/var/lib/docker
@@ -94,8 +106,6 @@ mesosslave2:
   links:
   - etcd
   - zookeeper
-  - mesosmaster1
-  - mesosmaster2
   - "ambassador:apiserver"
   volumes:
   - /var/tmp/mesosslave2:/var/lib/docker
@@ -133,8 +143,6 @@ apiserver:
   links:
   - etcd
   - zookeeper
-  - mesosmaster1
-  - mesosmaster2
 controller:
   hostname: controller
   image: mesosphere/kubernetes-mesos
@@ -164,7 +172,6 @@ scheduler:
     echo "Hostname: $(hostname -f) ($(hostname -f | xargs resolveip))" &&
     (grep "mesos-master\s*=" /opt/mesos-cloud.conf || echo "  mesos-master = zk://zookeeper:2181/mesos" >> /opt/mesos-cloud.conf) &&
     await-health-check http://etcd:4001/health &&
-    await-health-check http://mesosmaster1:5050/health &&
     await-health-check -t=60 http://apiserver:8888/healthz &&
     km scheduler
     --address=$(resolveip scheduler)
@@ -172,15 +179,11 @@ scheduler:
     --etcd-servers=http://etcd:4001
     --mesos-user=root
     --api-servers=http://apiserver:8888
-    --mesos-master=mesosmaster1:5050
+    --mesos-master=zk://zookeeper:2181/mesos
     --cluster-dns=10.10.10.10
     --cluster-domain=cluster.local
     --v=2
   links:
   - etcd
   - zookeeper
-  - mesosmaster1
-  - mesosmaster2
-  - mesosslave1
-  - mesosslave2
   - apiserver

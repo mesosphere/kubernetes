@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: kube-ui
-        image: gcr.io/google_containers/kube-ui:v1.1
+        image: mesosphere/kubernetes:kubeui-v1.0.3-v0.6.2
         resources:
           limits:
             cpu: 100m

@@ -257,7 +257,7 @@ function kube-up {
   export KUBE_KEYGEN_TIMEOUT="${KUBE_KEYGEN_TIMEOUT}"
   export MESOS_DOCKER_WORK_DIR="${MESOS_DOCKER_WORK_DIR}"
   export MESOS_DOCKER_IMAGE_DIR="${MESOS_DOCKER_IMAGE_DIR}"
-  docker-compose -f "${compose_file}" up -d
+  docker-compose -f "${compose_file}" --verbose up -d
 
   # await-health-check requires GNU timeout
   # apiserver hostname resolved by docker

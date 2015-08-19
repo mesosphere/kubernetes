@@ -22,17 +22,17 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/admission"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/watch"
+	"k8s.io/kubernetes/pkg/admission"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/errors"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/client/unversioned/cache"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/kubelet"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/watch"
 )
 
 // DefaultServiceAccountName is the name of the default service account to set on pods which do not specify a service account
@@ -57,6 +57,8 @@ type serviceAccount struct {
 
 	// LimitSecretReferences rejects pods that reference secrets their service accounts do not reference
 	LimitSecretReferences bool
+	// RequireAPIToken determines whether pod creation attempts are rejected if no API token exists for the pod's service account
+	RequireAPIToken bool
 	// MountServiceAccountToken creates Volume and VolumeMounts for the first referenced ServiceAccountToken for the pod's service account
 	MountServiceAccountToken bool
 
@@ -110,6 +112,8 @@ func NewServiceAccount(cl client.Interface) *serviceAccount {
 		LimitSecretReferences: false,
 		// Auto mount service account API token secrets
 		MountServiceAccountToken: true,
+		// Reject pod creation until a service account token is available
+		RequireAPIToken: true,
 
 		client:                   cl,
 		serviceAccounts:          serviceAccountsIndexer,
@@ -172,7 +176,8 @@ func (s *serviceAccount) Admit(a admission.Attributes) (err error) {
 		return admission.NewForbidden(a, fmt.Errorf("Error looking up service account %s/%s: %v", a.GetNamespace(), pod.Spec.ServiceAccountName, err))
 	}
 	if serviceAccount == nil {
-		return admission.NewForbidden(a, fmt.Errorf("Missing service account %s/%s: %v", a.GetNamespace(), pod.Spec.ServiceAccountName, err))
+		// TODO: convert to a ServerTimeout error (or other error that sends a Retry-After header)
+		return admission.NewForbidden(a, fmt.Errorf("service account %s/%s was not found, retry after the service account is created", a.GetNamespace(), pod.Spec.ServiceAccountName))
 	}
 
 	if s.LimitSecretReferences {
@@ -320,10 +325,15 @@ func (s *serviceAccount) mountServiceAccountToken(serviceAccount *api.ServiceAcc
 	// Find the name of a referenced ServiceAccountToken secret we can mount
 	serviceAccountToken, err := s.getReferencedServiceAccountToken(serviceAccount)
 	if err != nil {
-		fmt.Errorf("Error looking up service account token for %s/%s: %v", serviceAccount.Namespace, serviceAccount.Name, err)
+		return fmt.Errorf("Error looking up service account token for %s/%s: %v", serviceAccount.Namespace, serviceAccount.Name, err)
 	}
 	if len(serviceAccountToken) == 0 {
 		// We don't have an API token to mount, so return
+		if s.RequireAPIToken {
+			// If a token is required, this is considered an error
+			// TODO: convert to a ServerTimeout error (or other error that sends a Retry-After header)
+			return fmt.Errorf("no API token found for service account %s/%s, retry after the token is automatically created and added to the service account", serviceAccount.Namespace, serviceAccount.Name)
+		}
 		return nil
 	}
 

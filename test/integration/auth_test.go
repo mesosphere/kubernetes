@@ -36,30 +36,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/apiserver"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authenticator"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authenticator/bearertoken"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authorizer"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authorizer/abac"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/user"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/master"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/admission/admit"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/token/tokentest"
-	"github.com/GoogleCloudPlatform/kubernetes/test/integration/framework"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/testapi"
+	"k8s.io/kubernetes/pkg/apiserver"
+	"k8s.io/kubernetes/pkg/auth/authenticator"
+	"k8s.io/kubernetes/pkg/auth/authenticator/bearertoken"
+	"k8s.io/kubernetes/pkg/auth/authorizer"
+	"k8s.io/kubernetes/pkg/auth/authorizer/abac"
+	"k8s.io/kubernetes/pkg/auth/user"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/master"
+	"k8s.io/kubernetes/plugin/pkg/admission/admit"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/tokentest"
+	"k8s.io/kubernetes/test/integration/framework"
 )
-
-var nodeResourceName string
-
-func init() {
-	if api.PreV1Beta3(testapi.Version()) {
-		nodeResourceName = "minions"
-	} else {
-		nodeResourceName = "nodes"
-	}
-}
 
 const (
 	AliceToken   string = "abc123" // username: alice.  Present in token file.
@@ -90,7 +80,7 @@ func timeoutPath(resource, namespace, name string) string {
 var aPod string = `
 {
   "kind": "Pod",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a",
     "creationTimestamp": null%s
@@ -108,7 +98,7 @@ var aPod string = `
 var aRC string = `
 {
   "kind": "ReplicationController",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a",
     "labels": {
@@ -141,7 +131,7 @@ var aRC string = `
 var aService string = `
 {
   "kind": "Service",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a",
     "labels": {
@@ -158,14 +148,14 @@ var aService string = `
     "selector": {
       "name": "a"
     },
-    "portalIP": "10.0.0.100"
+    "clusterIP": "10.0.0.100"
   }
 }
 `
 var aNode string = `
 {
   "kind": "Node",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a"%s
   },
@@ -177,7 +167,7 @@ var aNode string = `
 var aEvent string = `
 {
   "kind": "Event",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a"%s
   },
@@ -185,7 +175,7 @@ var aEvent string = `
     "kind": "Node",
     "namespace": "default",
     "name": "a",
-    "apiVersion": "v1beta3"
+    "apiVersion": "v1"
   }
 }
 `
@@ -193,7 +183,7 @@ var aEvent string = `
 var aBinding string = `
 {
   "kind": "Binding",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a"%s
   },
@@ -203,10 +193,20 @@ var aBinding string = `
 }
 `
 
+var emptyEndpoints string = `
+{
+  "kind": "Endpoints",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "a"%s
+  }
+}
+`
+
 var aEndpoints string = `
 {
   "kind": "Endpoints",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "metadata": {
     "name": "a"%s
   },
@@ -214,7 +214,7 @@ var aEndpoints string = `
     {
       "addresses": [
         {
-          "IP": "10.10.1.1"
+          "ip": "10.10.1.1"
         }
       ],
       "ports": [
@@ -231,7 +231,7 @@ var aEndpoints string = `
 var deleteNow string = `
 {
   "kind": "DeleteOptions",
-  "apiVersion": "v1beta3",
+  "apiVersion": "` + testapi.Version() + `",
   "gracePeriodSeconds": null%s
 }
 `
@@ -247,6 +247,7 @@ var code405 = map[int]bool{405: true}
 var code409 = map[int]bool{409: true}
 var code422 = map[int]bool{422: true}
 var code500 = map[int]bool{500: true}
+var code503 = map[int]bool{503: true}
 
 // To ensure that a POST completes before a dependent GET, set a timeout.
 func addTimeoutFlag(URLString string) string {
@@ -275,6 +276,16 @@ func getTestRequests() []struct {
 		{"POST", timeoutPath("pods", api.NamespaceDefault, ""), aPod, code201},
 		{"PUT", timeoutPath("pods", api.NamespaceDefault, "a"), aPod, code200},
 		{"GET", path("pods", api.NamespaceDefault, "a"), "", code200},
+		// GET and POST for /exec should return Bad Request (400) since the pod has not been assigned a node yet.
+		{"GET", path("pods", api.NamespaceDefault, "a") + "/exec", "", code400},
+		{"POST", path("pods", api.NamespaceDefault, "a") + "/exec", "", code400},
+		// PUT for /exec should return Method Not Allowed (405).
+		{"PUT", path("pods", api.NamespaceDefault, "a") + "/exec", "", code405},
+		// GET and POST for /portforward should return Bad Request (400) since the pod has not been assigned a node yet.
+		{"GET", path("pods", api.NamespaceDefault, "a") + "/portforward", "", code400},
+		{"POST", path("pods", api.NamespaceDefault, "a") + "/portforward", "", code400},
+		// PUT for /portforward should return Method Not Allowed (405).
+		{"PUT", path("pods", api.NamespaceDefault, "a") + "/portforward", "", code405},
 		{"PATCH", path("pods", api.NamespaceDefault, "a"), "{%v}", code200},
 		{"DELETE", timeoutPath("pods", api.NamespaceDefault, "a"), deleteNow, code200},
 
@@ -293,8 +304,14 @@ func getTestRequests() []struct {
 		{"GET", path("services", "", ""), "", code200},
 		{"GET", path("services", api.NamespaceDefault, ""), "", code200},
 		{"POST", timeoutPath("services", api.NamespaceDefault, ""), aService, code201},
+		// Create an endpoint for the service (this is done automatically by endpoint controller
+		// whenever a service is created, but this test does not run that controller)
+		{"POST", timeoutPath("endpoints", api.NamespaceDefault, ""), emptyEndpoints, code201},
+		// Should return service unavailable when endpoint.subset is empty.
+		{"GET", pathWithPrefix("proxy", "services", api.NamespaceDefault, "a") + "/", "", code503},
 		{"PUT", timeoutPath("services", api.NamespaceDefault, "a"), aService, code200},
 		{"GET", path("services", api.NamespaceDefault, "a"), "", code200},
+		{"DELETE", timeoutPath("endpoints", api.NamespaceDefault, "a"), "", code200},
 		{"DELETE", timeoutPath("services", api.NamespaceDefault, "a"), "", code200},
 
 		// Normal methods on replicationControllers
@@ -314,11 +331,11 @@ func getTestRequests() []struct {
 		{"DELETE", timeoutPath("endpoints", api.NamespaceDefault, "a"), "", code200},
 
 		// Normal methods on minions
-		{"GET", path(nodeResourceName, "", ""), "", code200},
-		{"POST", timeoutPath(nodeResourceName, "", ""), aNode, code201},
-		{"PUT", timeoutPath(nodeResourceName, "", "a"), aNode, code200},
-		{"GET", path(nodeResourceName, "", "a"), "", code200},
-		{"DELETE", timeoutPath(nodeResourceName, "", "a"), "", code200},
+		{"GET", path("nodes", "", ""), "", code200},
+		{"POST", timeoutPath("nodes", "", ""), aNode, code201},
+		{"PUT", timeoutPath("nodes", "", "a"), aNode, code200},
+		{"GET", path("nodes", "", "a"), "", code200},
+		{"DELETE", timeoutPath("nodes", "", "a"), "", code200},
 
 		// Normal methods on events
 		{"GET", path("events", "", ""), "", code200},
@@ -344,8 +361,8 @@ func getTestRequests() []struct {
 		{"DELETE", timeoutPath("foo", api.NamespaceDefault, ""), "", code404},
 
 		// Special verbs on nodes
-		{"GET", pathWithPrefix("proxy", nodeResourceName, api.NamespaceDefault, "a"), "", code404},
-		{"GET", pathWithPrefix("redirect", nodeResourceName, api.NamespaceDefault, "a"), "", code404},
+		{"GET", pathWithPrefix("proxy", "nodes", api.NamespaceDefault, "a"), "", code404},
+		{"GET", pathWithPrefix("redirect", "nodes", api.NamespaceDefault, "a"), "", code404},
 		// TODO: test .../watch/..., which doesn't end before the test timeout.
 		// TODO: figure out how to create a minion so that it can successfully proxy/redirect.
 
@@ -369,7 +386,7 @@ func TestAuthModeAlwaysAllow(t *testing.T) {
 	framework.DeleteAllEtcdKeys()
 
 	// Set up a master
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,7 +397,7 @@ func TestAuthModeAlwaysAllow(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -452,17 +469,6 @@ func parseResourceVersion(response []byte) (string, float64, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("unexpected error unmarshaling resultBody: %v", err)
 	}
-	apiVersion, ok := resultBodyMap["apiVersion"].(string)
-	if !ok {
-		return "", 0, fmt.Errorf("unexpected error, apiVersion not found in JSON response: %v", string(response))
-	}
-	if api.PreV1Beta3(apiVersion) {
-		return parsePreV1Beta3ResourceVersion(resultBodyMap, response)
-	}
-	return parseV1Beta3ResourceVersion(resultBodyMap, response)
-}
-
-func parseV1Beta3ResourceVersion(resultBodyMap map[string]interface{}, response []byte) (string, float64, error) {
 	metadata, ok := resultBodyMap["metadata"].(map[string]interface{})
 	if !ok {
 		return "", 0, fmt.Errorf("unexpected error, metadata not found in JSON response: %v", string(response))
@@ -482,19 +488,6 @@ func parseV1Beta3ResourceVersion(resultBodyMap map[string]interface{}, response 
 	return id, resourceVersion, nil
 }
 
-func parsePreV1Beta3ResourceVersion(resultBodyMap map[string]interface{}, response []byte) (string, float64, error) {
-	id, ok := resultBodyMap["id"].(string)
-	if !ok {
-		return "", 0, fmt.Errorf("unexpected error, id not found in JSON response: %v", string(response))
-	}
-
-	resourceVersion, ok := resultBodyMap["resourceVersion"].(float64)
-	if !ok {
-		return "", 0, fmt.Errorf("unexpected error, resourceVersion not found in JSON response: %v", string(response))
-	}
-	return id, resourceVersion, nil
-}
-
 func getPreviousResourceVersionKey(url, id string) string {
 	baseUrl := strings.Split(url, "?")[0]
 	key := baseUrl
@@ -508,7 +501,7 @@ func TestAuthModeAlwaysDeny(t *testing.T) {
 	framework.DeleteAllEtcdKeys()
 
 	// Set up a master
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -520,7 +513,7 @@ func TestAuthModeAlwaysDeny(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -575,7 +568,7 @@ func TestAliceNotForbiddenOrUnauthorized(t *testing.T) {
 	// This file has alice and bob in it.
 
 	// Set up a master
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -587,7 +580,7 @@ func TestAliceNotForbiddenOrUnauthorized(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -662,7 +655,7 @@ func TestBobIsForbidden(t *testing.T) {
 	framework.DeleteAllEtcdKeys()
 
 	// This file has alice and bob in it.
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -674,7 +667,7 @@ func TestBobIsForbidden(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -723,7 +716,7 @@ func TestUnknownUserIsUnauthorized(t *testing.T) {
 	// This file has alice and bob in it.
 
 	// Set up a master
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -735,7 +728,7 @@ func TestUnknownUserIsUnauthorized(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -800,7 +793,7 @@ func TestNamespaceAuthorization(t *testing.T) {
 	framework.DeleteAllEtcdKeys()
 
 	// This file has alice and bob in it.
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -815,7 +808,7 @@ func TestNamespaceAuthorization(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -915,7 +908,7 @@ func TestKindAuthorization(t *testing.T) {
 	// This file has alice and bob in it.
 
 	// Set up a master
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -930,7 +923,7 @@ func TestKindAuthorization(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -1018,7 +1011,7 @@ func TestReadOnlyAuthorization(t *testing.T) {
 	// This file has alice and bob in it.
 
 	// Set up a master
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1032,7 +1025,7 @@ func TestReadOnlyAuthorization(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,

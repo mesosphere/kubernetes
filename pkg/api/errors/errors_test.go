@@ -22,9 +22,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/fielderrors"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/util/fielderrors"
 )
 
 func TestErrorNew(t *testing.T) {
@@ -149,7 +149,7 @@ func TestNewInvalid(t *testing.T) {
 	}
 	for i, testCase := range testCases {
 		vErr, expected := testCase.Err, testCase.Details
-		expected.Causes[0].Message = vErr.Error()
+		expected.Causes[0].Message = vErr.ErrorBody()
 		err := NewInvalid("kind", "name", fielderrors.ValidationErrorList{vErr})
 		status := err.(*StatusError).ErrStatus
 		if status.Code != 422 || status.Reason != api.StatusReasonInvalid {

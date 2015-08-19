@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"code.google.com/p/go-uuid/uuid"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
 	"github.com/mesos/mesos-go/mesosproto"
@@ -33,6 +32,7 @@ import (
 	"github.com/mesos/mesos-go/mesosutil/process"
 	"github.com/mesos/mesos-go/messenger"
 	"github.com/mesos/mesos-go/upid"
+	"github.com/pborman/uuid"
 	"golang.org/x/net/context"
 )
 
@@ -185,6 +185,8 @@ func (driver *MesosExecutorDriver) setStatus(stat mesosproto.Status) {
 }
 
 func (driver *MesosExecutorDriver) Stopped() bool {
+	driver.lock.RLock()
+	defer driver.lock.RUnlock()
 	return driver.stopped
 }
 
@@ -195,6 +197,8 @@ func (driver *MesosExecutorDriver) setStopped(val bool) {
 }
 
 func (driver *MesosExecutorDriver) Connected() bool {
+	driver.lock.RLock()
+	defer driver.lock.RUnlock()
 	return driver.connected
 }
 
@@ -338,6 +342,8 @@ func (driver *MesosExecutorDriver) statusUpdateAcknowledgement(from *upid.UPID, 
 	taskID := msg.GetTaskId()
 	uuid := uuid.UUID(msg.GetUuid())
 
+	driver.lock.Lock()
+	defer driver.lock.Unlock()
 	if driver.stopped {
 		log.Infof("Ignoring status update acknowledgement %v for task %v of framework %v because the driver is stopped!\n",
 			uuid, taskID, frameworkID)
@@ -526,7 +532,9 @@ func (driver *MesosExecutorDriver) SendStatusUpdate(taskStatus *mesosproto.TaskS
 	log.Infof("Executor sending status update %v\n", update.String())
 
 	// Capture the status update.
+	driver.lock.Lock()
 	driver.updates[uuid.UUID(update.GetUuid()).String()] = update
+	driver.lock.Unlock()
 
 	// Put the status update in the message.
 	message := &mesosproto.StatusUpdateMessage{

@@ -1,8 +1,41 @@
+<!-- BEGIN MUNGE: UNVERSIONED_WARNING -->
+
+<!-- BEGIN STRIP_FOR_RELEASE -->
+
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+
+<h2>PLEASE NOTE: This document applies to the HEAD of the source tree</h2>
+
+If you are using a released version of Kubernetes, you should
+refer to the docs that go with that version.
+
+<strong>
+The latest 1.0.x release of this document can be found
+[here](http://releases.k8s.io/release-1.0/examples/celery-rabbitmq/README.md).
+
+Documentation for other releases can be found at
+[releases.k8s.io](http://releases.k8s.io).
+</strong>
+--
+
+<!-- END STRIP_FOR_RELEASE -->
+
+<!-- END MUNGE: UNVERSIONED_WARNING -->
+
 # Example: Distributed task queues with Celery, RabbitMQ and Flower
 
 ## Introduction
 
-Celery is an asynchronous task queue based on distributed message passing. It is used to create execution units (i.e. tasks) which are then executed on one or more worker nodes, either synchronously or asynchronously. 
+Celery is an asynchronous task queue based on distributed message passing. It is used to create execution units (i.e. tasks) which are then executed on one or more worker nodes, either synchronously or asynchronously.
 
 Celery is implemented in Python.
 
@@ -24,14 +57,14 @@ At the end of the example, we will have:
 
 ## Prerequisites
 
-You should already have turned up a Kubernetes cluster. To get the most of this example, ensure that Kubernetes will create more than one minion (e.g. by setting your `NUM_MINIONS` environment variable to 2 or more).
+You should already have turned up a Kubernetes cluster. To get the most of this example, ensure that Kubernetes will create more than one node (e.g. by setting your `NUM_MINIONS` environment variable to 2 or more).
 
 
 ## Step 1: Start the RabbitMQ service
 
 The Celery task queue will need to communicate with the RabbitMQ broker. RabbitMQ will eventually appear on a separate pod, but since pods are ephemeral we need a service that can transparently route requests to RabbitMQ.
 
-Use the file [`examples/celery-rabbitmq/rabbitmq-service.yaml`](rabbitmq-service.yaml):
+<!-- BEGIN MUNGE: EXAMPLE rabbitmq-service.yaml -->
 
 ```yaml
 apiVersion: v1
@@ -48,9 +81,12 @@ spec:
     component: rabbitmq
 ```
 
+[Download example](rabbitmq-service.yaml)
+<!-- END MUNGE: EXAMPLE rabbitmq-service.yaml -->
+
 To start the service, run:
 
-```shell
+```sh
 $ kubectl create -f examples/celery-rabbitmq/rabbitmq-service.yaml
 ```
 
@@ -60,6 +96,8 @@ This service allows other pods to connect to the rabbitmq. To them, it will be s
 ## Step 2: Fire up RabbitMQ
 
 A RabbitMQ broker can be turned up using the file [`examples/celery-rabbitmq/rabbitmq-controller.yaml`](rabbitmq-controller.yaml):
+
+<!-- BEGIN MUNGE: EXAMPLE rabbitmq-controller.yaml -->
 
 ```yaml
 apiVersion: v1
@@ -88,6 +126,9 @@ spec:
             cpu: 100m
 ```
 
+[Download example](rabbitmq-controller.yaml)
+<!-- END MUNGE: EXAMPLE rabbitmq-controller.yaml -->
+
 Running `$ kubectl create -f examples/celery-rabbitmq/rabbitmq-controller.yaml` brings up a replication controller that ensures one pod exists which is running a RabbitMQ instance.
 
 Note that bringing up the pod includes pulling down a docker image, which may take a few moments. This applies to all other pods in this example.
@@ -96,6 +137,8 @@ Note that bringing up the pod includes pulling down a docker image, which may ta
 ## Step 3: Fire up Celery
 
 Bringing up the celery worker is done by running `$ kubectl create -f examples/celery-rabbitmq/celery-controller.yaml`, which contains this:
+
+<!-- BEGIN MUNGE: EXAMPLE celery-controller.yaml -->
 
 ```yaml
 apiVersion: v1
@@ -123,6 +166,9 @@ spec:
           limits:
             cpu: 100m
 ```
+
+[Download example](celery-controller.yaml)
+<!-- END MUNGE: EXAMPLE celery-controller.yaml -->
 
 There are several things to point out here...
 
@@ -172,7 +218,41 @@ The question now is, how do you see what's going on?
 
 Flower is a web-based tool for monitoring and administrating Celery clusters. By connecting to the node that contains Celery, you can see the behaviour of all the workers and their tasks in real-time.
 
-To bring up the frontend, run this command `$ kubectl create -f examples/celery-rabbitmq/flower-controller.yaml`. This controller is defined as so:
+First, start the flower service with `$ kubectl create -f examples/celery-rabbitmq/flower-service.yaml`. The service is defined as below:
+
+<!-- BEGIN MUNGE: EXAMPLE flower-service.yaml -->
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: flower
+  name: flower-service
+spec:
+  ports:
+  - port: 5555
+  selector:
+    app: taskQueue
+    component: flower
+  type: LoadBalancer
+```
+
+[Download example](flower-service.yaml)
+<!-- END MUNGE: EXAMPLE flower-service.yaml -->
+
+It is marked as external (LoadBalanced). However on many platforms you will have to add an explicit firewall rule to open port 5555.
+On GCE this can be done with:
+
+```
+ $ gcloud compute firewall-rules create --allow=tcp:5555 --target-tags=kubernetes-minion kubernetes-minion-5555
+```
+
+Please remember to delete the rule after you are done with the example (on GCE: `$ gcloud compute firewall-rules delete kubernetes-minion-5555`)
+
+To bring up the pods, run this command `$ kubectl create -f examples/celery-rabbitmq/flower-controller.yaml`. This controller is defined as so:
+
+<!-- BEGIN MUNGE: EXAMPLE flower-controller.yaml -->
 
 ```yaml
 apiVersion: v1
@@ -194,15 +274,15 @@ spec:
       containers:
       - image: endocode/flower
         name: flower
-        ports:
-        - containerPort: 5555
-          hostPort: 5555
         resources:
           limits:
             cpu: 100m
 ```
 
-This will bring up a new pod with Flower installed and port 5555 (Flower's default port) exposed. This image uses the following command to start Flower:
+[Download example](flower-controller.yaml)
+<!-- END MUNGE: EXAMPLE flower-controller.yaml -->
+
+This will bring up a new pod with Flower installed and port 5555 (Flower's default port) exposed through the service endpoint. This image uses the following command to start Flower:
 
 ```sh
 flower --broker=amqp://guest:guest@${RABBITMQ_SERVICE_SERVICE_HOST:localhost}:5672//
@@ -213,18 +293,24 @@ Again, it uses the Kubernetes-provided environment variable to obtain the addres
 Once all pods are up and running, running `kubectl get pods` will display something like this:
 
 ```
-POD                         IP                  CONTAINER(S)        IMAGE(S)                           HOST                    LABELS                                                STATUS
-celery-controller-h3x9k     10.246.1.11         celery              endocode/celery-app-add            10.245.1.3/10.245.1.3   app=taskQueue,name=celery                             Running
-flower-controller-cegta     10.246.2.17         flower              endocode/flower                    10.245.1.4/10.245.1.4   app=taskQueue,name=flower                             Running
-kube-dns-fplln              10.246.1.3          etcd                quay.io/coreos/etcd:latest         10.245.1.3/10.245.1.3   k8s-app=kube-dns,kubernetes.io/cluster-service=true   Running
-                                                kube2sky            kubernetes/kube2sky:1.0                                                                                          
-                                                skydns              kubernetes/skydns:2014-12-23-001                                                                                 
-rabbitmq-controller-pjzb3   10.246.2.16         rabbitmq            library/rabbitmq                   10.245.1.4/10.245.1.4   app=taskQueue,name=rabbitmq                           Running
-
+NAME                                           READY     REASON       RESTARTS   AGE
+celery-controller-wqkz1                        1/1       Running      0          8m
+flower-controller-7bglc                        1/1       Running      0          7m
+rabbitmq-controller-5eb2l                      1/1       Running      0          13m
 ```
 
-Now you know on which host Flower is running (in this case, 10.245.1.4), you can open your browser and enter the address (e.g. `http://10.245.1.4:5555`. If you click on the tab called "Tasks", you should see an ever-growing list of tasks called "celery_conf.add" which the run\_tasks.py script is dispatching.
+`kubectl get service flower-service` will help you to get the external IP addresses of the flower service.
+
+```
+NAME             LABELS        SELECTOR                         IP(S)            PORT(S)
+flower-service   name=flower   app=taskQueue,component=flower   10.0.44.166      5555/TCP
+                                                                162.222.181.180
+```
+
+Point your internet browser to the appropriate flower-service address, port 5555 (in our case http://162.222.181.180:5555).
+If you click on the tab called "Tasks", you should see an ever-growing list of tasks called "celery_conf.add" which the run\_tasks.py script is dispatching.
 
 
-
+<!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/examples/celery-rabbitmq/README.md?pixel)]()
+<!-- END MUNGE: GENERATED_ANALYTICS -->

@@ -20,13 +20,13 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	etcdgeneric "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/minion"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/rest"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	etcdgeneric "k8s.io/kubernetes/pkg/registry/generic/etcd"
+	"k8s.io/kubernetes/pkg/registry/minion"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
 )
 
 type REST struct {
@@ -49,7 +49,7 @@ func (r *StatusREST) Update(ctx api.Context, obj runtime.Object) (runtime.Object
 }
 
 // NewStorage returns a RESTStorage object that will work against nodes.
-func NewStorage(h tools.EtcdHelper, connection client.ConnectionInfoGetter) (*REST, *StatusREST) {
+func NewStorage(s storage.Interface, connection client.ConnectionInfoGetter) (*REST, *StatusREST) {
 	prefix := "/minions"
 	store := &etcdgeneric.Etcd{
 		NewFunc:     func() runtime.Object { return &api.Node{} },
@@ -69,7 +69,7 @@ func NewStorage(h tools.EtcdHelper, connection client.ConnectionInfoGetter) (*RE
 		CreateStrategy: minion.Strategy,
 		UpdateStrategy: minion.Strategy,
 
-		Helper: h,
+		Storage: s,
 	}
 
 	statusStore := *store

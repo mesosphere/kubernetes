@@ -30,53 +30,61 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/admission"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/latest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/v1"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/v1beta3"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/apiserver"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authenticator"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authorizer"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/handlers"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/master/ports"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/componentstatus"
-	controlleretcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/controller/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/endpoint"
-	endpointsetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/endpoint/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/event"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/limitrange"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/minion"
-	nodeetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/minion/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/namespace"
-	namespaceetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/namespace/etcd"
-	pvetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/persistentvolume/etcd"
-	pvcetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/persistentvolumeclaim/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/pod"
-	podetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/pod/etcd"
-	podtemplateetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/podtemplate/etcd"
-	resourcequotaetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/resourcequota/etcd"
-	secretetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/secret/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/service"
-	etcdallocator "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/service/allocator/etcd"
-	ipallocator "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/service/ipallocator"
-	serviceaccountetcd "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/serviceaccount/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/ui"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/admission"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/latest"
+	"k8s.io/kubernetes/pkg/api/meta"
+	"k8s.io/kubernetes/pkg/api/rest"
+	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/apiserver"
+	"k8s.io/kubernetes/pkg/auth/authenticator"
+	"k8s.io/kubernetes/pkg/auth/authorizer"
+	"k8s.io/kubernetes/pkg/auth/handlers"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	explatest "k8s.io/kubernetes/pkg/expapi/latest"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/healthz"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/master/ports"
+	"k8s.io/kubernetes/pkg/registry/componentstatus"
+	controlleretcd "k8s.io/kubernetes/pkg/registry/controller/etcd"
+	"k8s.io/kubernetes/pkg/registry/endpoint"
+	endpointsetcd "k8s.io/kubernetes/pkg/registry/endpoint/etcd"
+	eventetcd "k8s.io/kubernetes/pkg/registry/event/etcd"
+	expcontrolleretcd "k8s.io/kubernetes/pkg/registry/experimental/controller/etcd"
+	limitrangeetcd "k8s.io/kubernetes/pkg/registry/limitrange/etcd"
+	"k8s.io/kubernetes/pkg/registry/minion"
+	nodeetcd "k8s.io/kubernetes/pkg/registry/minion/etcd"
+	"k8s.io/kubernetes/pkg/registry/namespace"
+	namespaceetcd "k8s.io/kubernetes/pkg/registry/namespace/etcd"
+	pvetcd "k8s.io/kubernetes/pkg/registry/persistentvolume/etcd"
+	pvcetcd "k8s.io/kubernetes/pkg/registry/persistentvolumeclaim/etcd"
+	podetcd "k8s.io/kubernetes/pkg/registry/pod/etcd"
+	podtemplateetcd "k8s.io/kubernetes/pkg/registry/podtemplate/etcd"
+	resourcequotaetcd "k8s.io/kubernetes/pkg/registry/resourcequota/etcd"
+	secretetcd "k8s.io/kubernetes/pkg/registry/secret/etcd"
+	"k8s.io/kubernetes/pkg/registry/service"
+	etcdallocator "k8s.io/kubernetes/pkg/registry/service/allocator/etcd"
+	serviceetcd "k8s.io/kubernetes/pkg/registry/service/etcd"
+	ipallocator "k8s.io/kubernetes/pkg/registry/service/ipallocator"
+	serviceaccountetcd "k8s.io/kubernetes/pkg/registry/serviceaccount/etcd"
+	"k8s.io/kubernetes/pkg/storage"
+	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
+	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/ui"
+	"k8s.io/kubernetes/pkg/util"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/service/allocator"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/service/portallocator"
+	horizontalpodautoscaleretcd "k8s.io/kubernetes/pkg/registry/horizontalpodautoscaler/etcd"
+
 	"github.com/emicklei/go-restful"
 	"github.com/emicklei/go-restful/swagger"
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/kubernetes/pkg/registry/service/allocator"
+	"k8s.io/kubernetes/pkg/registry/service/portallocator"
 )
 
 const (
@@ -85,25 +93,26 @@ const (
 
 // Config is a structure used to configure a Master.
 type Config struct {
-	EtcdHelper    tools.EtcdHelper
-	EventTTL      time.Duration
-	MinionRegexp  string
-	KubeletClient client.KubeletClient
+	DatabaseStorage    storage.Interface
+	ExpDatabaseStorage storage.Interface
+	EventTTL           time.Duration
+	MinionRegexp       string
+	KubeletClient      client.KubeletClient
 	// allow downstream consumers to disable the core controller loops
 	EnableCoreControllers bool
 	EnableLogsSupport     bool
 	EnableUISupport       bool
 	// allow downstream consumers to disable swagger
 	EnableSwaggerSupport bool
-	// allow v1beta3 to be conditionally disabled
-	DisableV1Beta3 bool
-	// allow v1 to be conditionally disabled
+	// allow api versions to be conditionally disabled
 	DisableV1 bool
+	EnableExp bool
 	// allow downstream consumers to disable the index route
 	EnableIndex           bool
 	EnableProfiling       bool
 	APIPrefix             string
-	CorsAllowedOriginList util.StringList
+	ExpAPIPrefix          string
+	CorsAllowedOriginList []string
 	Authenticator         authenticator.Request
 	// TODO(roberthbailey): Remove once the server no longer supports http basic auth.
 	SupportsBasicAuth      bool
@@ -147,6 +156,9 @@ type Config struct {
 	// The range of IPs to be assigned to services with type=ClusterIP or greater
 	ServiceClusterIPRange *net.IPNet
 
+	// The IP address for the master service (must be inside ServiceClusterIPRange
+	ServiceReadWriteIP net.IP
+
 	// The range of ports to be assigned to services with type=NodePort or greater
 	ServiceNodePortRange util.PortRange
 
@@ -176,13 +188,14 @@ type Master struct {
 	enableSwaggerSupport  bool
 	enableProfiling       bool
 	apiPrefix             string
-	corsAllowedOriginList util.StringList
+	expAPIPrefix          string
+	corsAllowedOriginList []string
 	authenticator         authenticator.Request
 	authorizer            authorizer.Authorizer
 	admissionControl      admission.Interface
 	masterCount           int
-	v1beta3               bool
 	v1                    bool
+	exp                   bool
 	requestContextMapper  api.RequestContextMapper
 
 	// External host is the name that should be used in external (public internet) URLs for this master
@@ -212,23 +225,23 @@ type Master struct {
 	InsecureHandler http.Handler
 
 	// Used for secure proxy
-	dialer        apiserver.ProxyDialerFunc
-	tunnels       *util.SSHTunnelList
-	tunnelsLock   sync.Mutex
-	installSSHKey InstallSSHKey
+	dialer         apiserver.ProxyDialerFunc
+	tunnels        *util.SSHTunnelList
+	tunnelsLock    sync.Mutex
+	installSSHKey  InstallSSHKey
+	lastSync       int64 // Seconds since Epoch
+	lastSyncMetric prometheus.GaugeFunc
+	clock          util.Clock
 }
 
-// NewEtcdHelper returns an EtcdHelper for the provided arguments or an error if the version
+// NewEtcdStorage returns a storage.Interface for the provided arguments or an error if the version
 // is incorrect.
-func NewEtcdHelper(client tools.EtcdGetSet, version string, prefix string) (helper tools.EtcdHelper, err error) {
-	if version == "" {
-		version = latest.Version
-	}
-	versionInterfaces, err := latest.InterfacesFor(version)
+func NewEtcdStorage(client tools.EtcdClient, interfacesFunc meta.VersionInterfacesFunc, version, prefix string) (etcdStorage storage.Interface, err error) {
+	versionInterfaces, err := interfacesFunc(version)
 	if err != nil {
-		return helper, err
+		return etcdStorage, err
 	}
-	return tools.NewEtcdHelper(client, versionInterfaces.Codec, prefix), nil
+	return etcdstorage.NewEtcdStorage(client, versionInterfaces.Codec, prefix), nil
 }
 
 // setDefaults fills in any fields not set that are required to have valid data.
@@ -244,6 +257,15 @@ func setDefaults(c *Config) {
 			glog.Fatalf("The service cluster IP range must be at least %d IP addresses", 8)
 		}
 		c.ServiceClusterIPRange = serviceClusterIPRange
+	}
+	if c.ServiceReadWriteIP == nil {
+		// Select the first valid IP from ServiceClusterIPRange to use as the master service IP.
+		serviceReadWriteIP, err := ipallocator.GetIndexedIP(c.ServiceClusterIPRange, 1)
+		if err != nil {
+			glog.Fatalf("Failed to generate service read-write IP for master service: %v", err)
+		}
+		glog.V(4).Infof("Setting master service IP to %q (read-write).", serviceReadWriteIP)
+		c.ServiceReadWriteIP = serviceReadWriteIP
 	}
 	if c.ServiceNodePortRange.Size == 0 {
 		// TODO: Currently no way to specify an empty range (do we need to allow this?)
@@ -294,7 +316,7 @@ func setDefaults(c *Config) {
 // Public fields:
 //   Handler -- The returned master has a field TopHandler which is an
 //   http.Handler which handles all the endpoints provided by the master,
-//   including the API, the UI, and miscelaneous debugging endpoints.  All
+//   including the API, the UI, and miscellaneous debugging endpoints.  All
 //   these are subject to authorization and authentication.
 //   InsecureHandler -- an http.Handler which handles all the same
 //   endpoints as Handler, but no authorization and authentication is done.
@@ -311,13 +333,6 @@ func New(c *Config) *Master {
 		glog.Fatalf("master.New() called with config.KubeletClient == nil")
 	}
 
-	// Select the first valid IP from serviceClusterIPRange to use as the master service IP.
-	serviceReadWriteIP, err := ipallocator.GetIndexedIP(c.ServiceClusterIPRange, 1)
-	if err != nil {
-		glog.Fatalf("Failed to generate service read-write IP for master service: %v", err)
-	}
-	glog.V(4).Infof("Setting master service IP to %q (read-write).", serviceReadWriteIP)
-
 	m := &Master{
 		serviceClusterIPRange: c.ServiceClusterIPRange,
 		serviceNodePortRange:  c.ServiceNodePortRange,
@@ -328,12 +343,13 @@ func New(c *Config) *Master {
 		enableSwaggerSupport:  c.EnableSwaggerSupport,
 		enableProfiling:       c.EnableProfiling,
 		apiPrefix:             c.APIPrefix,
+		expAPIPrefix:          c.ExpAPIPrefix,
 		corsAllowedOriginList: c.CorsAllowedOriginList,
 		authenticator:         c.Authenticator,
 		authorizer:            c.Authorizer,
 		admissionControl:      c.AdmissionControl,
-		v1beta3:               !c.DisableV1Beta3,
 		v1:                    !c.DisableV1,
+		exp:                   c.EnableExp,
 		requestContextMapper:  c.RequestContextMapper,
 
 		cacheTimeout:      c.CacheTimeout,
@@ -343,7 +359,7 @@ func New(c *Config) *Master {
 		externalHost:        c.ExternalHost,
 		clusterIP:           c.PublicAddress,
 		publicReadWritePort: c.ReadWritePort,
-		serviceReadWriteIP:  serviceReadWriteIP,
+		serviceReadWriteIP:  c.ServiceReadWriteIP,
 		// TODO: serviceReadWritePort should be passed in as an argument, it may not always be 443
 		serviceReadWritePort: 443,
 
@@ -362,7 +378,7 @@ func New(c *Config) *Master {
 	m.handlerContainer = handlerContainer
 	// Use CurlyRouter to be able to use regular expressions in paths. Regular expressions are required in paths for example for proxy (where the path is proxy/{kind}/{name}/{*})
 	m.handlerContainer.Router(restful.CurlyRouter{})
-	m.muxHelper = &apiserver.MuxHelper{m.mux, []string{}}
+	m.muxHelper = &apiserver.MuxHelper{Mux: m.mux, RegisteredPaths: []string{}}
 
 	m.init(c)
 
@@ -412,37 +428,37 @@ func logStackOnRecover(panicReason interface{}, httpWriter http.ResponseWriter) 
 
 // init initializes master.
 func (m *Master) init(c *Config) {
-	podStorage := podetcd.NewStorage(c.EtcdHelper, c.KubeletClient)
-	podRegistry := pod.NewRegistry(podStorage.Pod)
+	healthzChecks := []healthz.HealthzChecker{}
+	m.clock = util.RealClock{}
+	podStorage := podetcd.NewStorage(c.DatabaseStorage, c.KubeletClient)
 
-	podTemplateStorage := podtemplateetcd.NewREST(c.EtcdHelper)
+	podTemplateStorage := podtemplateetcd.NewREST(c.DatabaseStorage)
 
-	eventRegistry := event.NewEtcdRegistry(c.EtcdHelper, uint64(c.EventTTL.Seconds()))
-	limitRangeRegistry := limitrange.NewEtcdRegistry(c.EtcdHelper)
+	eventStorage := eventetcd.NewStorage(c.DatabaseStorage, uint64(c.EventTTL.Seconds()))
+	limitRangeStorage := limitrangeetcd.NewStorage(c.DatabaseStorage)
 
-	resourceQuotaStorage, resourceQuotaStatusStorage := resourcequotaetcd.NewStorage(c.EtcdHelper)
-	secretStorage := secretetcd.NewStorage(c.EtcdHelper)
-	serviceAccountStorage := serviceaccountetcd.NewStorage(c.EtcdHelper)
-	persistentVolumeStorage, persistentVolumeStatusStorage := pvetcd.NewStorage(c.EtcdHelper)
-	persistentVolumeClaimStorage, persistentVolumeClaimStatusStorage := pvcetcd.NewStorage(c.EtcdHelper)
+	resourceQuotaStorage, resourceQuotaStatusStorage := resourcequotaetcd.NewStorage(c.DatabaseStorage)
+	secretStorage := secretetcd.NewStorage(c.DatabaseStorage)
+	serviceAccountStorage := serviceaccountetcd.NewStorage(c.DatabaseStorage)
+	persistentVolumeStorage, persistentVolumeStatusStorage := pvetcd.NewStorage(c.DatabaseStorage)
+	persistentVolumeClaimStorage, persistentVolumeClaimStatusStorage := pvcetcd.NewStorage(c.DatabaseStorage)
 
-	namespaceStorage, namespaceStatusStorage, namespaceFinalizeStorage := namespaceetcd.NewStorage(c.EtcdHelper)
+	namespaceStorage, namespaceStatusStorage, namespaceFinalizeStorage := namespaceetcd.NewStorage(c.DatabaseStorage)
 	m.namespaceRegistry = namespace.NewRegistry(namespaceStorage)
 
-	endpointsStorage := endpointsetcd.NewStorage(c.EtcdHelper)
+	endpointsStorage := endpointsetcd.NewStorage(c.DatabaseStorage)
 	m.endpointRegistry = endpoint.NewRegistry(endpointsStorage)
 
-	nodeStorage, nodeStatusStorage := nodeetcd.NewStorage(c.EtcdHelper, c.KubeletClient)
+	nodeStorage, nodeStatusStorage := nodeetcd.NewStorage(c.DatabaseStorage, c.KubeletClient)
 	m.nodeRegistry = minion.NewRegistry(nodeStorage)
 
-	// TODO: split me up into distinct storage registries
-	registry := etcd.NewRegistry(c.EtcdHelper, podRegistry, m.endpointRegistry)
-	m.serviceRegistry = registry
+	serviceStorage := serviceetcd.NewStorage(c.DatabaseStorage)
+	m.serviceRegistry = service.NewRegistry(serviceStorage)
 
 	var serviceClusterIPRegistry service.RangeRegistry
 	serviceClusterIPAllocator := ipallocator.NewAllocatorCIDRRange(m.serviceClusterIPRange, func(max int, rangeSpec string) allocator.Interface {
 		mem := allocator.NewAllocationMap(max, rangeSpec)
-		etcd := etcdallocator.NewEtcd(mem, "/ranges/serviceips", "serviceipallocation", c.EtcdHelper)
+		etcd := etcdallocator.NewEtcd(mem, "/ranges/serviceips", "serviceipallocation", c.DatabaseStorage)
 		serviceClusterIPRegistry = etcd
 		return etcd
 	})
@@ -451,17 +467,18 @@ func (m *Master) init(c *Config) {
 	var serviceNodePortRegistry service.RangeRegistry
 	serviceNodePortAllocator := portallocator.NewPortAllocatorCustom(m.serviceNodePortRange, func(max int, rangeSpec string) allocator.Interface {
 		mem := allocator.NewAllocationMap(max, rangeSpec)
-		etcd := etcdallocator.NewEtcd(mem, "/ranges/servicenodeports", "servicenodeportallocation", c.EtcdHelper)
+		etcd := etcdallocator.NewEtcd(mem, "/ranges/servicenodeports", "servicenodeportallocation", c.DatabaseStorage)
 		serviceNodePortRegistry = etcd
 		return etcd
 	})
 	m.serviceNodePortAllocator = serviceNodePortRegistry
 
-	controllerStorage := controlleretcd.NewREST(c.EtcdHelper)
+	controllerStorage := controlleretcd.NewREST(c.DatabaseStorage)
 
 	// TODO: Factor out the core API registration
 	m.storage = map[string]rest.Storage{
 		"pods":             podStorage.Pod,
+		"pods/attach":      podStorage.Attach,
 		"pods/status":      podStorage.Status,
 		"pods/log":         podStorage.Log,
 		"pods/exec":        podStorage.Exec,
@@ -473,15 +490,13 @@ func (m *Master) init(c *Config) {
 		"podTemplates": podTemplateStorage,
 
 		"replicationControllers": controllerStorage,
-		"services":               service.NewStorage(m.serviceRegistry, m.nodeRegistry, m.endpointRegistry, serviceClusterIPAllocator, serviceNodePortAllocator, c.ClusterName),
+		"services":               service.NewStorage(m.serviceRegistry, m.endpointRegistry, serviceClusterIPAllocator, serviceNodePortAllocator),
 		"endpoints":              endpointsStorage,
-		"minions":                nodeStorage,
-		"minions/status":         nodeStatusStorage,
 		"nodes":                  nodeStorage,
 		"nodes/status":           nodeStatusStorage,
-		"events":                 event.NewStorage(eventRegistry),
+		"events":                 eventStorage,
 
-		"limitRanges":                   limitrange.NewStorage(limitRangeRegistry),
+		"limitRanges":                   limitRangeStorage,
 		"resourceQuotas":                resourceQuotaStorage,
 		"resourceQuotas/status":         resourceQuotaStatusStorage,
 		"namespaces":                    namespaceStorage,
@@ -521,6 +536,7 @@ func (m *Master) init(c *Config) {
 		m.tunnels = &util.SSHTunnelList{}
 		m.dialer = m.Dial
 		m.setupSecureProxy(c.SSHUser, c.SSHKeyfile, publicKeyFile)
+		m.lastSync = m.clock.Now().Unix()
 
 		// This is pretty ugly.  A better solution would be to pull this all the way up into the
 		// server.go file.
@@ -534,17 +550,16 @@ func (m *Master) init(c *Config) {
 				httpKubeletClient.Client.Transport = transport
 			}
 		} else {
-			glog.Errorf("Failed to cast %v to HTTPKubeletClient, skipping SSH tunnel.")
+			glog.Errorf("Failed to cast %v to HTTPKubeletClient, skipping SSH tunnel.", c.KubeletClient)
 		}
+		healthzChecks = append(healthzChecks, healthz.NamedCheck("SSH Tunnel Check", m.IsTunnelSyncHealthy))
+		m.lastSyncMetric = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "apiserver_proxy_tunnel_sync_latency_secs",
+			Help: "The time since the last successful synchronization of the SSH tunnels for proxy requests.",
+		}, func() float64 { return float64(m.secondsSinceSync()) })
 	}
 
 	apiVersions := []string{}
-	if m.v1beta3 {
-		if err := m.api_v1beta3().InstallREST(m.handlerContainer); err != nil {
-			glog.Fatalf("Unable to setup API v1beta3: %v", err)
-		}
-		apiVersions = append(apiVersions, "v1beta3")
-	}
 	if m.v1 {
 		if err := m.api_v1().InstallREST(m.handlerContainer); err != nil {
 			glog.Fatalf("Unable to setup API v1: %v", err)
@@ -552,11 +567,21 @@ func (m *Master) init(c *Config) {
 		apiVersions = append(apiVersions, "v1")
 	}
 
-	apiserver.InstallSupport(m.muxHelper, m.rootWebService, c.EnableProfiling)
+	apiserver.InstallSupport(m.muxHelper, m.rootWebService, c.EnableProfiling, healthzChecks...)
 	apiserver.AddApiWebService(m.handlerContainer, c.APIPrefix, apiVersions)
 	defaultVersion := m.defaultAPIGroupVersion()
-	requestInfoResolver := &apiserver.APIRequestInfoResolver{util.NewStringSet(strings.TrimPrefix(defaultVersion.Root, "/")), defaultVersion.Mapper}
+	requestInfoResolver := &apiserver.APIRequestInfoResolver{APIPrefixes: util.NewStringSet(strings.TrimPrefix(defaultVersion.Root, "/")), RestMapper: defaultVersion.Mapper}
 	apiserver.InstallServiceErrorHandler(m.handlerContainer, requestInfoResolver, apiVersions)
+
+	if m.exp {
+		expVersion := m.expapi(c)
+		if err := expVersion.InstallREST(m.handlerContainer); err != nil {
+			glog.Fatalf("Unable to setup experimental api: %v", err)
+		}
+		apiserver.AddApiWebService(m.handlerContainer, c.ExpAPIPrefix, []string{expVersion.Version})
+		expRequestInfoResolver := &apiserver.APIRequestInfoResolver{APIPrefixes: util.NewStringSet(strings.TrimPrefix(expVersion.Root, "/")), RestMapper: expVersion.Mapper}
+		apiserver.InstallServiceErrorHandler(m.handlerContainer, expRequestInfoResolver, []string{expVersion.Version})
+	}
 
 	// Register root handler.
 	// We do not register this using restful Webservice since we do not want to surface this in api docs.
@@ -587,7 +612,7 @@ func (m *Master) init(c *Config) {
 	if len(c.CorsAllowedOriginList) > 0 {
 		allowedOriginRegexps, err := util.CompileRegexps(c.CorsAllowedOriginList)
 		if err != nil {
-			glog.Fatalf("Invalid CORS allowed origin, --cors_allowed_origins flag was set to %v - %v", strings.Join(c.CorsAllowedOriginList, ","), err)
+			glog.Fatalf("Invalid CORS allowed origin, --cors-allowed-origins flag was set to %v - %v", strings.Join(c.CorsAllowedOriginList, ","), err)
 		}
 		handler = apiserver.CORS(handler, allowedOriginRegexps, nil, nil, "true")
 	}
@@ -695,7 +720,7 @@ func (m *Master) getServersToValidate(c *Config) map[string]apiserver.Server {
 		"controller-manager": {Addr: "127.0.0.1", Port: ports.ControllerManagerPort, Path: "/healthz"},
 		"scheduler":          {Addr: "127.0.0.1", Port: ports.SchedulerPort, Path: "/healthz"},
 	}
-	for ix, machine := range c.EtcdHelper.Client.GetCluster() {
+	for ix, machine := range c.DatabaseStorage.Backends() {
 		etcdUrl, err := url.Parse(machine)
 		if err != nil {
 			glog.Errorf("Failed to parse etcd url for validation: %v", err)
@@ -715,7 +740,7 @@ func (m *Master) getServersToValidate(c *Config) map[string]apiserver.Server {
 			addr = etcdUrl.Host
 			port = 4001
 		}
-		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = apiserver.Server{Addr: addr, Port: port, Path: "/health", Validate: tools.EtcdHealthCheck}
+		serversToValidate[fmt.Sprintf("etcd-%d", ix)] = apiserver.Server{Addr: addr, Port: port, Path: "/health", Validate: etcdstorage.EtcdHealthCheck}
 	}
 	return serversToValidate
 }
@@ -739,29 +764,10 @@ func (m *Master) defaultAPIGroupVersion() *apiserver.APIGroupVersion {
 	}
 }
 
-// api_v1beta3 returns the resources and codec for API version v1beta3.
-func (m *Master) api_v1beta3() *apiserver.APIGroupVersion {
-	storage := make(map[string]rest.Storage)
-	for k, v := range m.storage {
-		if k == "minions" || k == "minions/status" {
-			continue
-		}
-		storage[strings.ToLower(k)] = v
-	}
-	version := m.defaultAPIGroupVersion()
-	version.Storage = storage
-	version.Version = "v1beta3"
-	version.Codec = v1beta3.Codec
-	return version
-}
-
 // api_v1 returns the resources and codec for API version v1.
 func (m *Master) api_v1() *apiserver.APIGroupVersion {
 	storage := make(map[string]rest.Storage)
 	for k, v := range m.storage {
-		if k == "minions" || k == "minions/status" {
-			continue
-		}
 		storage[strings.ToLower(k)] = v
 	}
 	version := m.defaultAPIGroupVersion()
@@ -771,12 +777,52 @@ func (m *Master) api_v1() *apiserver.APIGroupVersion {
 	return version
 }
 
+// expapi returns the resources and codec for the experimental api
+func (m *Master) expapi(c *Config) *apiserver.APIGroupVersion {
+	controllerStorage := expcontrolleretcd.NewStorage(c.DatabaseStorage)
+	autoscalerStorage := horizontalpodautoscaleretcd.NewREST(c.DatabaseStorage)
+
+	storage := map[string]rest.Storage{
+		strings.ToLower("replicationControllers"):       controllerStorage.ReplicationController,
+		strings.ToLower("replicationControllers/scale"): controllerStorage.Scale,
+		strings.ToLower("horizontalpodautoscalers"):     autoscalerStorage,
+	}
+
+	return &apiserver.APIGroupVersion{
+		Root: m.expAPIPrefix,
+
+		Creater:   api.Scheme,
+		Convertor: api.Scheme,
+		Typer:     api.Scheme,
+
+		Mapper:  explatest.RESTMapper,
+		Codec:   explatest.Codec,
+		Linker:  explatest.SelfLinker,
+		Storage: storage,
+		Version: explatest.Version,
+
+		Admit:   m.admissionControl,
+		Context: m.requestContextMapper,
+
+		ProxyDialerFn:     m.dialer,
+		MinRequestTimeout: m.minRequestTimeout,
+	}
+}
+
+// findExternalAddress returns ExternalIP of provided node with fallback to LegacyHostIP.
 func findExternalAddress(node *api.Node) (string, error) {
+	var fallback string
 	for ix := range node.Status.Addresses {
 		addr := &node.Status.Addresses[ix]
 		if addr.Type == api.NodeExternalIP {
 			return addr.Address, nil
 		}
+		if fallback == "" && addr.Type == api.NodeLegacyHostIP {
+			fallback = addr.Address
+		}
+	}
+	if fallback != "" {
+		return fallback, nil
 	}
 	return "", fmt.Errorf("Couldn't find external address: %v", node)
 }
@@ -802,6 +848,8 @@ func (m *Master) Dial(net, addr string) (net.Conn, error) {
 }
 
 func (m *Master) needToReplaceTunnels(addrs []string) bool {
+	m.tunnelsLock.Lock()
+	defer m.tunnelsLock.Unlock()
 	if m.tunnels == nil || m.tunnels.Len() != len(addrs) {
 		return true
 	}
@@ -831,22 +879,37 @@ func (m *Master) getNodeAddresses() ([]string, error) {
 	return addrs, nil
 }
 
+func (m *Master) IsTunnelSyncHealthy(req *http.Request) error {
+	lag := m.secondsSinceSync()
+	if lag > 600 {
+		return fmt.Errorf("Tunnel sync is taking to long: %d", lag)
+	}
+	return nil
+}
+
+func (m *Master) secondsSinceSync() int64 {
+	now := m.clock.Now().Unix()
+	then := atomic.LoadInt64(&m.lastSync)
+	return now - then
+}
+
 func (m *Master) replaceTunnels(user, keyfile string, newAddrs []string) error {
 	glog.Infof("replacing tunnels. New addrs: %v", newAddrs)
 	tunnels := util.MakeSSHTunnels(user, keyfile, newAddrs)
 	if err := tunnels.Open(); err != nil {
 		return err
 	}
+	m.tunnelsLock.Lock()
+	defer m.tunnelsLock.Unlock()
 	if m.tunnels != nil {
 		m.tunnels.Close()
 	}
 	m.tunnels = tunnels
+	atomic.StoreInt64(&m.lastSync, m.clock.Now().Unix())
 	return nil
 }
 
 func (m *Master) loadTunnels(user, keyfile string) error {
-	m.tunnelsLock.Lock()
-	defer m.tunnelsLock.Unlock()
 	addrs, err := m.getNodeAddresses()
 	if err != nil {
 		return err
@@ -861,8 +924,6 @@ func (m *Master) loadTunnels(user, keyfile string) error {
 }
 
 func (m *Master) refreshTunnels(user, keyfile string) error {
-	m.tunnelsLock.Lock()
-	defer m.tunnelsLock.Unlock()
 	addrs, err := m.getNodeAddresses()
 	if err != nil {
 		return err

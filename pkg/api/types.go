@@ -17,12 +17,12 @@ limitations under the License.
 package api
 
 import (
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/types"
+	"k8s.io/kubernetes/pkg/util"
 )
 
 // Common string formats
@@ -169,6 +169,8 @@ const (
 	NamespaceAll string = ""
 	// NamespaceNone is the argument for a context when there is no namespace.
 	NamespaceNone string = ""
+	// NamespaceSystem is the system namespace where we place system components.
+	NamespaceSystem string = "kube-system"
 	// TerminationMessagePathDefault means the default path to capture the application termination message running in a container
 	TerminationMessagePathDefault string = "/dev/termination-log"
 )
@@ -245,7 +247,7 @@ type PersistentVolumeSource struct {
 
 type PersistentVolumeClaimVolumeSource struct {
 	// ClaimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume
-	ClaimName string `json:"claimName" description:"the name of the claim in the same namespace to be mounted as a volume"`
+	ClaimName string `json:"claimName"`
 	// Optional: Defaults to false (read/write).  ReadOnly here
 	// will force the ReadOnly setting in VolumeMounts
 	ReadOnly bool `json:"readOnly,omitempty"`
@@ -274,7 +276,7 @@ type PersistentVolumeSpec struct {
 	// claim.VolumeName is the authoritative bind between PV and PVC.
 	ClaimRef *ObjectReference `json:"claimRef,omitempty"`
 	// Optional: what happens to a persistent volume when released from its claim.
-	PersistentVolumeReclaimPolicy PersistentVolumeReclaimPolicy `json:"persistentVolumeReclaimPolicy,omitempty" description:"what happens to a volume when released from its claim; Valid options are Retain (default) and Recycle.  Recyling must be supported by the volume plugin underlying this persistent volume."`
+	PersistentVolumeReclaimPolicy PersistentVolumeReclaimPolicy `json:"persistentVolumeReclaimPolicy,omitempty"`
 }
 
 // PersistentVolumeReclaimPolicy describes a policy for end-of-life maintenance of persistent volumes
@@ -551,7 +553,7 @@ type RBDVolumeSource struct {
 
 // ContainerPort represents a network port in a single container
 type ContainerPort struct {
-	// Optional: If specified, this must be a IANA_SVC_NAME  Each named port
+	// Optional: If specified, this must be an IANA_SVC_NAME  Each named port
 	// in a pod must have a unique name.
 	Name string `json:"name,omitempty"`
 	// Optional: If specified, this must be a valid port number, 0 < x < 65536.
@@ -680,12 +682,11 @@ type Capabilities struct {
 
 // ResourceRequirements describes the compute resource requirements.
 type ResourceRequirements struct {
-	// Limits describes the maximum amount of compute resources required.
+	// Limits describes the maximum amount of compute resources allowed.
 	Limits ResourceList `json:"limits,omitempty"`
 	// Requests describes the minimum amount of compute resources required.
-	// Note: 'Requests' are honored only for Persistent Volumes as of now.
-	// TODO: Update the scheduler to use 'Requests' in addition to 'Limits'. If Request is omitted for a container,
-	// it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value
+	// If Request is omitted for a container, it defaults to Limits if that is explicitly specified,
+	// otherwise to an implementation-defined value
 	Requests ResourceList `json:"requests,omitempty"`
 }
 
@@ -723,7 +724,12 @@ type Container struct {
 	// Required: Policy for pulling images for this container
 	ImagePullPolicy PullPolicy `json:"imagePullPolicy"`
 	// Optional: SecurityContext defines the security options the pod should be run with
-	SecurityContext *SecurityContext `json:"securityContext,omitempty" description:"security options the pod should run with"`
+	SecurityContext *SecurityContext `json:"securityContext,omitempty"`
+
+	// Variables for interactive containers, these have very specialized use-cases (e.g. debugging)
+	// and shouldn't be used for general purpose containers.
+	Stdin bool `json:"stdin,omitempty" description:"Whether this container should allocate a buffer for stdin in the container runtime; default is false"`
+	TTY   bool `json:"tty,omitempty" description:"Whether this container should allocate a TTY for itself, also requires 'stdin' to be true; default is false"`
 }
 
 // Handler defines a specific action that should be taken
@@ -804,11 +810,10 @@ type ContainerStatus struct {
 	Ready bool `json:"ready"`
 	// Note that this is calculated from dead containers.  But those containers are subject to
 	// garbage collection.  This value will get capped at 5 by GC.
-	RestartCount int `json:"restartCount"`
-	// TODO(dchen1107): Need to decide how to represent this in v1beta3
-	Image       string `json:"image"`
-	ImageID     string `json:"imageID"`
-	ContainerID string `json:"containerID,omitempty"`
+	RestartCount int    `json:"restartCount"`
+	Image        string `json:"image"`
+	ImageID      string `json:"imageID"`
+	ContainerID  string `json:"containerID,omitempty"`
 }
 
 // PodPhase is a label for the condition of a pod at the current time.
@@ -919,7 +924,7 @@ type PodSpec struct {
 	// ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec.
 	// If specified, these secrets will be passed to individual puller implementations for them to use.  For example,
 	// in the case of docker, only DockerConfig type secrets are honored.
-	ImagePullSecrets []LocalObjectReference `json:"imagePullSecrets,omitempty" description:"list of references to secrets in the same namespace available for pulling the container images"`
+	ImagePullSecrets []LocalObjectReference `json:"imagePullSecrets,omitempty"`
 }
 
 // PodStatus represents information about the status of a pod. Status may trail the actual
@@ -930,7 +935,7 @@ type PodStatus struct {
 	// A human readable message indicating details about why the pod is in this state.
 	Message string `json:"message,omitempty"`
 	// A brief CamelCase message indicating details about why the pod is in this state. e.g. 'OutOfDisk'
-	Reason string `json:"reason,omitempty" description:"(brief-CamelCase) reason indicating details about why the pod is in this condition"`
+	Reason string `json:"reason,omitempty"`
 
 	HostIP string `json:"hostIP,omitempty"`
 	PodIP  string `json:"podIP,omitempty"`
@@ -1007,7 +1012,7 @@ type ReplicationControllerSpec struct {
 
 	// TemplateRef is a reference to an object that describes the pod that will be created if
 	// insufficient replicas are detected. This reference is ignored if a Template is set.
-	// Must be set before converting to a v1beta3 API object
+	// Must be set before converting to a versioned API object
 	//TemplateRef *ObjectReference `json:"templateRef,omitempty"`
 
 	// Template is the object that describes the pod that will be created if
@@ -1046,6 +1051,54 @@ type ReplicationControllerList struct {
 	ListMeta `json:"metadata,omitempty"`
 
 	Items []ReplicationController `json:"items"`
+}
+
+// DaemonSpec is the specification of a daemon.
+type DaemonSpec struct {
+	// Selector is a label query over pods that are managed by the daemon.
+	Selector map[string]string `json:"selector"`
+
+	// Template is the object that describes the pod that will be created.
+	// The Daemon will create exactly one copy of this pod on every node
+	// that matches the template's node selector (or on every node if no node
+	// selector is specified).
+	Template *PodTemplateSpec `json:"template,omitempty"`
+}
+
+// DaemonStatus represents the current status of a daemon.
+type DaemonStatus struct {
+	// CurrentNumberScheduled is the number of nodes that are running exactly 1 copy of the
+	// daemon and are supposed to run the daemon.
+	CurrentNumberScheduled int `json:"currentNumberScheduled"`
+
+	// NumberMisscheduled is the number of nodes that are running the daemon, but are
+	// not supposed to run the daemon.
+	NumberMisscheduled int `json:"numberMisscheduled"`
+
+	// DesiredNumberScheduled is the total number of nodes that should be running the daemon
+	// (including nodes correctly running the daemon).
+	DesiredNumberScheduled int `json:"desiredNumberScheduled"`
+}
+
+// Daemon represents the configuration of a daemon.
+type Daemon struct {
+	TypeMeta   `json:",inline"`
+	ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the desired behavior of this daemon.
+	Spec DaemonSpec `json:"spec,omitempty"`
+
+	// Status is the current status of this daemon. This data may be
+	// out of date by some window of time.
+	Status DaemonStatus `json:"status,omitempty"`
+}
+
+// DaemonList is a collection of daemon.
+type DaemonList struct {
+	TypeMeta `json:",inline"`
+	ListMeta `json:"metadata,omitempty"`
+
+	Items []Daemon `json:"items"`
 }
 
 const (
@@ -1102,7 +1155,7 @@ type ServiceStatus struct {
 type LoadBalancerStatus struct {
 	// Ingress is a list containing ingress points for the load-balancer;
 	// traffic intended for the service should be sent to these ingress points.
-	Ingress []LoadBalancerIngress `json:"ingress,omitempty" description:"load-balancer ingress points"`
+	Ingress []LoadBalancerIngress `json:"ingress,omitempty"`
 }
 
 // LoadBalancerIngress represents the status of a load-balancer ingress point:
@@ -1110,11 +1163,11 @@ type LoadBalancerStatus struct {
 type LoadBalancerIngress struct {
 	// IP is set for load-balancer ingress points that are IP based
 	// (typically GCE or OpenStack load-balancers)
-	IP string `json:"ip,omitempty" description:"IP address of ingress point"`
+	IP string `json:"ip,omitempty"`
 
 	// Hostname is set for load-balancer ingress points that are DNS based
 	// (typically AWS load-balancers)
-	Hostname string `json:"hostname,omitempty" description:"hostname of ingress point"`
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // ServiceSpec describes the attributes that a user creates on a service
@@ -1161,15 +1214,13 @@ type ServicePort struct {
 
 	// Optional: The target port on pods selected by this service.  If this
 	// is a string, it will be looked up as a named port in the target
-	// Pod's container ports.  If this is not specified, the first port on
-	// the destination pod will be used.  This behavior is deprecated.  As
-	// of v1beta3 the default value is the sames as the Port field (an
-	// identity map).
+	// Pod's container ports.  If this is not specified, the default value
+	// is the sames as the Port field (an identity map).
 	TargetPort util.IntOrString `json:"targetPort"`
 
 	// The port on each node on which this service is exposed.
 	// Default is to auto-allocate a port if the ServiceType of this Service requires one.
-	NodePort int `json:"nodePort" description:"the port on each node on which this service is exposed"`
+	NodePort int `json:"nodePort"`
 }
 
 // Service is a named abstraction of software service (for example, mysql) consisting of local port
@@ -1200,7 +1251,7 @@ type ServiceAccount struct {
 	// ImagePullSecrets is a list of references to secrets in the same namespace to use for pulling any images
 	// in pods that reference this ServiceAccount.  ImagePullSecrets are distinct from Secrets because Secrets
 	// can be mounted in the pod, but ImagePullSecrets are only accessed by the kubelet.
-	ImagePullSecrets []LocalObjectReference `json:"imagePullSecrets,omitempty" description:"list of references to secrets in the same namespace available for pulling container images"`
+	ImagePullSecrets []LocalObjectReference `json:"imagePullSecrets,omitempty"`
 }
 
 // ServiceAccountList is a list of ServiceAccount objects
@@ -1376,7 +1427,7 @@ type NodeAddress struct {
 }
 
 // NodeResources is an object for conveying resource information about a node.
-// see http://docs.k8s.io/resources.md for more details.
+// see http://docs.k8s.io/design/resources.md for more details.
 type NodeResources struct {
 	// Capacity represents the available resources of a node
 	Capacity ResourceList `json:"capacity,omitempty"`
@@ -1516,6 +1567,27 @@ type PodLogOptions struct {
 
 	// If true, return previous terminated container logs
 	Previous bool
+}
+
+// PodAttachOptions is the query options to a Pod's remote attach call
+// TODO: merge w/ PodExecOptions below for stdin, stdout, etc
+type PodAttachOptions struct {
+	TypeMeta `json:",inline"`
+
+	// Stdin if true indicates that stdin is to be redirected for the attach call
+	Stdin bool `json:"stdin,omitempty"`
+
+	// Stdout if true indicates that stdout is to be redirected for the attach call
+	Stdout bool `json:"stdout,omitempty"`
+
+	// Stderr if true indicates that stderr is to be redirected for the attach call
+	Stderr bool `json:"stderr,omitempty"`
+
+	// TTY if true indicates that a tty will be allocated for the attach call
+	TTY bool `json:"tty,omitempty"`
+
+	// Container to attach to.
+	Container string `json:"container,omitempty"`
 }
 
 // PodExecOptions is the query options to a Pod's remote exec call
@@ -1706,6 +1778,12 @@ const (
 	//   "causes" - The original error
 	// Status code 500
 	StatusReasonInternalError = "InternalError"
+
+	// StatusReasonServiceUnavailable means that the request itself was valid,
+	// but the requested service is unavailable at this time.
+	// Retrying the request after some time might succeed.
+	// Status code 503
+	StatusReasonServiceUnavailable StatusReason = "ServiceUnavailable"
 )
 
 // StatusCause provides more information about an api.Status failure, including
@@ -1730,7 +1808,7 @@ type StatusCause struct {
 }
 
 // CauseType is a machine readable value providing more detail about what
-// occured in a status response. An operation may have multiple causes for a
+// occurred in a status response. An operation may have multiple causes for a
 // status (whether Failure or Success).
 type CauseType string
 
@@ -1784,7 +1862,7 @@ type LocalObjectReference struct {
 
 type SerializedReference struct {
 	TypeMeta  `json:",inline"`
-	Reference ObjectReference `json:"reference,omitempty" description:"the reference to an object in the system"`
+	Reference ObjectReference `json:"reference,omitempty"`
 }
 
 type EventSource struct {
@@ -1819,7 +1897,7 @@ type Event struct {
 	// The time at which the event was first recorded. (Time of server receipt is in TypeMeta.)
 	FirstTimestamp util.Time `json:"firstTimestamp,omitempty"`
 
-	// The time at which the most recent occurance of this event was recorded.
+	// The time at which the most recent occurrence of this event was recorded.
 	LastTimestamp util.Time `json:"lastTimestamp,omitempty"`
 
 	// The number of times this event has occurred.
@@ -1896,6 +1974,8 @@ const (
 	ResourceServices ResourceName = "services"
 	// ReplicationControllers, number
 	ResourceReplicationControllers ResourceName = "replicationcontrollers"
+	// Daemon, number
+	ResourceDaemon ResourceName = "daemon"
 	// ResourceQuotas, number
 	ResourceQuotas ResourceName = "resourcequotas"
 	// ResourceSecrets, number
@@ -2075,32 +2155,37 @@ type ComponentStatusList struct {
 // both the Container AND the SecurityContext will result in an error.
 type SecurityContext struct {
 	// Capabilities are the capabilities to add/drop when running the container
-	Capabilities *Capabilities `json:"capabilities,omitempty" description:"the linux capabilites that should be added or removed"`
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
 
 	// Run the container in privileged mode
-	Privileged *bool `json:"privileged,omitempty" description:"run the container in privileged mode"`
+	Privileged *bool `json:"privileged,omitempty"`
 
 	// SELinuxOptions are the labels to be applied to the container
 	// and volumes
-	SELinuxOptions *SELinuxOptions `json:"seLinuxOptions,omitempty" description:"options that control the SELinux labels applied"`
+	SELinuxOptions *SELinuxOptions `json:"seLinuxOptions,omitempty"`
 
 	// RunAsUser is the UID to run the entrypoint of the container process.
-	RunAsUser *int64 `json:"runAsUser,omitempty" description:"the user id that runs the first process in the container"`
+	RunAsUser *int64 `json:"runAsUser,omitempty"`
+
+	// RunAsNonRoot indicates that the container should be run as a non-root user.  If the RunAsUser
+	// field is not explicitly set then the kubelet may check the image for a specified user or
+	// perform defaulting to specify a user.
+	RunAsNonRoot bool
 }
 
 // SELinuxOptions are the labels to be applied to the container.
 type SELinuxOptions struct {
 	// SELinux user label
-	User string `json:"user,omitempty" description:"the user label to apply to the container"`
+	User string `json:"user,omitempty"`
 
 	// SELinux role label
-	Role string `json:"role,omitempty" description:"the role label to apply to the container"`
+	Role string `json:"role,omitempty"`
 
 	// SELinux type label
-	Type string `json:"type,omitempty" description:"the type label to apply to the container"`
+	Type string `json:"type,omitempty"`
 
 	// SELinux level label.
-	Level string `json:"level,omitempty" description:"the level label to apply to the container"`
+	Level string `json:"level,omitempty"`
 }
 
 // RangeAllocation is an opaque API object (not exposed to end users) that can be persisted to record
@@ -2122,4 +2207,36 @@ type RangeAllocation struct {
 	// represented as a bit array starting at the base IP of the CIDR in Range, with each bit representing
 	// a single allocated address (the fifth bit on CIDR 10.0.0.0/8 is 10.0.0.4).
 	Data []byte `json:"data"`
+}
+
+// A ThirdPartyResource is a generic representation of a resource, it is used by add-ons and plugins to add new resource
+// types to the API.  It consists of one or more Versions of the api.
+type ThirdPartyResource struct {
+	TypeMeta   `json:",inline"`
+	ObjectMeta `json:"metadata,omitempty" description:"standard object metadata"`
+
+	Description string `json:"description,omitempty" description:"The description of this object"`
+
+	Versions []APIVersion `json:"versions,omitempty" description:"The versions for this third party object"`
+}
+
+type ThirdPartyResourceList struct {
+	TypeMeta `json:",inline"`
+	ListMeta `json:"metadata,omitempty" description:"standard list metadata; see http://docs.k8s.io/api-conventions.md#metadata"`
+
+	Items []ThirdPartyResource `json:"items" description:"items is a list of schema objects"`
+}
+
+// An APIVersion represents a single concrete version of an object model.
+type APIVersion struct {
+	Name     string `json:"name,omitempty" description:"name of this version (e.g. 'v1')"`
+	APIGroup string `json:"apiGroup,omitempty" description:"The API group to add this object into, default 'experimental'"`
+}
+
+// An internal object, used for versioned storage in etcd.  Not exposed to the end user.
+type ThirdPartyResourceData struct {
+	TypeMeta   `json:",inline"`
+	ObjectMeta `json:"metadata,omitempty" description:"standard object metadata"`
+
+	Data []byte `json:"name,omitempty" description:"the raw JSON data for this data"`
 }

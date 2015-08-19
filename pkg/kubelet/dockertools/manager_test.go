@@ -30,17 +30,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
-	kubecontainer "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/network"
-	kubeprober "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/prober"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/probe"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	uexec "github.com/GoogleCloudPlatform/kubernetes/pkg/util/exec"
 	docker "github.com/fsouza/go-dockerclient"
+	cadvisorApi "github.com/google/cadvisor/info/v1"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/testapi"
+	"k8s.io/kubernetes/pkg/client/unversioned/record"
+	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/network"
+	kubeprober "k8s.io/kubernetes/pkg/kubelet/prober"
+	"k8s.io/kubernetes/pkg/probe"
+	"k8s.io/kubernetes/pkg/types"
+	"k8s.io/kubernetes/pkg/util"
+	uexec "k8s.io/kubernetes/pkg/util/exec"
 )
 
 type fakeHTTP struct {
@@ -51,35 +52,6 @@ type fakeHTTP struct {
 func (f *fakeHTTP) Get(url string) (*http.Response, error) {
 	f.url = url
 	return nil, f.err
-}
-
-// TODO: Find a better way to mock the runtime hooks so that we don't have to
-// duplicate the code here.
-type fakeRuntimeHooks struct {
-	recorder record.EventRecorder
-}
-
-var _ kubecontainer.RuntimeHooks = &fakeRuntimeHooks{}
-
-func newFakeRuntimeHooks(recorder record.EventRecorder) kubecontainer.RuntimeHooks {
-	return &fakeRuntimeHooks{
-		recorder: recorder,
-	}
-}
-
-func (fr *fakeRuntimeHooks) ShouldPullImage(pod *api.Pod, container *api.Container, imagePresent bool) bool {
-	if container.ImagePullPolicy == api.PullNever {
-		return false
-	}
-	if container.ImagePullPolicy == api.PullAlways ||
-		(container.ImagePullPolicy == api.PullIfNotPresent && (!imagePresent)) {
-		return true
-	}
-
-	return false
-}
-
-func (fr *fakeRuntimeHooks) ReportImagePull(pod *api.Pod, container *api.Container, pullError error) {
 }
 
 type fakeOptionGenerator struct{}
@@ -107,20 +79,19 @@ func newTestDockerManagerWithHTTPClient(fakeHTTPClient *fakeHTTP) (*DockerManage
 	readinessManager := kubecontainer.NewReadinessManager()
 	containerRefManager := kubecontainer.NewRefManager()
 	networkPlugin, _ := network.InitNetworkPlugin([]network.NetworkPlugin{}, "", network.NewFakeHost(nil))
-	runtimeHooks := newFakeRuntimeHooks(fakeRecorder)
 	optionGenerator := &fakeOptionGenerator{}
 	dockerManager := NewFakeDockerManager(
 		fakeDocker,
 		fakeRecorder,
 		readinessManager,
 		containerRefManager,
+		&cadvisorApi.MachineInfo{},
 		PodInfraContainerImage,
 		0, 0, "",
 		kubecontainer.FakeOS{},
 		networkPlugin,
 		optionGenerator,
-		fakeHTTPClient,
-		runtimeHooks)
+		fakeHTTPClient)
 
 	return dockerManager, fakeDocker
 }
@@ -480,7 +451,7 @@ func TestKillContainerInPodWithPreStop(t *testing.T) {
 	}
 	podString, err := testapi.Codec().Encode(pod)
 	if err != nil {
-		t.Errorf("unexpected error: %v")
+		t.Errorf("unexpected error: %v", err)
 	}
 	containers := []docker.APIContainers{
 		{
@@ -831,7 +802,7 @@ func TestProbeContainer(t *testing.T) {
 		}
 		result, err := manager.prober.Probe(&api.Pod{}, api.PodStatus{}, test.testContainer, dc.ID, dc.Created)
 		if test.expectError && err == nil {
-			t.Error("[%d] Expected error but no error was returned.", i)
+			t.Errorf("[%d] Expected error but no error was returned.", i)
 		}
 		if !test.expectError && err != nil {
 			t.Errorf("[%d] Didn't expect error but got: %v", i, err)
@@ -863,9 +834,10 @@ func generatePodInfraContainerHash(pod *api.Pod) uint64 {
 	}
 
 	container := &api.Container{
-		Name:  PodInfraContainerName,
-		Image: PodInfraContainerImage,
-		Ports: ports,
+		Name:            PodInfraContainerName,
+		Image:           PodInfraContainerImage,
+		Ports:           ports,
+		ImagePullPolicy: podInfraContainerImagePullPolicy,
 	}
 	return kubecontainer.HashContainer(container)
 }
@@ -891,7 +863,7 @@ func runSyncPod(t *testing.T, dm *DockerManager, fakeDocker *FakeDockerClient, p
 
 func TestSyncPodCreateNetAndContainer(t *testing.T) {
 	dm, fakeDocker := newTestDockerManager()
-	dm.podInfraContainerImage = "custom_image_name"
+	dm.podInfraContainerImage = "pod_infra_image"
 	fakeDocker.ContainerList = []docker.APIContainers{}
 	pod := &api.Pod{
 		ObjectMeta: api.ObjectMeta{
@@ -918,7 +890,7 @@ func TestSyncPodCreateNetAndContainer(t *testing.T) {
 
 	found := false
 	for _, c := range fakeDocker.ContainerList {
-		if c.Image == "custom_image_name" && strings.HasPrefix(c.Names[0], "/k8s_POD") {
+		if c.Image == "pod_infra_image" && strings.HasPrefix(c.Names[0], "/k8s_POD") {
 			found = true
 		}
 	}
@@ -936,10 +908,10 @@ func TestSyncPodCreateNetAndContainer(t *testing.T) {
 
 func TestSyncPodCreatesNetAndContainerPullsImage(t *testing.T) {
 	dm, fakeDocker := newTestDockerManager()
-	dm.podInfraContainerImage = "custom_image_name"
-	puller := dm.puller.(*FakeDockerPuller)
+	dm.podInfraContainerImage = "pod_infra_image"
+	puller := dm.dockerPuller.(*FakeDockerPuller)
 	puller.HasImages = []string{}
-	dm.podInfraContainerImage = "custom_image_name"
+	dm.podInfraContainerImage = "pod_infra_image"
 	fakeDocker.ContainerList = []docker.APIContainers{}
 	pod := &api.Pod{
 		ObjectMeta: api.ObjectMeta{
@@ -965,7 +937,7 @@ func TestSyncPodCreatesNetAndContainerPullsImage(t *testing.T) {
 
 	fakeDocker.Lock()
 
-	if !reflect.DeepEqual(puller.ImagesPulled, []string{"custom_image_name", "something"}) {
+	if !reflect.DeepEqual(puller.ImagesPulled, []string{"pod_infra_image", "something"}) {
 		t.Errorf("Unexpected pulled containers: %v", puller.ImagesPulled)
 	}
 
@@ -1296,10 +1268,11 @@ func TestSyncPodsDoesNothing(t *testing.T) {
 }
 
 func TestSyncPodWithPullPolicy(t *testing.T) {
+	api.ForTesting_ReferencesAllowBlankSelfLinks = true
 	dm, fakeDocker := newTestDockerManager()
-	puller := dm.puller.(*FakeDockerPuller)
+	puller := dm.dockerPuller.(*FakeDockerPuller)
 	puller.HasImages = []string{"existing_one", "want:latest"}
-	dm.podInfraContainerImage = "custom_image_name"
+	dm.podInfraContainerImage = "pod_infra_image"
 	fakeDocker.ContainerList = []docker.APIContainers{}
 
 	pod := &api.Pod{
@@ -1323,13 +1296,38 @@ func TestSyncPodWithPullPolicy(t *testing.T) {
 
 	fakeDocker.Lock()
 
+	eventSet := []string{
+		`pulling Pulling image "pod_infra_image"`,
+		`pulled Successfully pulled image "pod_infra_image"`,
+		`pulling Pulling image "pull_always_image"`,
+		`pulled Successfully pulled image "pull_always_image"`,
+		`pulling Pulling image "pull_if_not_present_image"`,
+		`pulled Successfully pulled image "pull_if_not_present_image"`,
+		`pulled Container image "existing_one" already present on machine`,
+		`pulled Container image "want:latest" already present on machine`,
+	}
+
+	recorder := dm.recorder.(*record.FakeRecorder)
+
+	var actualEvents []string
+	for _, ev := range recorder.Events {
+		if strings.HasPrefix(ev, "pull") {
+			actualEvents = append(actualEvents, ev)
+		}
+	}
+	sort.StringSlice(actualEvents).Sort()
+	sort.StringSlice(eventSet).Sort()
+	if !reflect.DeepEqual(actualEvents, eventSet) {
+		t.Errorf("Expected: %#v, Actual: %#v", eventSet, actualEvents)
+	}
+
 	pulledImageSet := make(map[string]empty)
 	for v := range puller.ImagesPulled {
 		pulledImageSet[puller.ImagesPulled[v]] = empty{}
 	}
 
 	if !reflect.DeepEqual(pulledImageSet, map[string]empty{
-		"custom_image_name":         {},
+		"pod_infra_image":           {},
 		"pull_always_image":         {},
 		"pull_if_not_present_image": {},
 	}) {
@@ -1664,7 +1662,7 @@ func TestGetPodPullImageFailureReason(t *testing.T) {
 	dm, fakeDocker := newTestDockerManager()
 	// Initialize the FakeDockerPuller so that it'd try to pull non-existent
 	// images.
-	puller := dm.puller.(*FakeDockerPuller)
+	puller := dm.dockerPuller.(*FakeDockerPuller)
 	puller.HasImages = []string{}
 	// Inject the pull image failure error.
 	failureReason := "pull image faiulre"
@@ -2047,6 +2045,132 @@ func TestGetPodStatusSortedContainers(t *testing.T) {
 			if expectedOrder[i] != c.Name {
 				t.Fatalf("Container status not sorted, expected %v at index %d, but found %v", expectedOrder[i], i, c.Name)
 			}
+		}
+	}
+}
+
+func TestVerifyNonRoot(t *testing.T) {
+	dm, fakeDocker := newTestDockerManager()
+
+	// setup test cases.
+	var rootUid int64 = 0
+	var nonRootUid int64 = 1
+
+	tests := map[string]struct {
+		container     *api.Container
+		inspectImage  *docker.Image
+		expectedError string
+	}{
+		// success cases
+		"non-root runAsUser": {
+			container: &api.Container{
+				SecurityContext: &api.SecurityContext{
+					RunAsUser: &nonRootUid,
+				},
+			},
+		},
+		"numeric non-root image user": {
+			container: &api.Container{},
+			inspectImage: &docker.Image{
+				Config: &docker.Config{
+					User: "1",
+				},
+			},
+		},
+		"numeric non-root image user with gid": {
+			container: &api.Container{},
+			inspectImage: &docker.Image{
+				Config: &docker.Config{
+					User: "1:2",
+				},
+			},
+		},
+
+		// failure cases
+		"root runAsUser": {
+			container: &api.Container{
+				SecurityContext: &api.SecurityContext{
+					RunAsUser: &rootUid,
+				},
+			},
+			expectedError: "container's runAsUser breaks non-root policy",
+		},
+		"non-numeric image user": {
+			container: &api.Container{},
+			inspectImage: &docker.Image{
+				Config: &docker.Config{
+					User: "foo",
+				},
+			},
+			expectedError: "unable to validate image is non-root, non-numeric user",
+		},
+		"numeric root image user": {
+			container: &api.Container{},
+			inspectImage: &docker.Image{
+				Config: &docker.Config{
+					User: "0",
+				},
+			},
+			expectedError: "container has no runAsUser and image will run as root",
+		},
+		"numeric root image user with gid": {
+			container: &api.Container{},
+			inspectImage: &docker.Image{
+				Config: &docker.Config{
+					User: "0:1",
+				},
+			},
+			expectedError: "container has no runAsUser and image will run as root",
+		},
+		"nil image in inspect": {
+			container:     &api.Container{},
+			expectedError: "unable to inspect image",
+		},
+		"nil config in image inspect": {
+			container:     &api.Container{},
+			inspectImage:  &docker.Image{},
+			expectedError: "unable to inspect image",
+		},
+	}
+
+	for k, v := range tests {
+		fakeDocker.Image = v.inspectImage
+		err := dm.verifyNonRoot(v.container)
+		if v.expectedError == "" && err != nil {
+			t.Errorf("%s had unexpected error %v", k, err)
+		}
+		if v.expectedError != "" && !strings.Contains(err.Error(), v.expectedError) {
+			t.Errorf("%s expected error %s but received %s", k, v.expectedError, err.Error())
+		}
+	}
+}
+
+func TestGetUidFromUser(t *testing.T) {
+	tests := map[string]struct {
+		input  string
+		expect string
+	}{
+		"no gid": {
+			input:  "0",
+			expect: "0",
+		},
+		"uid/gid": {
+			input:  "0:1",
+			expect: "0",
+		},
+		"empty input": {
+			input:  "",
+			expect: "",
+		},
+		"multiple spearators": {
+			input:  "1:2:3",
+			expect: "1",
+		},
+	}
+	for k, v := range tests {
+		actual := getUidFromUser(v.input)
+		if actual != v.expect {
+			t.Errorf("%s failed.  Expected %s but got %s", k, v.expect, actual)
 		}
 	}
 }

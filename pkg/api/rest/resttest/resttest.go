@@ -20,13 +20,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/coreos/go-etcd/etcd"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/api/rest"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/util"
 )
 
 type Tester struct {
@@ -75,6 +75,14 @@ func (t *Tester) TestContext() api.Context {
 	return api.WithNamespace(api.NewContext(), t.TestNamespace())
 }
 
+func (t *Tester) getObjectMetaOrFail(obj runtime.Object) *api.ObjectMeta {
+	meta, err := api.ObjectMetaFor(obj)
+	if err != nil {
+		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, obj)
+	}
+	return meta
+}
+
 func copyOrDie(obj runtime.Object) runtime.Object {
 	out, err := api.Scheme.Copy(obj)
 	if err != nil {
@@ -83,48 +91,100 @@ func copyOrDie(obj runtime.Object) runtime.Object {
 	return out
 }
 
+// Test creating an object.
 func (t *Tester) TestCreate(valid runtime.Object, invalid ...runtime.Object) {
-	t.TestCreateHasMetadata(copyOrDie(valid))
-	t.TestCreateGeneratesName(copyOrDie(valid))
-	t.TestCreateGeneratesNameReturnsServerTimeout(copyOrDie(valid))
+	t.testCreateHasMetadata(copyOrDie(valid))
+	t.testCreateGeneratesName(copyOrDie(valid))
+	t.testCreateGeneratesNameReturnsServerTimeout(copyOrDie(valid))
 	if t.clusterScope {
-		t.TestCreateDiscardsObjectNamespace(copyOrDie(valid))
-		t.TestCreateIgnoresContextNamespace(copyOrDie(valid))
-		t.TestCreateIgnoresMismatchedNamespace(copyOrDie(valid))
+		t.testCreateDiscardsObjectNamespace(copyOrDie(valid))
+		t.testCreateIgnoresContextNamespace(copyOrDie(valid))
+		t.testCreateIgnoresMismatchedNamespace(copyOrDie(valid))
 	} else {
-		t.TestCreateRejectsMismatchedNamespace(copyOrDie(valid))
+		t.testCreateRejectsMismatchedNamespace(copyOrDie(valid))
 	}
-	t.TestCreateInvokesValidation(invalid...)
+	t.testCreateInvokesValidation(invalid...)
 }
 
-func (t *Tester) TestCreateResetsUserData(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
+// Test updating an object.
+func (t *Tester) TestUpdate(valid runtime.Object, existing, older runtime.Object) {
+	t.testUpdateFailsOnNotFound(copyOrDie(valid))
+	t.testUpdateFailsOnVersion(copyOrDie(older))
+}
+
+// Test deleting an object.
+func (t *Tester) TestDelete(createFn func() runtime.Object, wasGracefulFn func() bool, invalid ...runtime.Object) {
+	t.testDeleteNonExist(createFn)
+	t.testDeleteNoGraceful(createFn, wasGracefulFn)
+	t.testDeleteInvokesValidation(invalid...)
+	// TODO: Test delete namespace mismatch rejection
+	// once #5684 is fixed.
+}
+
+// Test graceful deletion.
+func (t *Tester) TestDeleteGraceful(createFn func() runtime.Object, expectedGrace int64, wasGracefulFn func() bool) {
+	t.testDeleteGracefulHasDefault(createFn(), expectedGrace, wasGracefulFn)
+	t.testDeleteGracefulUsesZeroOnNil(createFn(), 0)
+}
+
+// Test getting object.
+func (t *Tester) TestGet(obj runtime.Object) {
+	t.testGetFound(obj)
+	t.testGetNotFound(obj)
+	t.testGetMimatchedNamespace(obj)
+	if !t.clusterScope {
+		t.testGetDifferentNamespace(obj)
 	}
+}
 
-	now := util.Now()
-	objectMeta.UID = "bad-uid"
-	objectMeta.CreationTimestamp = now
+// =============================================================================
+// Creation tests.
 
-	obj, err := t.storage.(rest.Creater).Create(t.TestContext(), valid)
+func (t *Tester) testCreateDiscardsObjectNamespace(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
+
+	// Ignore non-empty namespace in object meta
+	objectMeta.Namespace = "not-default"
+
+	// Ideally, we'd get an error back here, but at least verify the namespace wasn't persisted
+	created, err := t.storage.(rest.Creater).Create(t.TestContext(), copyOrDie(valid))
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if obj == nil {
-		t.Fatalf("Unexpected object from result: %#v", obj)
-	}
-	if objectMeta.UID == "bad-uid" || objectMeta.CreationTimestamp == now {
-		t.Errorf("ObjectMeta did not reset basic fields: %#v", objectMeta)
+	createdObjectMeta := t.getObjectMetaOrFail(created)
+	if createdObjectMeta.Namespace != api.NamespaceNone {
+		t.Errorf("Expected empty namespace on created object, got '%v'", createdObjectMeta.Namespace)
 	}
 }
 
-func (t *Tester) TestCreateHasMetadata(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
-	}
+func (t *Tester) testCreateGeneratesName(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
+	objectMeta.Name = ""
+	objectMeta.GenerateName = "test-"
 
+	_, err := t.storage.(rest.Creater).Create(t.TestContext(), valid)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if objectMeta.Name == "test-" || !strings.HasPrefix(objectMeta.Name, "test-") {
+		t.Errorf("unexpected name: %#v", valid)
+	}
+}
+
+func (t *Tester) testCreateGeneratesNameReturnsServerTimeout(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
+	objectMeta.Name = ""
+	objectMeta.GenerateName = "test-"
+	t.withStorageError(errors.NewAlreadyExists("kind", "thing"), func() {
+		_, err := t.storage.(rest.Creater).Create(t.TestContext(), valid)
+		if err == nil || !errors.IsServerTimeout(err) {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+	})
+}
+
+func (t *Tester) testCreateHasMetadata(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
 	objectMeta.Name = ""
 	objectMeta.GenerateName = "test-"
 	objectMeta.Namespace = t.TestNamespace()
@@ -141,41 +201,40 @@ func (t *Tester) TestCreateHasMetadata(valid runtime.Object) {
 	}
 }
 
-func (t *Tester) TestCreateGeneratesName(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
-	}
+func (t *Tester) testCreateIgnoresContextNamespace(valid runtime.Object) {
+	// Ignore non-empty namespace in context
+	ctx := api.WithNamespace(api.NewContext(), "not-default2")
 
-	objectMeta.Name = ""
-	objectMeta.GenerateName = "test-"
-
-	_, err = t.storage.(rest.Creater).Create(t.TestContext(), valid)
+	// Ideally, we'd get an error back here, but at least verify the namespace wasn't persisted
+	created, err := t.storage.(rest.Creater).Create(ctx, copyOrDie(valid))
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if objectMeta.Name == "test-" || !strings.HasPrefix(objectMeta.Name, "test-") {
-		t.Errorf("unexpected name: %#v", valid)
+	createdObjectMeta := t.getObjectMetaOrFail(created)
+	if createdObjectMeta.Namespace != api.NamespaceNone {
+		t.Errorf("Expected empty namespace on created object, got '%v'", createdObjectMeta.Namespace)
 	}
 }
 
-func (t *Tester) TestCreateGeneratesNameReturnsServerTimeout(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
+func (t *Tester) testCreateIgnoresMismatchedNamespace(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
+
+	// Ignore non-empty namespace in object meta
+	objectMeta.Namespace = "not-default"
+	ctx := api.WithNamespace(api.NewContext(), "not-default2")
+
+	// Ideally, we'd get an error back here, but at least verify the namespace wasn't persisted
+	created, err := t.storage.(rest.Creater).Create(ctx, copyOrDie(valid))
 	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
+		t.Fatalf("Unexpected error: %v", err)
 	}
-
-	objectMeta.Name = ""
-	objectMeta.GenerateName = "test-"
-	t.withStorageError(errors.NewAlreadyExists("kind", "thing"), func() {
-		_, err := t.storage.(rest.Creater).Create(t.TestContext(), valid)
-		if err == nil || !errors.IsServerTimeout(err) {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-	})
+	createdObjectMeta := t.getObjectMetaOrFail(created)
+	if createdObjectMeta.Namespace != api.NamespaceNone {
+		t.Errorf("Expected empty namespace on created object, got '%v'", createdObjectMeta.Namespace)
+	}
 }
 
-func (t *Tester) TestCreateInvokesValidation(invalid ...runtime.Object) {
+func (t *Tester) testCreateInvokesValidation(invalid ...runtime.Object) {
 	for i, obj := range invalid {
 		ctx := t.TestContext()
 		_, err := t.storage.(rest.Creater).Create(ctx, obj)
@@ -185,15 +244,11 @@ func (t *Tester) TestCreateInvokesValidation(invalid ...runtime.Object) {
 	}
 }
 
-func (t *Tester) TestCreateRejectsMismatchedNamespace(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
-	}
-
+func (t *Tester) testCreateRejectsMismatchedNamespace(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
 	objectMeta.Namespace = "not-default"
 
-	_, err = t.storage.(rest.Creater).Create(t.TestContext(), valid)
+	_, err := t.storage.(rest.Creater).Create(t.TestContext(), valid)
 	if err == nil {
 		t.Errorf("Expected an error, but we didn't get one")
 	} else if !strings.Contains(err.Error(), "does not match the namespace sent on the request") {
@@ -201,77 +256,28 @@ func (t *Tester) TestCreateRejectsMismatchedNamespace(valid runtime.Object) {
 	}
 }
 
-func (t *Tester) TestCreateDiscardsObjectNamespace(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
-	}
+func (t *Tester) testCreateResetsUserData(valid runtime.Object) {
+	objectMeta := t.getObjectMetaOrFail(valid)
+	now := util.Now()
+	objectMeta.UID = "bad-uid"
+	objectMeta.CreationTimestamp = now
 
-	// Ignore non-empty namespace in object meta
-	objectMeta.Namespace = "not-default"
-
-	// Ideally, we'd get an error back here, but at least verify the namespace wasn't persisted
-	created, err := t.storage.(rest.Creater).Create(t.TestContext(), copyOrDie(valid))
+	obj, err := t.storage.(rest.Creater).Create(t.TestContext(), valid)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	createdObjectMeta, err := api.ObjectMetaFor(created)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, created)
+	if obj == nil {
+		t.Fatalf("Unexpected object from result: %#v", obj)
 	}
-	if createdObjectMeta.Namespace != api.NamespaceNone {
-		t.Errorf("Expected empty namespace on created object, got '%v'", createdObjectMeta.Namespace)
-	}
-}
-
-func (t *Tester) TestCreateIgnoresContextNamespace(valid runtime.Object) {
-	// Ignore non-empty namespace in context
-	ctx := api.WithNamespace(api.NewContext(), "not-default2")
-
-	// Ideally, we'd get an error back here, but at least verify the namespace wasn't persisted
-	created, err := t.storage.(rest.Creater).Create(ctx, copyOrDie(valid))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	createdObjectMeta, err := api.ObjectMetaFor(created)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, created)
-	}
-	if createdObjectMeta.Namespace != api.NamespaceNone {
-		t.Errorf("Expected empty namespace on created object, got '%v'", createdObjectMeta.Namespace)
+	if objectMeta.UID == "bad-uid" || objectMeta.CreationTimestamp == now {
+		t.Errorf("ObjectMeta did not reset basic fields: %#v", objectMeta)
 	}
 }
 
-func (t *Tester) TestCreateIgnoresMismatchedNamespace(valid runtime.Object) {
-	objectMeta, err := api.ObjectMetaFor(valid)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, valid)
-	}
+// =============================================================================
+// Update tests.
 
-	// Ignore non-empty namespace in object meta
-	objectMeta.Namespace = "not-default"
-	ctx := api.WithNamespace(api.NewContext(), "not-default2")
-
-	// Ideally, we'd get an error back here, but at least verify the namespace wasn't persisted
-	created, err := t.storage.(rest.Creater).Create(ctx, copyOrDie(valid))
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	createdObjectMeta, err := api.ObjectMetaFor(created)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, created)
-	}
-	if createdObjectMeta.Namespace != api.NamespaceNone {
-		t.Errorf("Expected empty namespace on created object, got '%v'", createdObjectMeta.Namespace)
-	}
-}
-
-func (t *Tester) TestUpdate(valid runtime.Object, existing, older runtime.Object) {
-	t.TestUpdateFailsOnNotFound(copyOrDie(valid))
-	t.TestUpdateFailsOnVersion(copyOrDie(older))
-}
-
-func (t *Tester) TestUpdateFailsOnNotFound(valid runtime.Object) {
+func (t *Tester) testUpdateFailsOnNotFound(valid runtime.Object) {
 	_, _, err := t.storage.(rest.Updater).Update(t.TestContext(), valid)
 	if err == nil {
 		t.Errorf("Expected an error, but we didn't get one")
@@ -280,7 +286,7 @@ func (t *Tester) TestUpdateFailsOnNotFound(valid runtime.Object) {
 	}
 }
 
-func (t *Tester) TestUpdateFailsOnVersion(older runtime.Object) {
+func (t *Tester) testUpdateFailsOnVersion(older runtime.Object) {
 	_, _, err := t.storage.(rest.Updater).Update(t.TestContext(), older)
 	if err == nil {
 		t.Errorf("Expected an error, but we didn't get one")
@@ -289,34 +295,23 @@ func (t *Tester) TestUpdateFailsOnVersion(older runtime.Object) {
 	}
 }
 
-func (t *Tester) TestDeleteInvokesValidation(invalid ...runtime.Object) {
+// =============================================================================
+// Deletion tests.
+
+func (t *Tester) testDeleteInvokesValidation(invalid ...runtime.Object) {
 	for i, obj := range invalid {
-		objectMeta, err := api.ObjectMetaFor(obj)
-		if err != nil {
-			t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, obj)
-		}
+		objectMeta := t.getObjectMetaOrFail(obj)
 		ctx := t.TestContext()
-		_, err = t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, nil)
+		_, err := t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, nil)
 		if !errors.IsInvalid(err) {
 			t.Errorf("%d: Expected to get an invalid resource error, got %v", i, err)
 		}
 	}
 }
 
-func (t *Tester) TestDelete(createFn func() runtime.Object, wasGracefulFn func() bool, invalid ...runtime.Object) {
-	t.TestDeleteNonExist(createFn)
-	t.TestDeleteNoGraceful(createFn, wasGracefulFn)
-	t.TestDeleteInvokesValidation(invalid...)
-	// TODO: Test delete namespace mismatch rejection
-	// once #5684 is fixed.
-}
-
-func (t *Tester) TestDeleteNonExist(createFn func() runtime.Object) {
+func (t *Tester) testDeleteNonExist(createFn func() runtime.Object) {
 	existing := createFn()
-	objectMeta, err := api.ObjectMetaFor(existing)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, existing)
-	}
+	objectMeta := t.getObjectMetaOrFail(existing)
 	context := t.TestContext()
 
 	t.withStorageError(&etcd.EtcdError{ErrorCode: tools.EtcdErrorCodeNotFound}, func() {
@@ -327,19 +322,11 @@ func (t *Tester) TestDeleteNonExist(createFn func() runtime.Object) {
 	})
 }
 
-func (t *Tester) TestDeleteGraceful(createFn func() runtime.Object, expectedGrace int64, wasGracefulFn func() bool) {
-	t.TestDeleteGracefulHasDefault(createFn(), expectedGrace, wasGracefulFn)
-	t.TestDeleteGracefulUsesZeroOnNil(createFn(), 0)
-}
-
-func (t *Tester) TestDeleteNoGraceful(createFn func() runtime.Object, wasGracefulFn func() bool) {
+func (t *Tester) testDeleteNoGraceful(createFn func() runtime.Object, wasGracefulFn func() bool) {
 	existing := createFn()
-	objectMeta, err := api.ObjectMetaFor(existing)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, existing)
-	}
+	objectMeta := t.getObjectMetaOrFail(existing)
 	ctx := api.WithNamespace(t.TestContext(), objectMeta.Namespace)
-	_, err = t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, api.NewDeleteOptions(10))
+	_, err := t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, api.NewDeleteOptions(10))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -351,14 +338,13 @@ func (t *Tester) TestDeleteNoGraceful(createFn func() runtime.Object, wasGracefu
 	}
 }
 
-func (t *Tester) TestDeleteGracefulHasDefault(existing runtime.Object, expectedGrace int64, wasGracefulFn func() bool) {
-	objectMeta, err := api.ObjectMetaFor(existing)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, existing)
-	}
+// =============================================================================
+// Graceful Deletion tests.
 
+func (t *Tester) testDeleteGracefulHasDefault(existing runtime.Object, expectedGrace int64, wasGracefulFn func() bool) {
+	objectMeta := t.getObjectMetaOrFail(existing)
 	ctx := api.WithNamespace(t.TestContext(), objectMeta.Namespace)
-	_, err = t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, &api.DeleteOptions{})
+	_, err := t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, &api.DeleteOptions{})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -370,18 +356,125 @@ func (t *Tester) TestDeleteGracefulHasDefault(existing runtime.Object, expectedG
 	}
 }
 
-func (t *Tester) TestDeleteGracefulUsesZeroOnNil(existing runtime.Object, expectedGrace int64) {
-	objectMeta, err := api.ObjectMetaFor(existing)
-	if err != nil {
-		t.Fatalf("object does not have ObjectMeta: %v\n%#v", err, existing)
-	}
-
+func (t *Tester) testDeleteGracefulUsesZeroOnNil(existing runtime.Object, expectedGrace int64) {
+	objectMeta := t.getObjectMetaOrFail(existing)
 	ctx := api.WithNamespace(t.TestContext(), objectMeta.Namespace)
-	_, err = t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, nil)
+	_, err := t.storage.(rest.GracefulDeleter).Delete(ctx, objectMeta.Name, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	if _, err := t.storage.(rest.Getter).Get(ctx, objectMeta.Name); !errors.IsNotFound(err) {
 		t.Errorf("unexpected error, object should exist: %v", err)
+	}
+}
+
+// =============================================================================
+// Get tests.
+
+// testGetDifferentNamespace ensures same-name objects in different namespaces do not clash
+func (t *Tester) testGetDifferentNamespace(obj runtime.Object) {
+	if t.clusterScope {
+		t.Fatalf("the test does not work in in cluster-scope")
+	}
+
+	objMeta := t.getObjectMetaOrFail(obj)
+	objMeta.Name = "foo5"
+
+	ctx1 := api.WithNamespace(api.NewContext(), "bar3")
+	objMeta.Namespace = api.NamespaceValue(ctx1)
+	_, err := t.storage.(rest.Creater).Create(ctx1, obj)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	ctx2 := api.WithNamespace(api.NewContext(), "bar4")
+	objMeta.Namespace = api.NamespaceValue(ctx2)
+	_, err = t.storage.(rest.Creater).Create(ctx2, obj)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	got1, err := t.storage.(rest.Getter).Get(ctx1, objMeta.Name)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	got1Meta := t.getObjectMetaOrFail(got1)
+	if got1Meta.Name != objMeta.Name {
+		t.Errorf("unexpected name of object: %#v, expected: %s", got1, objMeta.Name)
+	}
+	if got1Meta.Namespace != api.NamespaceValue(ctx1) {
+		t.Errorf("unexpected namespace of object: %#v, expected: %s", got1, api.NamespaceValue(ctx1))
+	}
+
+	got2, err := t.storage.(rest.Getter).Get(ctx2, objMeta.Name)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	got2Meta := t.getObjectMetaOrFail(got2)
+	if got2Meta.Name != objMeta.Name {
+		t.Errorf("unexpected name of object: %#v, expected: %s", got2, objMeta.Name)
+	}
+	if got2Meta.Namespace != api.NamespaceValue(ctx2) {
+		t.Errorf("unexpected namespace of object: %#v, expected: %s", got2, api.NamespaceValue(ctx2))
+	}
+}
+
+func (t *Tester) testGetFound(obj runtime.Object) {
+	ctx := t.TestContext()
+	objMeta := t.getObjectMetaOrFail(obj)
+	objMeta.Name = "foo1"
+	objMeta.Namespace = api.NamespaceValue(ctx)
+
+	existing, err := t.storage.(rest.Creater).Create(ctx, obj)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	existingMeta := t.getObjectMetaOrFail(existing)
+
+	got, err := t.storage.(rest.Getter).Get(ctx, "foo1")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	gotMeta := t.getObjectMetaOrFail(got)
+	gotMeta.ResourceVersion = existingMeta.ResourceVersion
+	if e, a := existing, got; !api.Semantic.DeepEqual(e, a) {
+		t.Errorf("unexpected obj: %#v, expected %#v", e, a)
+	}
+}
+
+func (t *Tester) testGetMimatchedNamespace(obj runtime.Object) {
+	ctx1 := api.WithNamespace(api.NewContext(), "bar1")
+	ctx2 := api.WithNamespace(api.NewContext(), "bar2")
+	objMeta := t.getObjectMetaOrFail(obj)
+	objMeta.Name = "foo4"
+	objMeta.Namespace = api.NamespaceValue(ctx1)
+	_, err := t.storage.(rest.Creater).Create(ctx1, obj)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	_, err = t.storage.(rest.Getter).Get(ctx2, "foo4")
+	if t.clusterScope {
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	} else {
+		if !errors.IsNotFound(err) {
+			t.Errorf("unexpected error returned: %#v", err)
+		}
+	}
+}
+
+func (t *Tester) testGetNotFound(obj runtime.Object) {
+	ctx := t.TestContext()
+	objMeta := t.getObjectMetaOrFail(obj)
+	objMeta.Name = "foo2"
+	objMeta.Namespace = api.NamespaceValue(ctx)
+	_, err := t.storage.(rest.Creater).Create(ctx, obj)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	_, err = t.storage.(rest.Getter).Get(ctx, "foo3")
+	if !errors.IsNotFound(err) {
+		t.Errorf("unexpected error returned: %#v", err)
 	}
 }

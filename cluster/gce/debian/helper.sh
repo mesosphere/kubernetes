@@ -36,6 +36,7 @@ KUBERNETES_MASTER_NAME: $(yaml-quote ${MASTER_NAME})
 ALLOCATE_NODE_CIDRS: $(yaml-quote ${ALLOCATE_NODE_CIDRS:-false})
 ENABLE_CLUSTER_MONITORING: $(yaml-quote ${ENABLE_CLUSTER_MONITORING:-none})
 ENABLE_CLUSTER_LOGGING: $(yaml-quote ${ENABLE_CLUSTER_LOGGING:-false})
+ENABLE_CLUSTER_UI: $(yaml-quote ${ENABLE_CLUSTER_UI:-false})
 ENABLE_NODE_LOGGING: $(yaml-quote ${ENABLE_NODE_LOGGING:-false})
 LOGGING_DESTINATION: $(yaml-quote ${LOGGING_DESTINATION:-})
 ELASTICSEARCH_LOGGING_REPLICAS: $(yaml-quote ${ELASTICSEARCH_LOGGING_REPLICAS:-})
@@ -48,6 +49,8 @@ KUBE_PROXY_TOKEN: $(yaml-quote ${KUBE_PROXY_TOKEN:-})
 ADMISSION_CONTROL: $(yaml-quote ${ADMISSION_CONTROL:-})
 MASTER_IP_RANGE: $(yaml-quote ${MASTER_IP_RANGE})
 CA_CERT: $(yaml-quote ${CA_CERT_BASE64:-})
+KUBELET_CERT: $(yaml-quote ${KUBELET_CERT_BASE64:-})
+KUBELET_KEY: $(yaml-quote ${KUBELET_KEY_BASE64:-})
 EOF
   if [ -n "${KUBE_APISERVER_REQUEST_TIMEOUT:-}"  ]; then
     cat >>$file <<EOF
@@ -65,16 +68,45 @@ MASTER_CERT: $(yaml-quote ${MASTER_CERT_BASE64:-})
 MASTER_KEY: $(yaml-quote ${MASTER_KEY_BASE64:-})
 KUBECFG_CERT: $(yaml-quote ${KUBECFG_CERT_BASE64:-})
 KUBECFG_KEY: $(yaml-quote ${KUBECFG_KEY_BASE64:-})
+KUBELET_APISERVER: $(yaml-quote ${KUBELET_APISERVER:-})
 EOF
+    if [ -n "${APISERVER_TEST_ARGS:-}" ]; then
+      cat >>$file <<EOF
+APISERVER_TEST_ARGS: $(yaml-quote ${APISERVER_TEST_ARGS})
+EOF
+    fi
+    if [ -n "${KUBELET_TEST_ARGS:-}" ]; then
+      cat >>$file <<EOF
+KUBELET_TEST_ARGS: $(yaml-quote ${KUBELET_TEST_ARGS})
+EOF
+    fi
+    if [ -n "${CONTROLLER_MANAGER_TEST_ARGS:-}" ]; then
+      cat >>$file <<EOF
+CONTROLLER_MANAGER_TEST_ARGS: $(yaml-quote ${CONTROLLER_MANAGER_TEST_ARGS})
+EOF
+    fi
+    if [ -n "${SCHEDULER_TEST_ARGS:-}" ]; then
+      cat >>$file <<EOF
+SCHEDULER_TEST_ARGS: $(yaml-quote ${SCHEDULER_TEST_ARGS})
+EOF
+    fi
   else
     # Node-only env vars.
     cat >>$file <<EOF
 KUBERNETES_MASTER: "false"
 ZONE: $(yaml-quote ${ZONE})
 EXTRA_DOCKER_OPTS: $(yaml-quote ${EXTRA_DOCKER_OPTS:-})
-KUBELET_CERT: $(yaml-quote ${KUBELET_CERT_BASE64:-})
-KUBELET_KEY: $(yaml-quote ${KUBELET_KEY_BASE64:-})
 EOF
+    if [ -n "${KUBELET_TEST_ARGS:-}" ]; then
+      cat >>$file <<EOF
+KUBELET_TEST_ARGS: $(yaml-quote ${KUBELET_TEST_ARGS})
+EOF
+    fi
+    if [ -n "${KUBEPROXY_TEST_ARGS:-}" ]; then
+      cat >>$file <<EOF
+KUBEPROXY_TEST_ARGS: $(yaml-quote ${KUBEPROXY_TEST_ARGS})
+EOF
+    fi
   fi
 }
 
@@ -105,7 +137,7 @@ function create-master-instance {
     --image "${MASTER_IMAGE}" \
     --tags "${MASTER_TAG}" \
     --network "${NETWORK}" \
-    --scopes "storage-ro,compute-rw" \
+    --scopes "storage-ro,compute-rw,logging-write" \
     --can-ip-forward \
     --metadata-from-file \
       "startup-script=${KUBE_ROOT}/cluster/gce/configure-vm.sh,kube-env=${KUBE_TEMP}/master-kube-env.yaml" \
@@ -120,7 +152,7 @@ function create-node-instance-template {
   if [[ -n ${1:-} ]]; then
     suffix="-${1}"
   fi
-  create-node-template "${NODE_INSTANCE_PREFIX}-template${suffix}" "${scope_flags[*]}" \
+  create-node-template "${NODE_INSTANCE_PREFIX}-template${suffix}" "${scope_flags}" \
     "startup-script=${KUBE_ROOT}/cluster/gce/configure-vm.sh" \
     "kube-env=${KUBE_TEMP}/node-kube-env.yaml"
 }

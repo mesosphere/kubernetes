@@ -322,6 +322,7 @@ kube-up() {
   # TODO look for a better way to get the known_tokens to the master. This is needed over file injection since the files were too large on a 4 node cluster.
   $(scp -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME} ${KUBE_TEMP}/known_tokens.csv core@${KUBE_MASTER_IP}:/home/core/known_tokens.csv)
   $(sleep 2)
+  $(ssh -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME} core@${KUBE_MASTER_IP} sudo /usr/bin/mkdir -p /var/lib/kube-apiserver)
   $(ssh -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME} core@${KUBE_MASTER_IP} sudo mv /home/core/known_tokens.csv /var/lib/kube-apiserver/known_tokens.csv)
   $(ssh -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME} core@${KUBE_MASTER_IP} sudo chown root.root /var/lib/kube-apiserver/known_tokens.csv)
   $(ssh -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME} core@${KUBE_MASTER_IP} sudo systemctl restart kube-apiserver)
@@ -370,7 +371,7 @@ kube-up() {
   echo
   echo "  https://${KUBE_MASTER_IP}"
   echo
-  echo "The user name and password to use is located in ~/.kubernetes_auth."
+  echo "The user name and password to use is located in ${KUBECONFIG:-$DEFAULT_KUBECONFIG}."
   echo
   echo "Security note: The server above uses a self signed certificate.  This is"
   echo "    subject to \"Man in the middle\" type attacks."

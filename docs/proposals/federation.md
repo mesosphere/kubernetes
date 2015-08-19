@@ -1,12 +1,47 @@
-#Kubernetes Cluster Federation   
-##(a.k.a. "Ubernetes")
+<!-- BEGIN MUNGE: UNVERSIONED_WARNING -->
+
+<!-- BEGIN STRIP_FOR_RELEASE -->
+
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
+     width="25" height="25">
+
+<h2>PLEASE NOTE: This document applies to the HEAD of the source tree</h2>
+
+If you are using a released version of Kubernetes, you should
+refer to the docs that go with that version.
+
+<strong>
+The latest 1.0.x release of this document can be found
+[here](http://releases.k8s.io/release-1.0/docs/proposals/federation.md).
+
+Documentation for other releases can be found at
+[releases.k8s.io](http://releases.k8s.io).
+</strong>
+--
+
+<!-- END STRIP_FOR_RELEASE -->
+
+<!-- END MUNGE: UNVERSIONED_WARNING -->
+
+# Kubernetes Cluster Federation
+
+## (a.k.a. "Ubernetes")
 
 ## Requirements Analysis and Product Proposal
 
-## _by Quinton Hoole ([quinton@google.com](mailto:quinton@google.com))_  
-_Initial revision: 2015-03-05_  
-_Last updated: 2015-03-09_  
-This doc: [tinyurl.com/ubernetes](http://tinyurl.com/ubernetesv2)  
+## _by Quinton Hoole ([quinton@google.com](mailto:quinton@google.com))_
+
+_Initial revision: 2015-03-05_
+_Last updated: 2015-03-09_
+This doc: [tinyurl.com/ubernetesv2](http://tinyurl.com/ubernetesv2)
 Slides: [tinyurl.com/ubernetes-slides](http://tinyurl.com/ubernetes-slides)
 
 ## Introduction
@@ -54,11 +89,11 @@ loosely speaking, a cluster can be thought of as running in a single
 data center, or cloud provider availability zone, a more precise
 definition is that each cluster provides:
 
-1. a single Kubernetes API entry point, 
+1. a single Kubernetes API entry point,
 1. a consistent, cluster-wide resource naming scheme
 1. a scheduling/container placement domain
 1. a service network routing domain
-1. (in future) an authentication and authorization model.  
+1. (in future) an authentication and authorization model.
 1. ....
 
 The above in turn imply the need for a relatively performant, reliable
@@ -185,7 +220,7 @@ the multi-cloud provider implementation should just work for a single
 cloud provider).  Propose high-level design catering for both, with
 initial implementation targeting single cloud provider only.
 
-**Clarifying questions:**    
+**Clarifying questions:**
 **How does global external service discovery work?** In the steady
   state, which external clients connect to which clusters?  GeoDNS or
   similar?  What is the tolerable failover latency if a cluster goes
@@ -231,8 +266,8 @@ Doing nothing (i.e. forcing users to choose between 1 and 2 on their
 own) is probably an OK starting point.  Kubernetes autoscaling can get
 us to 3 at some later date.
 
-Up to this point, this use case ("Unavailability Zones") seems materially different from all the others above.  It does not require dynamic cross-cluster service migration (we assume that the service is already running in more than one cluster when the failure occurs).  Nor does it necessarily involve cross-cluster service discovery or location affinity.  As a result, I propose that we address this use case somewhat independently of the others (although I strongly suspect that it will become substantially easier once we've solved the others).  
-   
+Up to this point, this use case ("Unavailability Zones") seems materially different from all the others above.  It does not require dynamic cross-cluster service migration (we assume that the service is already running in more than one cluster when the failure occurs).  Nor does it necessarily involve cross-cluster service discovery or location affinity.  As a result, I propose that we address this use case somewhat independently of the others (although I strongly suspect that it will become substantially easier once we've solved the others).
+
 All of the above (regarding "Unavailibility Zones") refers primarily
 to already-running user-facing services, and minimizing the impact on
 end users of those services becoming unavailable in a given cluster.
@@ -287,7 +322,7 @@ location affinity:
    (other than the source of YouTube videos, which is assumed to be
    equally remote from all clusters in this example).  Each pod can be
    scheduled independently, in any cluster, and moved at any time.
-1. **"Preferentially Coupled"**: Somewhere between Coupled and Decoupled.  These applications prefer to have all of their pods located in the same cluster (e.g. for failure correlation, network latency or bandwidth cost reasons), but can tolerate being partitioned for "short" periods of time (for example while migrating the application from one cluster to another). Most small to medium sized LAMP stacks with not-very-strict latency goals probably fall into this category (provided that they use sane service discovery and reconnect-on-fail, which they need to do anyway to run effectively, even in a single Kubernetes cluster).  
+1. **"Preferentially Coupled"**: Somewhere between Coupled and Decoupled.  These applications prefer to have all of their pods located in the same cluster (e.g. for failure correlation, network latency or bandwidth cost reasons), but can tolerate being partitioned for "short" periods of time (for example while migrating the application from one cluster to another). Most small to medium sized LAMP stacks with not-very-strict latency goals probably fall into this category (provided that they use sane service discovery and reconnect-on-fail, which they need to do anyway to run effectively, even in a single Kubernetes cluster).
 
 And then there's what I'll call _absolute_ location affinity.  Some
 applications are required to run in bounded geographical or network
@@ -306,7 +341,7 @@ of our users are in Western Europe, U.S. West Coast" etc).
 
 ## Cross-cluster service discovery
 
-I propose having pods use standard discovery methods used by external clients of Kubernetes applications (i.e. DNS).  DNS might resolve to a public endpoint in the local or a remote cluster. Other than Strictly Coupled applications, software should be largely oblivious of which of the two occurs.   
+I propose having pods use standard discovery methods used by external clients of Kubernetes applications (i.e. DNS).  DNS might resolve to a public endpoint in the local or a remote cluster. Other than Strictly Coupled applications, software should be largely oblivious of which of the two occurs.
 _Aside:_ How do we avoid "tromboning" through an external VIP when DNS
 resolves to a public IP on the local cluster?  Strictly speaking this
 would be an optimization, and probably only matters to high bandwidth,
@@ -319,7 +354,7 @@ time.
 
 This is closely related to location affinity above, and also discussed
 there.  The basic idea is that some controller, logically outside of
-the basic kubernetes control plane of the clusters in question, needs
+the basic Kubernetes control plane of the clusters in question, needs
 to be able to:
 
 1. Receive "global" resource creation requests.
@@ -349,15 +384,15 @@ such events include:
 1. A change of scheduling policy ("we no longer use cloud provider X").
 1. A change of resource pricing ("cloud provider Y dropped their prices - lets migrate there").
 
-Strictly Decoupled applications can be trivially moved, in part or in whole, one pod at a time, to one or more clusters.  
-For Preferentially Decoupled applications, the federation system must first locate a single cluster with sufficient capacity to accommodate the entire application, then reserve that capacity, and incrementally move the application, one (or more) resources at a time, over to the new cluster, within some bounded time period (and possibly within a predefined "maintenance" window).  
+Strictly Decoupled applications can be trivially moved, in part or in whole, one pod at a time, to one or more clusters.
+For Preferentially Decoupled applications, the federation system must first locate a single cluster with sufficient capacity to accommodate the entire application, then reserve that capacity, and incrementally move the application, one (or more) resources at a time, over to the new cluster, within some bounded time period (and possibly within a predefined "maintenance" window).
 Strictly Coupled applications (with the exception of those deemed
 completely immovable) require the federation system to:
 
 1. start up an entire replica application in the destination cluster
 1. copy persistent data to the new application instance
 1. switch traffic across
-1. tear down the original application instance 
+1. tear down the original application instance
 
 It is proposed that support for automated migration of Strictly Coupled applications be
 deferred to a later date.
@@ -385,13 +420,13 @@ TBD: All very hand-wavey still, but some initial thoughts to get the conversatio
 
 ![image](federation-high-level-arch.png)
 
-##  Ubernetes API
+## Ubernetes API
 
-This looks a lot like the existing Kubernetes API but is explicitly multi-cluster.  
+This looks a lot like the existing Kubernetes API but is explicitly multi-cluster.
 
-+  Clusters become first class objects, which can be registered, listed, described, deregistered etc via the API.  
-+  Compute resources can be explicitly requested in specific clusters, or automatically scheduled to the "best" cluster by Ubernetes (by a pluggable Policy Engine).  
-+  There is a federated equivalent of a replication controller type, which is multicluster-aware, and delegates to cluster-specific replication controllers as required (e.g. a federated RC for n replicas might simply spawn multiple replication controllers in different clusters to do the hard work).  
++  Clusters become first class objects, which can be registered, listed, described, deregistered etc via the API.
++  Compute resources can be explicitly requested in specific clusters, or automatically scheduled to the "best" cluster by Ubernetes (by a pluggable Policy Engine).
++  There is a federated equivalent of a replication controller type, which is multicluster-aware, and delegates to cluster-specific replication controllers as required (e.g. a federated RC for n replicas might simply spawn multiple replication controllers in different clusters to do the hard work).
 + These federated replication controllers (and in fact all the
    services comprising the Ubernetes Control Plane) have to run
    somewhere.  For high availability Ubernetes deployments, these
@@ -431,4 +466,6 @@ their primary zookeeper replica? And now how do I do a shared, highly
 available redis database?
 
 
+<!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/docs/proposals/federation.md?pixel)]()
+<!-- END MUNGE: GENERATED_ANALYTICS -->

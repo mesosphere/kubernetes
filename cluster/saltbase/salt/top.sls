@@ -2,6 +2,10 @@ base:
   '*':
     - base
     - debian-auto-upgrades
+    - salt-helpers
+{% if grains.get('cloud') == 'aws' %}
+    - ntp
+{% endif %}
 
   'roles:kubernetes-pool':
     - match: grain
@@ -11,6 +15,7 @@ base:
 {% endif %}
     - helpers
     - cadvisor
+    - kube-client-tools
     - kubelet
     - kube-proxy
 {% if pillar.get('enable_node_logging', '').lower() == 'true' and pillar['logging_destination'] is defined %}
@@ -21,7 +26,11 @@ base:
   {% endif %}
 {% endif %}
     - logrotate
+{% if grains['cloud'] is defined and grains.cloud == 'gce' %}
+    - supervisor
+{% else %}
     - monit
+{% endif %}
 
   'roles:kubernetes-master':
     - match: grain
@@ -30,7 +39,11 @@ base:
     - kube-apiserver
     - kube-controller-manager
     - kube-scheduler
+{% if grains['cloud'] is defined and grains.cloud == 'gce' %}
+    - supervisor
+{% else %}
     - monit
+{% endif %}
 {% if grains['cloud'] is defined and not grains.cloud in [ 'aws', 'gce', 'vagrant' ] %}
     - nginx
 {% endif %}
@@ -38,6 +51,13 @@ base:
     - kube-client-tools
     - kube-master-addons
     - kube-admission-controls
+{% if pillar.get('enable_node_logging', '').lower() == 'true' and pillar['logging_destination'] is defined %}
+  {% if pillar['logging_destination'] == 'elasticsearch' %}
+    - fluentd-es
+  {% elif pillar['logging_destination'] == 'gcp' %}
+    - fluentd-gcp
+  {% endif %}
+{% endif %}
 {% if grains['cloud'] is defined and grains['cloud'] != 'vagrant' %}
     - logrotate
 {% endif %}

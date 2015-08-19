@@ -18,37 +18,13 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-function generate_version() {
-	local version=$1
-	local TMPFILE="/tmp/conversion_generated.$(date +%s).go"
+KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+source "${KUBE_ROOT}/hack/lib/init.sh"
 
-	echo "Generating for version ${version}"
+kube::golang::setup_env
 
-	sed 's/YEAR/2015/' hooks/boilerplate.go.txt > $TMPFILE
-	cat >> $TMPFILE <<EOF
-package ${version}
+"${KUBE_ROOT}/hack/build-go.sh" cmd/genconversion
 
-import (
-	"reflect"
+"${KUBE_ROOT}/hack/after-build/update-generated-conversions.sh" "$@"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/conversion"
-)
-
-// AUTO-GENERATED FUNCTIONS START HERE
-EOF
-
-	GOPATH=$(godep path):$GOPATH go run cmd/genconversion/conversion.go -v ${version} -f - >>  $TMPFILE
-
-	cat >> $TMPFILE <<EOF
-// AUTO-GENERATED FUNCTIONS END HERE
-EOF
-
-	mv $TMPFILE pkg/api/${version}/conversion_generated.go
-}
-
-VERSIONS="v1beta3 v1"
-for ver in $VERSIONS; do 
-	generate_version "${ver}"
-done
+# ex: ts=2 sw=2 et filetype=sh

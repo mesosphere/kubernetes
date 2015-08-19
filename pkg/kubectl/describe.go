@@ -25,14 +25,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/resource"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/fieldpath"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/types"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/volume"
 )
 
 // Describer generates output for the named resource or an error
@@ -80,6 +82,10 @@ func describerMap(c *client.Client) map[string]Describer {
 	return m
 }
 
+func expDescriberMap(c *client.ExperimentalClient) map[string]Describer {
+	return map[string]Describer{}
+}
+
 // List of all resource types we can describe
 func DescribableResources() []string {
 	keys := make([]string, 0)
@@ -93,12 +99,15 @@ func DescribableResources() []string {
 
 // Describer returns the default describe functions for each of the standard
 // Kubernetes types.
-func DescriberFor(kind string, c *client.Client) (Describer, bool) {
-	f, ok := describerMap(c)[kind]
-	if ok {
-		return f, true
+func DescriberFor(kind string, c *client.Client, ec *client.ExperimentalClient) (Describer, bool) {
+	var f Describer
+	var ok bool
+	if c != nil {
+		f, ok = describerMap(c)[kind]
+	} else if ec != nil {
+		f, ok = expDescriberMap(ec)[kind]
 	}
-	return nil, false
+	return f, ok
 }
 
 // DefaultObjectDescriber can describe the default Kubernetes objects.
@@ -270,6 +279,7 @@ func (d *LimitRangeDescriber) Describe(namespace, name string) (string, error) {
 func describeLimitRange(limitRange *api.LimitRange) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", limitRange.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", limitRange.Namespace)
 		fmt.Fprintf(out, "Type\tResource\tMin\tMax\tDefault\n")
 		fmt.Fprintf(out, "----\t--------\t---\t---\t---\n")
 		for i := range limitRange.Spec.Limits {
@@ -337,6 +347,7 @@ func (d *ResourceQuotaDescriber) Describe(namespace, name string) (string, error
 func describeQuota(resourceQuota *api.ResourceQuota) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", resourceQuota.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", resourceQuota.Namespace)
 		fmt.Fprintf(out, "Resource\tUsed\tHard\n")
 		fmt.Fprintf(out, "--------\t----\t----\n")
 
@@ -402,6 +413,7 @@ func (d *PodDescriber) Describe(namespace, name string) (string, error) {
 func describePod(pod *api.Pod, rcs []api.ReplicationController, events *api.EventList) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", pod.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", pod.Namespace)
 		fmt.Fprintf(out, "Image(s):\t%s\n", makeImageList(&pod.Spec))
 		fmt.Fprintf(out, "Node:\t%s\n", pod.Spec.NodeName+"/"+pod.Status.HostIP)
 		fmt.Fprintf(out, "Labels:\t%s\n", formatLabels(pod.Labels))
@@ -439,6 +451,8 @@ func (d *PersistentVolumeDescriber) Describe(namespace, name string) (string, er
 		return "", err
 	}
 
+	storage := pv.Spec.Capacity[api.ResourceStorage]
+
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", pv.Name)
 		fmt.Fprintf(out, "Labels:\t%s\n", formatLabels(pv.Labels))
@@ -448,8 +462,10 @@ func (d *PersistentVolumeDescriber) Describe(namespace, name string) (string, er
 		} else {
 			fmt.Fprintf(out, "Claim:\t%s\n", "")
 		}
-		fmt.Fprintf(out, "Reclaim Policy:\t%d\n", pv.Spec.PersistentVolumeReclaimPolicy)
-		fmt.Fprintf(out, "Message:\t%d\n", pv.Status.Message)
+		fmt.Fprintf(out, "Reclaim Policy:\t%v\n", pv.Spec.PersistentVolumeReclaimPolicy)
+		fmt.Fprintf(out, "Access Modes:\t%s\n", volume.GetAccessModesAsString(pv.Spec.AccessModes))
+		fmt.Fprintf(out, "Capacity:\t%s\n", storage.String())
+		fmt.Fprintf(out, "Message:\t%s\n", pv.Status.Message)
 		return nil
 	})
 }
@@ -466,11 +482,24 @@ func (d *PersistentVolumeClaimDescriber) Describe(namespace, name string) (strin
 		return "", err
 	}
 
+	labels := formatLabels(pvc.Labels)
+	storage := pvc.Spec.Resources.Requests[api.ResourceStorage]
+	capacity := ""
+	accessModes := ""
+	if pvc.Spec.VolumeName != "" {
+		accessModes = volume.GetAccessModesAsString(pvc.Status.AccessModes)
+		storage = pvc.Status.Capacity[api.ResourceStorage]
+		capacity = storage.String()
+	}
+
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", pvc.Name)
-		fmt.Fprintf(out, "Status:\t%d\n", pvc.Status.Phase)
-		fmt.Fprintf(out, "Volume:\t%d\n", pvc.Spec.VolumeName)
-
+		fmt.Fprintf(out, "Namespace:\t%s\n", pvc.Namespace)
+		fmt.Fprintf(out, "Status:\t%v\n", pvc.Status.Phase)
+		fmt.Fprintf(out, "Volume:\t%s\n", pvc.Spec.VolumeName)
+		fmt.Fprintf(out, "Labels:\t%s\n", labels)
+		fmt.Fprintf(out, "Capacity:\t%s\n", capacity)
+		fmt.Fprintf(out, "Access Modes:\t%s\n", accessModes)
 		return nil
 	})
 }
@@ -495,35 +524,64 @@ func describeContainers(pod *api.Pod, out io.Writer) {
 			fmt.Fprintf(out, "      %s:\t%s\n", name, quantity.String())
 		}
 
-		switch {
-		case state.Running != nil:
-			fmt.Fprintf(out, "    State:\tRunning\n")
-			fmt.Fprintf(out, "      Started:\t%v\n", state.Running.StartedAt.Time.Format(time.RFC1123Z))
-		case state.Waiting != nil:
-			fmt.Fprintf(out, "    State:\tWaiting\n")
-			if state.Waiting.Reason != "" {
-				fmt.Fprintf(out, "      Reason:\t%s\n", state.Waiting.Reason)
-			}
-		case state.Terminated != nil:
-			fmt.Fprintf(out, "    State:\tTerminated\n")
-			if state.Terminated.Reason != "" {
-				fmt.Fprintf(out, "      Reason:\t%s\n", state.Terminated.Reason)
-			}
-			if state.Terminated.Message != "" {
-				fmt.Fprintf(out, "      Message:\t%s\n", state.Terminated.Message)
-			}
-			fmt.Fprintf(out, "      Exit Code:\t%d\n", state.Terminated.ExitCode)
-			if state.Terminated.Signal > 0 {
-				fmt.Fprintf(out, "      Signal:\t%d\n", state.Terminated.Signal)
-			}
-			fmt.Fprintf(out, "      Started:\t%s\n", state.Terminated.StartedAt.Time.Format(time.RFC1123Z))
-			fmt.Fprintf(out, "      Finished:\t%s\n", state.Terminated.FinishedAt.Time.Format(time.RFC1123Z))
-		default:
-			fmt.Fprintf(out, "    State:\tWaiting\n")
+		describeStatus("State", state, out)
+		if status.LastTerminationState.Terminated != nil {
+			describeStatus("Last Termination State", status.LastTerminationState, out)
 		}
-
 		fmt.Fprintf(out, "    Ready:\t%v\n", printBool(status.Ready))
 		fmt.Fprintf(out, "    Restart Count:\t%d\n", status.RestartCount)
+		fmt.Fprintf(out, "    Variables:\n")
+		for _, e := range container.Env {
+			if e.ValueFrom != nil && e.ValueFrom.FieldRef != nil {
+				valueFrom := envValueFrom(pod, e)
+				fmt.Fprintf(out, "      %s:\t%s (%s:%s)\n", e.Name, valueFrom, e.ValueFrom.FieldRef.APIVersion, e.ValueFrom.FieldRef.FieldPath)
+			} else {
+				fmt.Fprintf(out, "      %s:\t%s\n", e.Name, e.Value)
+			}
+		}
+	}
+}
+
+func envValueFrom(pod *api.Pod, e api.EnvVar) string {
+	internalFieldPath, _, err := api.Scheme.ConvertFieldLabel(e.ValueFrom.FieldRef.APIVersion, "Pod", e.ValueFrom.FieldRef.FieldPath, "")
+	if err != nil {
+		return "" // pod validation should catch this on create
+	}
+
+	valueFrom, err := fieldpath.ExtractFieldPathAsString(pod, internalFieldPath)
+	if err != nil {
+		return "" // pod validation should catch this on create
+	}
+
+	return valueFrom
+}
+
+func describeStatus(stateName string, state api.ContainerState, out io.Writer) {
+	switch {
+	case state.Running != nil:
+		fmt.Fprintf(out, "    %s:\tRunning\n", stateName)
+		fmt.Fprintf(out, "      Started:\t%v\n", state.Running.StartedAt.Time.Format(time.RFC1123Z))
+	case state.Waiting != nil:
+		fmt.Fprintf(out, "    %s:\tWaiting\n", stateName)
+		if state.Waiting.Reason != "" {
+			fmt.Fprintf(out, "      Reason:\t%s\n", state.Waiting.Reason)
+		}
+	case state.Terminated != nil:
+		fmt.Fprintf(out, "    %s:\tTerminated\n", stateName)
+		if state.Terminated.Reason != "" {
+			fmt.Fprintf(out, "      Reason:\t%s\n", state.Terminated.Reason)
+		}
+		if state.Terminated.Message != "" {
+			fmt.Fprintf(out, "      Message:\t%s\n", state.Terminated.Message)
+		}
+		fmt.Fprintf(out, "      Exit Code:\t%d\n", state.Terminated.ExitCode)
+		if state.Terminated.Signal > 0 {
+			fmt.Fprintf(out, "      Signal:\t%d\n", state.Terminated.Signal)
+		}
+		fmt.Fprintf(out, "      Started:\t%s\n", state.Terminated.StartedAt.Time.Format(time.RFC1123Z))
+		fmt.Fprintf(out, "      Finished:\t%s\n", state.Terminated.FinishedAt.Time.Format(time.RFC1123Z))
+	default:
+		fmt.Fprintf(out, "    %s:\tWaiting\n", stateName)
 	}
 }
 
@@ -563,6 +621,7 @@ func (d *ReplicationControllerDescriber) Describe(namespace, name string) (strin
 func describeReplicationController(controller *api.ReplicationController, events *api.EventList, running, waiting, succeeded, failed int) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", controller.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", controller.Namespace)
 		if controller.Spec.Template != nil {
 			fmt.Fprintf(out, "Image(s):\t%s\n", makeImageList(&controller.Spec.Template.Spec))
 		} else {
@@ -598,6 +657,7 @@ func (d *SecretDescriber) Describe(namespace, name string) (string, error) {
 func describeSecret(secret *api.Secret) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", secret.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", secret.Namespace)
 		fmt.Fprintf(out, "Labels:\t%s\n", formatLabels(secret.Labels))
 		fmt.Fprintf(out, "Annotations:\t%s\n", formatLabels(secret.Annotations))
 
@@ -658,6 +718,7 @@ func describeService(service *api.Service, endpoints *api.Endpoints, events *api
 	}
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", service.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", service.Namespace)
 		fmt.Fprintf(out, "Labels:\t%s\n", formatLabels(service.Labels))
 		fmt.Fprintf(out, "Selector:\t%s\n", formatLabels(service.Spec.Selector))
 		fmt.Fprintf(out, "Type:\t%s\n", service.Spec.Type)
@@ -720,26 +781,45 @@ func (d *ServiceAccountDescriber) Describe(namespace, name string) (string, erro
 func describeServiceAccount(serviceAccount *api.ServiceAccount, tokens []api.Secret) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		fmt.Fprintf(out, "Name:\t%s\n", serviceAccount.Name)
+		fmt.Fprintf(out, "Namespace:\t%s\n", serviceAccount.Namespace)
 		fmt.Fprintf(out, "Labels:\t%s\n", formatLabels(serviceAccount.Labels))
+		fmt.Fprintln(out)
 
-		if len(serviceAccount.Secrets) == 0 {
-			fmt.Fprintf(out, "Secrets:\t<none>\n")
-		} else {
-			prefix := "Secrets:"
-			for _, s := range serviceAccount.Secrets {
-				fmt.Fprintf(out, "%s\t%s\n", prefix, s)
-				prefix = "        "
-			}
-			fmt.Fprintln(out)
+		var (
+			emptyHeader = "                   "
+			pullHeader  = "Image pull secrets:"
+			mountHeader = "Mountable secrets: "
+			tokenHeader = "Tokens:            "
+
+			pullSecretNames  = []string{}
+			mountSecretNames = []string{}
+			tokenSecretNames = []string{}
+		)
+
+		for _, s := range serviceAccount.ImagePullSecrets {
+			pullSecretNames = append(pullSecretNames, s.Name)
+		}
+		for _, s := range serviceAccount.Secrets {
+			mountSecretNames = append(mountSecretNames, s.Name)
+		}
+		for _, s := range tokens {
+			tokenSecretNames = append(tokenSecretNames, s.Name)
 		}
 
-		if len(tokens) == 0 {
-			fmt.Fprintf(out, "Tokens: \t<none>\n")
-		} else {
-			prefix := "Tokens: "
-			for _, t := range tokens {
-				fmt.Fprintf(out, "%s\t%s\n", prefix, t.Name)
-				prefix = "        "
+		types := map[string][]string{
+			pullHeader:  pullSecretNames,
+			mountHeader: mountSecretNames,
+			tokenHeader: tokenSecretNames,
+		}
+		for header, names := range types {
+			if len(names) == 0 {
+				fmt.Fprintf(out, "%s\t<none>\n", header)
+			} else {
+				prefix := header
+				for _, name := range names {
+					fmt.Fprintf(out, "%s\t%s\n", prefix, name)
+					prefix = emptyHeader
+				}
 			}
 			fmt.Fprintln(out)
 		}
@@ -814,6 +894,17 @@ func describeNode(node *api.Node, pods []*api.Pod, events *api.EventList) (strin
 			}
 		}
 
+		runningPods := filterNonRunningPods(pods)
+		reqs, err := getPodsTotalRequests(runningPods)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Allocated resources (total requests):\n")
+		for reqResource, reqValue := range reqs {
+			fmt.Fprintf(out, " %s:\t%s\n", reqResource, reqValue.String())
+		}
+		fmt.Fprintf(out, " pods:\t%d\n", len(runningPods))
+
 		fmt.Fprintf(out, "Version:\n")
 		fmt.Fprintf(out, " Kernel Version:\t%s\n", node.Status.NodeInfo.KernelVersion)
 		fmt.Fprintf(out, " OS Image:\t%s\n", node.Status.NodeInfo.OsImage)
@@ -828,15 +919,84 @@ func describeNode(node *api.Node, pods []*api.Pod, events *api.EventList) (strin
 			fmt.Fprintf(out, "ExternalID:\t%s\n", node.Spec.ExternalID)
 		}
 		fmt.Fprintf(out, "Pods:\t(%d in total)\n", len(pods))
-		fmt.Fprint(out, "  Namespace\tName\n")
+		fmt.Fprint(out, "  Namespace\tName\t\tCPU(milliCPU)\t\tMemory(bytes)\n")
+		totalMilliCPU := int64(0)
+		totalMemory := int64(0)
+		fractionPodCPU := float64(0)
+		fractionPodMemory := float64(0)
+		fractionTotalCPU := float64(0)
+		fractionTotalMemory := float64(0)
 		for _, pod := range pods {
-			fmt.Fprintf(out, "  %s\t%s\n", pod.Namespace, pod.Name)
+			podTotalMilliCPU := int64(0)
+			podTotalMemory := int64(0)
+
+			for ix := range pod.Spec.Containers {
+				limits := pod.Spec.Containers[ix].Resources.Limits
+				podTotalMilliCPU += limits.Cpu().MilliValue()
+				podTotalMemory += limits.Memory().Value()
+			}
+			totalMilliCPU += podTotalMilliCPU
+			totalMemory += podTotalMemory
+			fractionPodCPU = float64(podTotalMilliCPU) / float64(node.Status.Capacity.Cpu().MilliValue()) * 100
+			fractionPodMemory = float64(podTotalMemory) / float64(node.Status.Capacity.Memory().Value()) * 100
+			fmt.Fprintf(out, "  %s\t%s\t\t%d (%d%% of total)\t\t%d (%d%% of total)\n", pod.Namespace, pod.Name, podTotalMilliCPU, int64(fractionPodCPU), podTotalMemory, int64(fractionPodMemory))
 		}
+		fmt.Fprint(out, "TotalResourceLimits:\n")
+		fractionTotalCPU = float64(totalMilliCPU) / float64(node.Status.Capacity.Cpu().MilliValue()) * 100
+		fractionTotalMemory = float64(totalMemory) / float64(node.Status.Capacity.Memory().Value()) * 100
+		fmt.Fprintf(out, "  CPU(milliCPU):\t\t%d (%d%% of total)\n", totalMilliCPU, int64(fractionTotalCPU))
+		fmt.Fprintf(out, "  Memory(bytes):\t\t%d (%d%% of total)\n", totalMemory, int64(fractionTotalMemory))
 		if events != nil {
 			DescribeEvents(events, out)
 		}
 		return nil
 	})
+}
+
+func filterNonRunningPods(pods []*api.Pod) []*api.Pod {
+	if len(pods) == 0 {
+		return pods
+	}
+	result := []*api.Pod{}
+	for _, pod := range pods {
+		if pod.Status.Phase == api.PodSucceeded || pod.Status.Phase == api.PodFailed {
+			continue
+		}
+		result = append(result, pod)
+	}
+	return result
+}
+
+func getPodsTotalRequests(pods []*api.Pod) (map[api.ResourceName]resource.Quantity, error) {
+	reqs := map[api.ResourceName]resource.Quantity{}
+	for _, pod := range pods {
+		podReqs, err := getSinglePodTotalRequests(pod)
+		if err != nil {
+			return nil, err
+		}
+		for podReqName, podReqValue := range podReqs {
+			if value, ok := reqs[podReqName]; !ok {
+				reqs[podReqName] = podReqValue
+			} else if err = value.Add(podReqValue); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return reqs, nil
+}
+
+func getSinglePodTotalRequests(pod *api.Pod) (map[api.ResourceName]resource.Quantity, error) {
+	reqs := map[api.ResourceName]resource.Quantity{}
+	for _, container := range pod.Spec.Containers {
+		for name, quantity := range container.Resources.Requests {
+			if value, ok := reqs[name]; !ok {
+				reqs[name] = quantity
+			} else if err := value.Add(quantity); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return reqs, nil
 }
 
 func DescribeEvents(el *api.EventList, w io.Writer) {
@@ -848,8 +1008,8 @@ func DescribeEvents(el *api.EventList, w io.Writer) {
 	fmt.Fprint(w, "Events:\n  FirstSeen\tLastSeen\tCount\tFrom\tSubobjectPath\tReason\tMessage\n")
 	for _, e := range el.Items {
 		fmt.Fprintf(w, "  %s\t%s\t%d\t%v\t%v\t%v\t%v\n",
-			e.FirstTimestamp.Time.Format(time.RFC1123Z),
-			e.LastTimestamp.Time.Format(time.RFC1123Z),
+			translateTimestamp(e.FirstTimestamp),
+			translateTimestamp(e.LastTimestamp),
 			e.Count,
 			e.Source,
 			e.InvolvedObject.FieldPath,

@@ -23,11 +23,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/algorithm"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
+	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 )
 
 type FailedPredicateMap map[string]util.StringSet
@@ -41,12 +41,15 @@ var ErrNoNodesAvailable = fmt.Errorf("no nodes available to schedule pods")
 
 // implementation of the error interface
 func (f *FitError) Error() string {
-	predicates := util.NewStringSet()
+	var reason string
+	// We iterate over all nodes for logging purposes, even though we only return one reason from one node
 	for node, predicateList := range f.FailedPredicates {
-		predicates = predicates.Union(predicateList)
 		glog.Infof("failed to find fit for pod %v on node %s: %s", f.Pod.Name, node, strings.Join(predicateList.List(), ","))
+		if len(reason) == 0 {
+			reason, _ = predicateList.PopAny()
+		}
 	}
-	return fmt.Sprintf("For each of these fitness predicates, pod %v failed on at least one node: %v.", f.Pod.Name, strings.Join(predicates.List(), ","))
+	return fmt.Sprintf("Failed for reason %s and possibly others", reason)
 }
 
 type genericScheduler struct {
@@ -71,7 +74,7 @@ func (g *genericScheduler) Schedule(pod *api.Pod, minionLister algorithm.MinionL
 		return "", err
 	}
 
-	priorityList, err := prioritizeNodes(pod, g.pods, g.prioritizers, algorithm.FakeMinionLister(filteredNodes))
+	priorityList, err := PrioritizeNodes(pod, g.pods, g.prioritizers, algorithm.FakeMinionLister(filteredNodes))
 	if err != nil {
 		return "", err
 	}
@@ -113,6 +116,7 @@ func findNodesThatFit(pod *api.Pod, podLister algorithm.PodLister, predicateFunc
 	for _, node := range nodes.Items {
 		fits := true
 		for name, predicate := range predicateFuncs {
+			predicates.FailedResourceType = ""
 			fit, err := predicate(pod, machineToPods[node.Name], node.Name)
 			if err != nil {
 				return api.NodeList{}, FailedPredicateMap{}, err
@@ -121,6 +125,10 @@ func findNodesThatFit(pod *api.Pod, podLister algorithm.PodLister, predicateFunc
 				fits = false
 				if _, found := failedPredicateMap[node.Name]; !found {
 					failedPredicateMap[node.Name] = util.StringSet{}
+				}
+				if predicates.FailedResourceType != "" {
+					failedPredicateMap[node.Name].Insert(predicates.FailedResourceType)
+					break
 				}
 				failedPredicateMap[node.Name].Insert(name)
 				break
@@ -139,7 +147,7 @@ func findNodesThatFit(pod *api.Pod, podLister algorithm.PodLister, predicateFunc
 // Each priority function can also have its own weight
 // The minion scores returned by the priority function are multiplied by the weights to get weighted scores
 // All scores are finally combined (added) to get the total weighted scores of all minions
-func prioritizeNodes(pod *api.Pod, podLister algorithm.PodLister, priorityConfigs []algorithm.PriorityConfig, minionLister algorithm.MinionLister) (algorithm.HostPriorityList, error) {
+func PrioritizeNodes(pod *api.Pod, podLister algorithm.PodLister, priorityConfigs []algorithm.PriorityConfig, minionLister algorithm.MinionLister) (algorithm.HostPriorityList, error) {
 	result := algorithm.HostPriorityList{}
 
 	// If no priority configs are provided, then the EqualPriority function is applied
@@ -165,6 +173,7 @@ func prioritizeNodes(pod *api.Pod, podLister algorithm.PodLister, priorityConfig
 		}
 	}
 	for host, score := range combinedScores {
+		glog.V(10).Infof("Host %s Score %d", host, score)
 		result = append(result, algorithm.HostPriority{Host: host, Score: score})
 	}
 	return result, nil
@@ -186,7 +195,7 @@ func getBestHosts(list algorithm.HostPriorityList) []string {
 func EqualPriority(_ *api.Pod, podLister algorithm.PodLister, minionLister algorithm.MinionLister) (algorithm.HostPriorityList, error) {
 	nodes, err := minionLister.List()
 	if err != nil {
-		fmt.Errorf("failed to list nodes: %v", err)
+		glog.Errorf("failed to list nodes: %v", err)
 		return []algorithm.HostPriority{}, err
 	}
 

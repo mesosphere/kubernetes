@@ -17,14 +17,14 @@ limitations under the License.
 package etcd
 
 import (
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/controller"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic"
-	etcdgeneric "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/registry/controller"
+	"k8s.io/kubernetes/pkg/registry/generic"
+	etcdgeneric "k8s.io/kubernetes/pkg/registry/generic/etcd"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
 )
 
 // rest implements a RESTStorage for replication controllers against etcd
@@ -37,7 +37,7 @@ type REST struct {
 var controllerPrefix = "/controllers"
 
 // NewREST returns a RESTStorage object that will work against replication controllers.
-func NewREST(h tools.EtcdHelper) *REST {
+func NewREST(s storage.Interface) *REST {
 	store := &etcdgeneric.Etcd{
 		NewFunc: func() runtime.Object { return &api.ReplicationController{} },
 
@@ -69,7 +69,7 @@ func NewREST(h tools.EtcdHelper) *REST {
 		// Used to validate controller updates
 		UpdateStrategy: controller.Strategy,
 
-		Helper: h,
+		Storage: s,
 	}
 
 	return &REST{store}

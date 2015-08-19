@@ -19,10 +19,10 @@ package cmd
 import (
 	"io"
 
-	cmdconfig "github.com/GoogleCloudPlatform/kubernetes/pkg/kubectl/cmd/config"
-	cmdutil "github.com/GoogleCloudPlatform/kubernetes/pkg/kubectl/cmd/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/golang/glog"
+	cmdconfig "k8s.io/kubernetes/pkg/kubectl/cmd/config"
+	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	"k8s.io/kubernetes/pkg/util"
 
 	"github.com/spf13/cobra"
 )
@@ -91,6 +91,19 @@ __custom_func() {
     esac
 }
 `
+	valid_resources = `Valid resource types include:
+   * pods (aka 'po')
+   * replicationcontrollers (aka 'rc')
+   * services (aka 'svc')
+   * events (aka 'ev')
+   * nodes (aka 'no')
+   * namespaces (aka 'ns')
+   * secrets
+   * persistentvolumes (aka 'pv')
+   * persistentvolumeclaims (aka 'pvc')
+   * limitranges (aka 'limits')
+   * resourcequotas (aka 'quota')
+`
 )
 
 // NewKubectlCommand creates the `kubectl` command and its nested children.
@@ -101,7 +114,7 @@ func NewKubectlCommand(f *cmdutil.Factory, in io.Reader, out, err io.Writer) *co
 		Short: "kubectl controls the Kubernetes cluster manager",
 		Long: `kubectl controls the Kubernetes cluster manager.
 
-Find more information at https://github.com/GoogleCloudPlatform/kubernetes.`,
+Find more information at https://github.com/kubernetes/kubernetes.`,
 		Run: runHelp,
 		BashCompletionFunction: bash_completion_func,
 	}
@@ -114,7 +127,8 @@ Find more information at https://github.com/GoogleCloudPlatform/kubernetes.`,
 	cmds.AddCommand(NewCmdGet(f, out))
 	cmds.AddCommand(NewCmdDescribe(f, out))
 	cmds.AddCommand(NewCmdCreate(f, out))
-	cmds.AddCommand(NewCmdUpdate(f, out))
+	cmds.AddCommand(NewCmdReplace(f, out))
+	cmds.AddCommand(NewCmdPatch(f, out))
 	cmds.AddCommand(NewCmdDelete(f, out))
 
 	cmds.AddCommand(NewCmdNamespace(out))
@@ -122,15 +136,17 @@ Find more information at https://github.com/GoogleCloudPlatform/kubernetes.`,
 	cmds.AddCommand(NewCmdRollingUpdate(f, out))
 	cmds.AddCommand(NewCmdScale(f, out))
 
+	cmds.AddCommand(NewCmdAttach(f, in, out, err))
 	cmds.AddCommand(NewCmdExec(f, in, out, err))
 	cmds.AddCommand(NewCmdPortForward(f))
 	cmds.AddCommand(NewCmdProxy(f, out))
 
-	cmds.AddCommand(NewCmdRun(f, out))
+	cmds.AddCommand(NewCmdRun(f, in, out, err))
 	cmds.AddCommand(NewCmdStop(f, out))
 	cmds.AddCommand(NewCmdExposeService(f, out))
 
 	cmds.AddCommand(NewCmdLabel(f, out))
+	cmds.AddCommand(NewCmdAnnotate(f, out))
 
 	cmds.AddCommand(cmdconfig.NewCmdConfig(cmdconfig.NewDefaultPathOptions(), out))
 	cmds.AddCommand(NewCmdClusterInfo(f, out))

@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/api"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/util/wait"
 
 	. "github.com/onsi/ginkgo"
 )
@@ -43,7 +43,7 @@ func testPreStop(c *client.Client, ns string) {
 			Containers: []api.Container{
 				{
 					Name:  "server",
-					Image: "gcr.io/google_containers/nettest:1.3",
+					Image: "gcr.io/google_containers/nettest:1.6",
 					Ports: []api.ContainerPort{{ContainerPort: 8080}},
 				},
 			},

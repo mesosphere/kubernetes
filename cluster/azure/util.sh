@@ -150,7 +150,7 @@ function upload-server-tars() {
     if [[ -z "$(azure_call storage account show $AZ_STG 2>/dev/null | \
     grep data)" ]]; then
         echo "--> Creating storage..."
-        azure_call storage account create -l "$AZ_LOCATION" $AZ_STG
+        azure_call storage account create -l "$AZ_LOCATION" $AZ_STG --type LRS
     fi
 
     echo "--> Getting storage key..."
@@ -493,7 +493,7 @@ function kube-down {
 #  echo
 #  echo "  https://${KUBE_MASTER_IP}"
 # echo
-#  echo "The user name and password to use is located in ~/.kubernetes_auth."
+#  echo "The user name and password to use is located in ${KUBECONFIG:-$DEFAULT_KUBECONFIG}."
 #  echo
 
 #}

@@ -32,12 +32,20 @@ scale is sent to the server.
     help for scale
 
 .PP
+\fB\-o\fP, \fB\-\-output\fP=""
+    Output mode. Use "\-o name" for shorter output (resource/name).
+
+.PP
 \fB\-\-replicas\fP=\-1
     The new desired number of replicas. Required.
 
 .PP
 \fB\-\-resource\-version\fP=""
     Precondition for resource version. Requires that the current resource version match this value in order to scale.
+
+.PP
+\fB\-\-timeout\fP=0
+    The length of time to wait before giving up on a scale operation, zero means don't wait.
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -143,11 +151,14 @@ scale is sent to the server.
 .RS
 
 .nf
-// Scale replication controller named 'foo' to 3.
+# Scale replication controller named 'foo' to 3.
 $ kubectl scale \-\-replicas=3 replicationcontrollers foo
 
-// If the replication controller named foo's current size is 2, scale foo to 3.
+# If the replication controller named foo's current size is 2, scale foo to 3.
 $ kubectl scale \-\-current\-replicas=2 \-\-replicas=3 replicationcontrollers foo
+
+# Scale multiple replication controllers.
+$ kubectl scale \-\-replicas=5 rc/foo rc/bar
 
 .fi
 .RE

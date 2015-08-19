@@ -25,11 +25,11 @@ source ~/kube/config-default.sh
 
 attempt=0
 while true; do
-  /opt/bin/etcdctl get /coreos.com/network/config 
+  /opt/bin/etcdctl get /coreos.com/network/config
   if [[ "$?" == 0 ]]; then
     break
   else
-  	# enough timeout?? 
+  	# enough timeout??
     if (( attempt > 600 )); then
       echo "timeout for waiting network config" > ~/kube/err.log
       exit 2
@@ -48,6 +48,6 @@ sudo brctl delbr docker0
 
 source /run/flannel/subnet.env
 
-echo DOCKER_OPTS=\"-H tcp://127.0.0.1:4243 -H unix:///var/run/docker.sock \
-  --bip=${FLANNEL_SUBNET} --mtu=${FLANNEL_MTU}\" > /etc/default/docker
+echo DOCKER_OPTS=\"${DOCKER_OPTS} -H tcp://127.0.0.1:4243 -H unix:///var/run/docker.sock \
+     --bip=${FLANNEL_SUBNET} --mtu=${FLANNEL_MTU}\" > /etc/default/docker
 sudo service docker restart

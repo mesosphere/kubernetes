@@ -48,8 +48,8 @@ function verify-prereqs {
       # either provider_ctl_executable or vagrant_provider_plugin_re can
       # be blank (i.e., '') if none is needed by Vagrant (see, e.g.,
       # virtualbox entry)
-      vmrun vmware_fusion vagrant-vmware-fusion
-      vmrun vmware_workstation vagrant-vmware-workstation
+      '' vmware_fusion vagrant-vmware-fusion
+      '' vmware_workstation vagrant-vmware-workstation
       prlctl parallels vagrant-parallels
       VBoxManage virtualbox ''
       virsh libvirt vagrant-libvirt
@@ -83,7 +83,12 @@ function verify-prereqs {
 
   if [ -z "${provider_found}" ]; then
     if [ -n "${VAGRANT_DEFAULT_PROVIDER}" ]; then
-      echo "Can't find the necessary components for the ${VAGRANT_DEFAULT_PROVIDER} vagrant provider, please fix and retry."
+      echo "Can't find the necessary components for the ${VAGRANT_DEFAULT_PROVIDER} vagrant provider."
+      echo "Possible reasons could be: "
+      echo -e "\t- vmrun utility is not in your path"
+      echo -e "\t- Vagrant plugin was not found."
+      echo -e "\t- VAGRANT_DEFAULT_PROVIDER is set, but not found."
+      echo "Please fix and retry."
     else
       echo "Can't find the necessary components for any viable vagrant providers (e.g., virtualbox), please fix and retry."
     fi
@@ -133,7 +138,9 @@ function create-provision-scripts {
     echo "MASTER_PASSWD='${MASTER_PASSWD}'"
     echo "KUBE_USER='${KUBE_USER}'"
     echo "KUBE_PASSWORD='${KUBE_PASSWORD}'"
+    echo "ENABLE_CLUSTER_MONITORING='${ENABLE_CLUSTER_MONITORING}'"
     echo "ENABLE_NODE_LOGGING='${ENABLE_NODE_LOGGING:-false}'"
+    echo "ENABLE_CLUSTER_UI='${ENABLE_CLUSTER_UI}'"
     echo "LOGGING_DESTINATION='${LOGGING_DESTINATION:-}'"
     echo "ENABLE_CLUSTER_DNS='${ENABLE_CLUSTER_DNS:-false}'"
     echo "DNS_SERVER_IP='${DNS_SERVER_IP:-}'"
@@ -145,6 +152,7 @@ function create-provision-scripts {
     echo "VAGRANT_DEFAULT_PROVIDER='${VAGRANT_DEFAULT_PROVIDER:-}'"
     echo "KUBELET_TOKEN='${KUBELET_TOKEN:-}'"
     echo "KUBE_PROXY_TOKEN='${KUBE_PROXY_TOKEN:-}'"
+    echo "MASTER_EXTRA_SANS='${MASTER_EXTRA_SANS:-}'"
     awk '!/^#/' "${KUBE_ROOT}/cluster/vagrant/provision-network.sh"
     awk '!/^#/' "${KUBE_ROOT}/cluster/vagrant/provision-master.sh"
   ) > "${KUBE_TEMP}/master-start.sh"
@@ -169,6 +177,7 @@ function create-provision-scripts {
       echo "VAGRANT_DEFAULT_PROVIDER='${VAGRANT_DEFAULT_PROVIDER:-}'"
       echo "KUBELET_TOKEN='${KUBELET_TOKEN:-}'"
       echo "KUBE_PROXY_TOKEN='${KUBE_PROXY_TOKEN:-}'"
+      echo "MASTER_EXTRA_SANS='${MASTER_EXTRA_SANS:-}'"
       awk '!/^#/' "${KUBE_ROOT}/cluster/vagrant/provision-network.sh"
       awk '!/^#/' "${KUBE_ROOT}/cluster/vagrant/provision-minion.sh"
     ) > "${KUBE_TEMP}/minion-start-${i}.sh"
@@ -228,7 +237,7 @@ function verify-cluster {
     local count="0"
     until [[ "$count" == "1" ]]; do
       local minions
-      minions=$("${KUBE_ROOT}/cluster/kubectl.sh" get nodes -o template -t '{{range.items}}{{.metadata.name}}:{{end}}' --api-version=v1beta3)
+      minions=$("${KUBE_ROOT}/cluster/kubectl.sh" get nodes -o template -t '{{range.items}}{{.metadata.name}}:{{end}}' --api-version=v1)
       count=$(echo $minions | grep -c "${MINION_IPS[i]}") || {
         printf "."
         sleep 2

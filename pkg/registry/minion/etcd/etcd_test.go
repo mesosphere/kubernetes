@@ -21,16 +21,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/latest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest/resttest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools/etcdtest"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/latest"
+	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/api/rest/resttest"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
+	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
+	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/tools/etcdtest"
 
 	"github.com/coreos/go-etcd/etcd"
 )
@@ -47,16 +48,16 @@ func (fakeConnectionInfoGetter) GetConnectionInfo(host string) (string, uint, ht
 	return "http", 12345, nil, nil
 }
 
-func newHelper(t *testing.T) (*tools.FakeEtcdClient, tools.EtcdHelper) {
+func newEtcdStorage(t *testing.T) (*tools.FakeEtcdClient, storage.Interface) {
 	fakeEtcdClient := tools.NewFakeEtcdClient(t)
 	fakeEtcdClient.TestIndex = true
-	helper := tools.NewEtcdHelper(fakeEtcdClient, latest.Codec, etcdtest.PathPrefix())
-	return fakeEtcdClient, helper
+	etcdStorage := etcdstorage.NewEtcdStorage(fakeEtcdClient, latest.Codec, etcdtest.PathPrefix())
+	return fakeEtcdClient, etcdStorage
 }
 
 func newStorage(t *testing.T) (*REST, *tools.FakeEtcdClient) {
-	fakeEtcdClient, h := newHelper(t)
-	storage, _ := NewStorage(h, fakeConnectionInfoGetter{})
+	fakeEtcdClient, s := newEtcdStorage(t)
+	storage, _ := NewStorage(s, fakeConnectionInfoGetter{})
 	return storage, fakeEtcdClient
 }
 
@@ -126,7 +127,7 @@ func TestDelete(t *testing.T) {
 		}
 		return fakeEtcdClient.Data[key].R.Node.TTL == 30
 	}
-	test.TestDeleteNoGraceful(createFn, gracefulSetFn)
+	test.TestDelete(createFn, gracefulSetFn)
 }
 
 func TestEtcdListNodes(t *testing.T) {
@@ -209,23 +210,10 @@ func TestEtcdListNodesMatch(t *testing.T) {
 }
 
 func TestEtcdGetNode(t *testing.T) {
-	ctx := api.NewContext()
 	storage, fakeClient := newStorage(t)
+	test := resttest.New(t, storage, fakeClient.SetError).ClusterScope()
 	node := validNewNode()
-	key, _ := storage.KeyFunc(ctx, node.Name)
-	key = etcdtest.AddPrefix(key)
-
-	fakeClient.Set(key, runtime.EncodeOrDie(latest.Codec, node), 0)
-	nodeObj, err := storage.Get(ctx, node.Name)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	got := nodeObj.(*api.Node)
-
-	node.ObjectMeta.ResourceVersion = got.ObjectMeta.ResourceVersion
-	if e, a := node, got; !api.Semantic.DeepEqual(*e, *a) {
-		t.Errorf("Unexpected node: %#v, expected %#v", e, a)
-	}
+	test.TestGet(node)
 }
 
 func TestEtcdUpdateEndpoints(t *testing.T) {
@@ -255,23 +243,6 @@ func TestEtcdUpdateEndpoints(t *testing.T) {
 	node.ObjectMeta.ResourceVersion = nodeOut.ObjectMeta.ResourceVersion
 	if !api.Semantic.DeepEqual(node, &nodeOut) {
 		t.Errorf("Unexpected node: %#v, expected %#v", &nodeOut, node)
-	}
-}
-
-func TestEtcdGetNodeNotFound(t *testing.T) {
-	ctx := api.NewContext()
-	storage, fakeClient := newStorage(t)
-	key := etcdtest.AddPrefix("minions/foo")
-	fakeClient.Data[key] = tools.EtcdResponseWithError{
-		R: &etcd.Response{
-			Node: nil,
-		},
-		E: tools.EtcdErrorNotFound,
-	}
-	_, err := storage.Get(ctx, "foo")
-
-	if !errors.IsNotFound(err) {
-		t.Errorf("Unexpected error returned: %#v", err)
 	}
 }
 

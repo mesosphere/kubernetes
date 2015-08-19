@@ -18,43 +18,13 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-function result_file_name() {
-	local version=$1
-	if [ "${version}" == "api" ]; then
-		echo "pkg/api/deep_copy_generated.go"
-	else
-		echo "pkg/api/${version}/deep_copy_generated.go"
-	fi
-}
+KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+source "${KUBE_ROOT}/hack/lib/init.sh"
 
-function generate_version() {
-	local version=$1
-	local TMPFILE="/tmp/deep_copy_generated.$(date +%s).go"
+kube::golang::setup_env
 
-	echo "Generating for version ${version}"
+"${KUBE_ROOT}/hack/build-go.sh" cmd/gendeepcopy
 
-	sed 's/YEAR/2015/' hooks/boilerplate.go.txt > $TMPFILE
-	cat >> $TMPFILE <<EOF
-package ${version}
+"${KUBE_ROOT}/hack/after-build/update-generated-deep-copies.sh" "$@"
 
-// AUTO-GENERATED FUNCTIONS START HERE
-EOF
-
-	GOPATH=$(godep path):$GOPATH go run cmd/gendeepcopy/deep_copy.go -v ${version} -f - -o "${version}=" >>  $TMPFILE
-
-	cat >> $TMPFILE <<EOF
-// AUTO-GENERATED FUNCTIONS END HERE
-EOF
-
-	gofmt -w -s $TMPFILE
-	mv $TMPFILE `result_file_name ${version}`
-}
-
-VERSIONS="api v1beta3 v1"
-# To avoid compile errors, remove the currently existing files.
-for ver in $VERSIONS; do
-	rm -f `result_file_name ${ver}`
-done
-for ver in $VERSIONS; do 
-	generate_version "${ver}"
-done
+# ex: ts=2 sw=2 et filetype=sh

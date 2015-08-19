@@ -24,11 +24,11 @@ KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
 
 NEW_VERSION=${1-}
 
-fetch_url=$(git remote -v | grep GoogleCloudPlatform/kubernetes.git | grep fetch | awk '{ print $2 }')
-if ! push_url=$(git remote -v | grep GoogleCloudPlatform/kubernetes.git | grep push | awk '{ print $2 }'); then
-  push_url="https://github.com/GoogleCloudPlatform/kubernetes.git"
+fetch_url=$(git remote -v | grep kubernetes/kubernetes.git | grep fetch | awk '{ print $2 }')
+if ! push_url=$(git remote -v | grep kubernetes/kubernetes.git | grep push | awk '{ print $2 }'); then
+  push_url="https://github.com/kubernetes/kubernetes.git"
 fi
-fetch_remote=$(git remote -v | grep GoogleCloudPlatform/kubernetes.git | grep fetch | awk '{ print $1 }')
+fetch_remote=$(git remote -v | grep kubernetes/kubernetes.git | grep fetch | awk '{ print $1 }')
 
 VERSION_REGEX="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
 [[ ${NEW_VERSION} =~ $VERSION_REGEX ]] || {
@@ -40,8 +40,8 @@ VERSION_MAJOR="${BASH_REMATCH[1]}"
 VERSION_MINOR="${BASH_REMATCH[2]}"
 VERSION_PATCH="${BASH_REMATCH[3]}"
 
-if ! git diff-index --quiet --cached HEAD; then
-  echo "!!! You must not have any changes in your index when running this command"
+if ! git diff HEAD --quiet; then
+  echo "!!! You must not have any uncommitted changes when running this command"
   exit 1
 fi
 
@@ -52,6 +52,7 @@ fi
 
 release_branch="release-${VERSION_MAJOR}.${VERSION_MINOR}"
 current_branch=$(git rev-parse --abbrev-ref HEAD)
+head_commit=$(git rev-parse --short HEAD)
 
 if [[ "${VERSION_PATCH}" != "0" ]]; then
   # sorry, no going back in time, pull latest from upstream
@@ -85,33 +86,21 @@ SED=sed
 if which gsed &>/dev/null; then
   SED=gsed
 fi
-if ! ("$SED" --version 2>&1 | grep -q GNU); then
+if ! ($SED --version 2>&1 | grep -q GNU); then
   echo "!!! GNU sed is required.  If on OS X, use 'brew install gnu-sed'."
 fi
 
+echo "+++ Running ./versionize-docs"
+${KUBE_ROOT}/build/versionize-docs.sh ${NEW_VERSION}
+git commit -am "Versioning docs and examples for ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+
 VERSION_FILE="${KUBE_ROOT}/pkg/version/base.go"
-
-if [[ "${VERSION_PATCH}" == "0" ]]; then
-  RELEASE_DIR=release-${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}
-  echo "+++ Cloning documentation and examples into ${RELEASE_DIR}/..."
-  mkdir ${RELEASE_DIR}
-  cp -r docs ${RELEASE_DIR}/docs
-  cp -r examples ${RELEASE_DIR}/examples
-
-  # Update the docs to match this version.
-  perl -pi -e "s/HEAD/${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}/" ${RELEASE_DIR}/docs/README.md
-  perl -pi -e "s/HEAD/${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}/" ${RELEASE_DIR}/examples/README.md
-
-  ${KUBE_ROOT}/hack/run-gendocs.sh
-  git add ${RELEASE_DIR}
-  git commit -m "Cloning docs for ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
-fi
 
 GIT_MINOR="${VERSION_MINOR}.${VERSION_PATCH}"
 echo "+++ Updating to ${NEW_VERSION}"
-"$SED" -r -i -e "s/gitMajor\s+string = \"[^\"]*\"/gitMajor string = \"${VERSION_MAJOR}\"/" "${VERSION_FILE}"
-"$SED" -r -i -e "s/gitMinor\s+string = \"[^\"]*\"/gitMinor string = \"${GIT_MINOR}\"/" "${VERSION_FILE}"
-"$SED" -r -i -e "s/gitVersion\s+string = \"[^\"]*\"/gitVersion string = \"$NEW_VERSION\"/" "${VERSION_FILE}"
+$SED -ri -e "s/gitMajor\s+string = \"[^\"]*\"/gitMajor string = \"${VERSION_MAJOR}\"/" "${VERSION_FILE}"
+$SED -ri -e "s/gitMinor\s+string = \"[^\"]*\"/gitMinor string = \"${GIT_MINOR}\"/" "${VERSION_FILE}"
+$SED -ri -e "s/gitVersion\s+string = \"[^\"]*\"/gitVersion string = \"$NEW_VERSION-${release_branch}+\$Format:%h\$\"/" "${VERSION_FILE}"
 gofmt -s -w "${VERSION_FILE}"
 
 echo "+++ Committing version change"
@@ -120,61 +109,30 @@ git commit -m "Kubernetes version $NEW_VERSION"
 
 echo "+++ Tagging version"
 git tag -a -m "Kubernetes version $NEW_VERSION" "${NEW_VERSION}"
+newtag=$(git rev-parse --short HEAD)
 
-echo "+++ Updating to ${NEW_VERSION}-dev"
-"$SED" -r -i -e "s/gitMajor\s+string = \"[^\"]*\"/gitMajor string = \"${VERSION_MAJOR}\"/" "${VERSION_FILE}"
-"$SED" -r -i -e "s/gitMinor\s+string = \"[^\"]*\"/gitMinor string = \"${GIT_MINOR}\+\"/" "${VERSION_FILE}"
-"$SED" -r -i -e "s/gitVersion\s+string = \"[^\"]*\"/gitVersion string = \"$NEW_VERSION-dev\"/" "${VERSION_FILE}"
-gofmt -s -w "${VERSION_FILE}"
-
-echo "+++ Committing version change"
-git add "${VERSION_FILE}"
-git commit -m "Kubernetes version ${NEW_VERSION}-dev"
+if [[ "${VERSION_PATCH}" == "0" ]]; then
+  declare -r alpha_ver="v${VERSION_MAJOR}.$((${VERSION_MINOR}+1)).0-alpha.0"
+  git tag -a -m "Kubernetes pre-release branch ${alpha-ver}" "${alpha_ver}" "${head_commit}"
+fi
 
 echo ""
 echo "Success you must now:"
 echo ""
 echo "- Push the tag:"
 echo "   git push ${push_url} v${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
-echo "   - Please note you are pushing the tag live BEFORE your PRs."
-echo "       You need this so the builds pick up the right tag info."
-echo "       If something goes wrong further down please fix the tag!"
-echo "       Either delete this tag and give up, fix the tag before your next PR,"
-echo "       or find someone who can help solve the tag problem!"
-echo ""
 
 if [[ "${VERSION_PATCH}" == "0" ]]; then
-  echo "- Send branch: ${current_branch} as a PR to master"
-  echo "- Get someone to review and merge that PR"
-  echo "- Push the new release branch"
+  echo "- Push the alpha tag:"
+  echo "   git push ${push_url} ${alpha_ver}"
+  echo "- Push the new release branch:"
   echo "   git push ${push_url} ${current_branch}:${release_branch}"
+  echo "- DO NOTHING TO MASTER. You were done with master when you pushed the alpha tag."
 else
-  echo "- Send branch: ${current_branch} as a PR to ${release_branch}"
-  echo "- Get someone to review and merge that PR"
-  echo ""
-  echo "Now you need to back merge the release branch into master. This should"
-  echo "only be done if you are committing to the latest release branch. If the"
-  echo "latest release branch is, for example, release-0.10 and you are adding"
-  echo "a commit to release-0.9, you may skip the remaining instructions"
-  echo ""
-  echo "We do this back merge so that master will always show the latest version."
-  echo "The version in master would, for exampe show v0.10.2+ instead of v0.10.0+"
-  echo "It is not enough to just edit the version file in pkg/version/base.go in a"
-  echo "seperate PR. Doing it this way means that git will see the tag you just"
-  echo "pushed as an ancestor of master, even though the tag is on on a release"
-  echo "branch. The tag will thus be found by tools like git describe"
-  echo ""
-  echo "- Update so you see that merge in ${fetch_remote}"
-  echo "   git remote update"
-  echo "- Create and check out a new branch based on master"
-  echo "   git checkout -b merge-${release_branch}-to-master ${fetch_remote}/master"
-  echo "- Merge the ${release_branch} into your merge-${release_branch}-to-master branch:"
-  echo "   git merge -s recursive -X ours ${fetch_remote}/${release_branch}"
-  echo "   - It's possible you have merge conflicts that weren't resolved by the merge strategy."
-  echo "     - You will almost always want to take what is in HEAD"
-  echo "   - If you are not SURE how to solve these correctly, ask for help."
-  echo "   - It is possible to break other people's work if you didn't understand why"
-  echo "     the conflict happened and the correct way to solve it."
-  echo "- Send merge-${release_branch}-to-master as a PR to master"
-  echo "- Take the afternoon off"
+  echo "- Send branch: ${current_branch} as a PR to ${release_branch} <-- NOTE THIS"
+  echo "- In the contents of the PR, include the PRs in the release:"
+  echo "    hack/cherry_pick_list.sh ${current_branch}^1"
+  echo "  This helps cross-link PRs to patch releases they're part of in GitHub."
+  echo "- Have someone review the PR. This is a mechanical review to ensure it contains"
+  echo "  the ${NEW_VERSION} commit, which was tagged at ${newtag}."
 fi

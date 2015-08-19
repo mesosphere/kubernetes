@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/volume"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/volume"
 )
 
 // FakeRuntime is a fake container runtime for testing.
@@ -231,6 +231,14 @@ func (f *FakeRuntime) ExecInContainer(containerID string, cmd []string, stdin io
 	defer f.Unlock()
 
 	f.CalledFunctions = append(f.CalledFunctions, "ExecInContainer")
+	return f.Err
+}
+
+func (f *FakeRuntime) AttachContainer(containerID string, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool) error {
+	f.Lock()
+	defer f.Unlock()
+
+	f.CalledFunctions = append(f.CalledFunctions, "AttachContainer")
 	return f.Err
 }
 

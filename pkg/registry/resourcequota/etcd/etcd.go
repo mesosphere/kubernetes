@@ -17,14 +17,14 @@ limitations under the License.
 package etcd
 
 import (
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic"
-	etcdgeneric "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/resourcequota"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/registry/generic"
+	etcdgeneric "k8s.io/kubernetes/pkg/registry/generic/etcd"
+	"k8s.io/kubernetes/pkg/registry/resourcequota"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
 )
 
 // rest implements a RESTStorage for resourcequotas against etcd
@@ -33,7 +33,7 @@ type REST struct {
 }
 
 // NewStorage returns a RESTStorage object that will work against ResourceQuota objects.
-func NewStorage(h tools.EtcdHelper) (*REST, *StatusREST) {
+func NewStorage(s storage.Interface) (*REST, *StatusREST) {
 	prefix := "/resourcequotas"
 	store := &etcdgeneric.Etcd{
 		NewFunc:     func() runtime.Object { return &api.ResourceQuota{} },
@@ -52,7 +52,7 @@ func NewStorage(h tools.EtcdHelper) (*REST, *StatusREST) {
 		},
 		EndpointName: "resourcequotas",
 
-		Helper: h,
+		Storage: s,
 	}
 
 	store.CreateStrategy = resourcequota.Strategy

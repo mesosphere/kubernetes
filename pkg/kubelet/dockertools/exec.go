@@ -23,9 +23,9 @@ import (
 	"os/exec"
 	"time"
 
-	kubecontainer "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/glog"
+	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 )
 
 // ExecHandler knows how to execute a command in a running Docker container.
@@ -123,7 +123,8 @@ func (*NativeExecHandler) ExecInContainer(client DockerInterface, container *doc
 	if err != nil {
 		return err
 	}
-	tick := time.Tick(2 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 	count := 0
 	for {
 		inspect, err2 := client.InspectExec(execObj.ID)
@@ -143,7 +144,7 @@ func (*NativeExecHandler) ExecInContainer(client DockerInterface, container *doc
 			break
 		}
 
-		<-tick
+		<-ticker.C
 	}
 
 	return err

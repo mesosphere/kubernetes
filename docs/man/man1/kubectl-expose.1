@@ -35,8 +35,12 @@ re\-use the labels from the resource it exposes.
     If true, only print the object that would be sent, without creating it.
 
 .PP
-\fB\-\-generator\fP="service/v1"
-    The name of the API generator to use.  Default is 'service/v1'.
+\fB\-f\fP, \fB\-\-filename\fP=[]
+    Filename, directory, or URL to a file identifying the resource to expose a service
+
+.PP
+\fB\-\-generator\fP="service/v2"
+    The name of the API generator to use. There are 2 generators: 'service/v1' and 'service/v2'. The only difference between them is that service port in v1 is named 'default', while it is left unnamed in v2. Default is 'service/v2'.
 
 .PP
 \fB\-h\fP, \fB\-\-help\fP=false
@@ -56,7 +60,7 @@ re\-use the labels from the resource it exposes.
 
 .PP
 \fB\-o\fP, \fB\-\-output\fP=""
-    Output format. One of: json|yaml|template|templatefile.
+    Output format. One of: json|yaml|template|templatefile|wide.
 
 .PP
 \fB\-\-output\-version\fP=""
@@ -68,7 +72,7 @@ re\-use the labels from the resource it exposes.
 
 .PP
 \fB\-\-port\fP=\-1
-    The port that the service should serve on. Required.
+    The port that the service should serve on. Copied from the resource being exposed, if unspecified
 
 .PP
 \fB\-\-protocol\fP="TCP"
@@ -81,6 +85,14 @@ re\-use the labels from the resource it exposes.
 .PP
 \fB\-\-selector\fP=""
     A label selector to use for this service. If empty (the default) infer the selector from the replication controller.
+
+.PP
+\fB\-\-session\-affinity\fP=""
+    If non\-empty, set the session affinity for the service to this; legal values: 'None', 'ClientIP'
+
+.PP
+\fB\-\-sort\-by\fP=""
+    If non\-empty, sort list types using this field specification.  The field specification is expressed as a JSONPath expression (e.g. 'ObjectMeta.Name'). The field in the API resource specified by this JSONPath expression must be an integer or a string.
 
 .PP
 \fB\-\-target\-port\fP=""
@@ -199,13 +211,16 @@ re\-use the labels from the resource it exposes.
 .RS
 
 .nf
-// Creates a service for a replicated nginx, which serves on port 80 and connects to the containers on port 8000.
+# Creates a service for a replicated nginx, which serves on port 80 and connects to the containers on port 8000.
 $ kubectl expose rc nginx \-\-port=80 \-\-target\-port=8000
 
-// Creates a second service based on the above service, exposing the container port 8443 as port 443 with the name "nginx\-https"
+# Creates a service for a replication controller identified by type and name specified in "nginx\-controller.yaml", which serves on port 80 and connects to the containers on port 8000.
+$ kubectl expose \-f nginx\-controller.yaml \-\-port=80 \-\-target\-port=8000
+
+# Creates a second service based on the above service, exposing the container port 8443 as port 443 with the name "nginx\-https"
 $ kubectl expose service nginx \-\-port=443 \-\-target\-port=8443 \-\-name=nginx\-https
 
-// Create a service for a replicated streaming application on port 4100 balancing UDP traffic and named 'video\-stream'.
+# Create a service for a replicated streaming application on port 4100 balancing UDP traffic and named 'video\-stream'.
 $ kubectl expose rc streamer \-\-port=4100 \-\-protocol=udp \-\-name=video\-stream
 
 .fi

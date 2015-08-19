@@ -20,28 +20,29 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"os"
+	"path"
 	"strconv"
 	"strings"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/credentialprovider"
-	kubecontainer "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/leaky"
-	kubeletTypes "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	utilerrors "github.com/GoogleCloudPlatform/kubernetes/pkg/util/errors"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/parsers"
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/credentialprovider"
+	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/leaky"
+	kubeletTypes "k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/types"
+	"k8s.io/kubernetes/pkg/util"
+	utilerrors "k8s.io/kubernetes/pkg/util/errors"
 )
 
 const (
 	PodInfraContainerName  = leaky.PodInfraContainerName
 	DockerPrefix           = "docker://"
 	PodInfraContainerImage = "gcr.io/google_containers/pause:0.8.0"
+	LogSuffix              = "log"
 )
 
 const (
@@ -69,6 +70,7 @@ type DockerInterface interface {
 	CreateExec(docker.CreateExecOptions) (*docker.Exec, error)
 	StartExec(string, docker.StartExecOptions) error
 	InspectExec(id string) (*docker.ExecInspect, error)
+	AttachToContainer(opts docker.AttachToContainerOptions) error
 }
 
 // KubeletContainerName encapsulates a pod name and a Kubernetes container name.
@@ -276,19 +278,18 @@ func ParseDockerName(name string) (dockerName *KubeletContainerName, hash uint64
 	return &KubeletContainerName{podFullName, podUID, containerName}, hash, nil
 }
 
-// Get a docker endpoint, either from the string passed in, or $DOCKER_HOST environment variables
-func getDockerEndpoint(dockerEndpoint string) string {
-	var endpoint string
-	if len(dockerEndpoint) > 0 {
-		endpoint = dockerEndpoint
-	} else if len(os.Getenv("DOCKER_HOST")) > 0 {
-		endpoint = os.Getenv("DOCKER_HOST")
-	} else {
-		endpoint = "unix:///var/run/docker.sock"
-	}
-	glog.Infof("Connecting to docker on %s", endpoint)
+func LogSymlink(containerLogsDir, podFullName, containerName, dockerId string) string {
+	return path.Join(containerLogsDir, fmt.Sprintf("%s_%s-%s.%s", podFullName, containerName, dockerId, LogSuffix))
+}
 
-	return endpoint
+// Get a *docker.Client, either using the endpoint passed in, or using
+// DOCKER_HOST, DOCKER_TLS_VERIFY, and DOCKER_CERT path per their spec
+func getDockerClient(dockerEndpoint string) (*docker.Client, error) {
+	if len(dockerEndpoint) > 0 {
+		glog.Infof("Connecting to docker on %s", dockerEndpoint)
+		return docker.NewClient(dockerEndpoint)
+	}
+	return docker.NewClientFromEnv()
 }
 
 func ConnectToDockerOrDie(dockerEndpoint string) DockerInterface {
@@ -297,7 +298,7 @@ func ConnectToDockerOrDie(dockerEndpoint string) DockerInterface {
 			VersionInfo: docker.Env{"ApiVersion=1.18"},
 		}
 	}
-	client, err := docker.NewClient(getDockerEndpoint(dockerEndpoint))
+	client, err := getDockerClient(dockerEndpoint)
 	if err != nil {
 		glog.Fatalf("Couldn't connect to docker: %v", err)
 	}
@@ -306,8 +307,10 @@ func ConnectToDockerOrDie(dockerEndpoint string) DockerInterface {
 
 func milliCPUToShares(milliCPU int64) int64 {
 	if milliCPU == 0 {
-		// zero milliCPU means unset. Use kernel default.
-		return 0
+		// Docker converts zero milliCPU to unset, which maps to kernel default
+		// for unset: 1024. Return 2 here to really match kernel default for
+		// zero milliCPU.
+		return minShares
 	}
 	// Conceptually (milliCPU / milliCPUToCPU) * sharesPerCPU, but factored to improve rounding.
 	shares := (milliCPU * sharesPerCPU) / milliCPUToCPU

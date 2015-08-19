@@ -21,17 +21,18 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/validation"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
-	kubecontainer "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
-	kubeletTypes "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/config"
-	utilerrors "github.com/GoogleCloudPlatform/kubernetes/pkg/util/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/fielderrors"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/validation"
+	"k8s.io/kubernetes/pkg/client/unversioned/record"
+	"k8s.io/kubernetes/pkg/kubelet"
+	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	kubeletTypes "k8s.io/kubernetes/pkg/kubelet/types"
+	kubeletUtil "k8s.io/kubernetes/pkg/kubelet/util"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/config"
+	utilerrors "k8s.io/kubernetes/pkg/util/errors"
+	"k8s.io/kubernetes/pkg/util/fielderrors"
 )
 
 // PodConfigNotificationMode describes how changes are sent to the update channel.
@@ -169,12 +170,12 @@ func (s *podStorage) Merge(source string, change interface{}) error {
 			s.updates <- *updates
 		}
 		if len(deletes.Pods) > 0 || len(adds.Pods) > 0 {
-			s.updates <- kubelet.PodUpdate{s.MergedState().([]*api.Pod), kubelet.SET, source}
+			s.updates <- kubelet.PodUpdate{Pods: s.MergedState().([]*api.Pod), Op: kubelet.SET, Source: source}
 		}
 
 	case PodConfigNotificationSnapshot:
 		if len(updates.Pods) > 0 || len(deletes.Pods) > 0 || len(adds.Pods) > 0 {
-			s.updates <- kubelet.PodUpdate{s.MergedState().([]*api.Pod), kubelet.SET, source}
+			s.updates <- kubelet.PodUpdate{Pods: s.MergedState().([]*api.Pod), Op: kubelet.SET, Source: source}
 		}
 
 	default:
@@ -186,6 +187,7 @@ func (s *podStorage) Merge(source string, change interface{}) error {
 
 // recordFirstSeenTime records the first seen time of this pod.
 func recordFirstSeenTime(pod *api.Pod) {
+	glog.V(4).Infof("Receiving a new pod %q", kubeletUtil.FormatPodName(pod))
 	pod.Annotations[kubelet.ConfigFirstSeenAnnotationKey] = kubeletTypes.NewTimestamp().GetString()
 }
 
@@ -325,7 +327,7 @@ func filterInvalidPods(pods []*api.Pod, source string, recorder record.EventReco
 			name := bestPodIdentString(pod)
 			err := utilerrors.NewAggregate(errlist)
 			glog.Warningf("Pod[%d] (%s) from %s failed validation, ignoring: %v", i+1, name, source, err)
-			recorder.Eventf(pod, "failedValidation", "Error validating pod %s from %s, ignoring: %v", name, source, err)
+			recorder.Eventf(pod, "FailedValidation", "Error validating pod %s from %s, ignoring: %v", name, source, err)
 			continue
 		}
 		filtered = append(filtered, pod)
@@ -337,7 +339,7 @@ func filterInvalidPods(pods []*api.Pod, source string, recorder record.EventReco
 func (s *podStorage) Sync() {
 	s.updateLock.Lock()
 	defer s.updateLock.Unlock()
-	s.updates <- kubelet.PodUpdate{s.MergedState().([]*api.Pod), kubelet.SET, kubelet.AllSource}
+	s.updates <- kubelet.PodUpdate{Pods: s.MergedState().([]*api.Pod), Op: kubelet.SET, Source: kubelet.AllSource}
 }
 
 // Object implements config.Accessor

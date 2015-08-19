@@ -38,6 +38,7 @@ SERVICE_CLUSTER_IP_RANGE: $(yaml-quote ${SERVICE_CLUSTER_IP_RANGE})
 ALLOCATE_NODE_CIDRS: $(yaml-quote ${ALLOCATE_NODE_CIDRS:-false})
 ENABLE_CLUSTER_MONITORING: $(yaml-quote ${ENABLE_CLUSTER_MONITORING:-none})
 ENABLE_CLUSTER_LOGGING: $(yaml-quote ${ENABLE_CLUSTER_LOGGING:-false})
+ENABLE_CLUSTER_UI: $(yaml-quote ${ENABLE_CLUSTER_UI:-false})
 ENABLE_NODE_LOGGING: $(yaml-quote ${ENABLE_NODE_LOGGING:-false})
 LOGGING_DESTINATION: $(yaml-quote ${LOGGING_DESTINATION:-})
 ELASTICSEARCH_LOGGING_REPLICAS: $(yaml-quote ${ELASTICSEARCH_LOGGING_REPLICAS:-})
@@ -52,42 +53,46 @@ KUBELET_TOKEN: $(yaml-quote ${KUBELET_TOKEN:-})
 KUBE_PROXY_TOKEN: $(yaml-quote ${KUBE_PROXY_TOKEN:-})
 ADMISSION_CONTROL: $(yaml-quote ${ADMISSION_CONTROL:-})
 MASTER_IP_RANGE: $(yaml-quote ${MASTER_IP_RANGE})
-KUBERNETES_MASTER_NAME=$(yaml-quote ${MASTER_NAME})
+KUBERNETES_MASTER_NAME: $(yaml-quote ${MASTER_NAME})
 KUBERNETES_CONTAINER_RUNTIME: $(yaml-quote ${CONTAINER_RUNTIME})
 RKT_VERSION: $(yaml-quote ${RKT_VERSION})
 CA_CERT: $(yaml-quote ${CA_CERT_BASE64})
 MASTER_CERT: $(yaml-quote ${MASTER_CERT_BASE64:-})
 MASTER_KEY: $(yaml-quote ${MASTER_KEY_BASE64:-})
+KUBELET_CERT: $(yaml-quote ${KUBELET_CERT_BASE64:-})
+KUBELET_KEY: $(yaml-quote ${KUBELET_KEY_BASE64:-})
 KUBECFG_CERT: $(yaml-quote ${KUBECFG_CERT_BASE64:-})
 KUBECFG_KEY: $(yaml-quote ${KUBECFG_KEY_BASE64:-})
+KUBELET_APISERVER: $(yaml-quote ${KUBELET_APISERVER:-})
 EOF
   else
     cat >>$file <<EOF
 KUBERNETES_MASTER: "false"
-ENV_TIMESTAMP=$(yaml-quote $(date -u +%Y-%m-%dT%T%z))
-INSTANCE_PREFIX=$(yaml-quote ${INSTANCE_PREFIX})
-NODE_INSTANCE_PREFIX=$(yaml-quote ${NODE_INSTANCE_PREFIX})
-SERVER_BINARY_TAR_URL=$(yaml-quote ${SERVER_BINARY_TAR_URL})
-SERVICE_CLUSTER_IP_RANGE=$(yaml-quote ${SERVICE_CLUSTER_IP_RANGE})
-ENABLE_CLUSTER_MONITORING=$(yaml-quote ${ENABLE_CLUSTER_MONITORING:-none})
-ENABLE_CLUSTER_LOGGING=$(yaml-quote ${ENABLE_CLUSTER_LOGGING:-false})
-ENABLE_NODE_LOGGING=$(yaml-quote ${ENABLE_NODE_LOGGING:-false})
-LOGGING_DESTINATION=$(yaml-quote ${LOGGING_DESTINATION:-})
-ELASTICSEARCH_LOGGING_REPLICAS=$(yaml-quote ${ELASTICSEARCH_LOGGING_REPLICAS:-})
-ENABLE_CLUSTER_DNS=$(yaml-quote ${ENABLE_CLUSTER_DNS:-false})
-DNS_REPLICAS=$(yaml-quote ${DNS_REPLICAS:-})
-DNS_SERVER_IP=$(yaml-quote ${DNS_SERVER_IP:-})
-DNS_DOMAIN=$(yaml-quote ${DNS_DOMAIN:-})
-KUBELET_TOKEN=$(yaml-quote ${KUBELET_TOKEN:-})
-KUBE_PROXY_TOKEN=$(yaml-quote ${KUBE_PROXY_TOKEN:-})
-ADMISSION_CONTROL=$(yaml-quote ${ADMISSION_CONTROL:-})
-MASTER_IP_RANGE=$(yaml-quote ${MASTER_IP_RANGE})
-KUBERNETES_MASTER_NAME=$(yaml-quote ${MASTER_NAME})
-ZONE=$(yaml-quote ${ZONE})
-EXTRA_DOCKER_OPTS=$(yaml-quote ${EXTRA_DOCKER_OPTS:-})
-PROJECT_ID=$(yaml-quote ${PROJECT})
-KUBERNETES_CONTAINER_RUNTIME=$(yaml-quote ${CONTAINER_RUNTIME})
-RKT_VERSION=$(yaml-quote ${RKT_VERSION})
+ENV_TIMESTAMP: $(yaml-quote $(date -u +%Y-%m-%dT%T%z))
+INSTANCE_PREFIX: $(yaml-quote ${INSTANCE_PREFIX})
+NODE_INSTANCE_PREFIX: $(yaml-quote ${NODE_INSTANCE_PREFIX})
+SERVER_BINARY_TAR_URL: $(yaml-quote ${SERVER_BINARY_TAR_URL})
+SERVICE_CLUSTER_IP_RANGE: $(yaml-quote ${SERVICE_CLUSTER_IP_RANGE})
+ENABLE_CLUSTER_MONITORING: $(yaml-quote ${ENABLE_CLUSTER_MONITORING:-none})
+ENABLE_CLUSTER_LOGGING: $(yaml-quote ${ENABLE_CLUSTER_LOGGING:-false})
+ENABLE_CLUSTER_UI: $(yaml-quote ${ENABLE_CLUSTER_UI:-false})
+ENABLE_NODE_LOGGING: $(yaml-quote ${ENABLE_NODE_LOGGING:-false})
+LOGGING_DESTINATION: $(yaml-quote ${LOGGING_DESTINATION:-})
+ELASTICSEARCH_LOGGING_REPLICAS: $(yaml-quote ${ELASTICSEARCH_LOGGING_REPLICAS:-})
+ENABLE_CLUSTER_DNS: $(yaml-quote ${ENABLE_CLUSTER_DNS:-false})
+DNS_REPLICAS: $(yaml-quote ${DNS_REPLICAS:-})
+DNS_SERVER_IP: $(yaml-quote ${DNS_SERVER_IP:-})
+DNS_DOMAIN: $(yaml-quote ${DNS_DOMAIN:-})
+KUBELET_TOKEN: $(yaml-quote ${KUBELET_TOKEN:-})
+KUBE_PROXY_TOKEN: $(yaml-quote ${KUBE_PROXY_TOKEN:-})
+ADMISSION_CONTROL: $(yaml-quote ${ADMISSION_CONTROL:-})
+MASTER_IP_RANGE: $(yaml-quote ${MASTER_IP_RANGE})
+KUBERNETES_MASTER_NAME: $(yaml-quote ${MASTER_NAME})
+ZONE: $(yaml-quote ${ZONE})
+EXTRA_DOCKER_OPTS: $(yaml-quote ${EXTRA_DOCKER_OPTS:-})
+PROJECT_ID: $(yaml-quote ${PROJECT})
+KUBERNETES_CONTAINER_RUNTIME: $(yaml-quote ${CONTAINER_RUNTIME})
+RKT_VERSION: $(yaml-quote ${RKT_VERSION})
 CA_CERT: $(yaml-quote ${CA_CERT_BASE64})
 KUBELET_CERT: $(yaml-quote ${KUBELET_CERT_BASE64:-})
 KUBELET_KEY: $(yaml-quote ${KUBELET_KEY_BASE64:-})
@@ -123,7 +128,7 @@ function create-master-instance {
     --image "${MASTER_IMAGE}" \
     --tags "${MASTER_TAG}" \
     --network "${NETWORK}" \
-    --scopes "storage-ro,compute-rw" \
+    --scopes "storage-ro,compute-rw,logging-write" \
     --can-ip-forward \
     --metadata-from-file \
       "startup-script=${KUBE_ROOT}/cluster/gce/configure-vm.sh,kube-env=${KUBE_TEMP}/master-kube-env.yaml" \
@@ -140,7 +145,7 @@ function create-node-instance-template {
   if [[ -n ${1:-} ]]; then
     suffix="-${1}"
   fi
-   create-node-template "${NODE_INSTANCE_PREFIX}-template${suffix}" "${scope_flags[*]}" \
+   create-node-template "${NODE_INSTANCE_PREFIX}-template${suffix}" "${scope_flags}" \
     "kube-env=${KUBE_TEMP}/node-kube-env.yaml" \
     "user-data=${KUBE_ROOT}/cluster/gce/coreos/node.yaml"
 }

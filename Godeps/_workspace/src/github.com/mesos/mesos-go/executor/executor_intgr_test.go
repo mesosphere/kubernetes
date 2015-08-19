@@ -28,12 +28,12 @@ import (
 	"testing"
 	"time"
 
-	"code.google.com/p/go-uuid/uuid"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	util "github.com/mesos/mesos-go/mesosutil"
 	"github.com/mesos/mesos-go/testutil"
+	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -193,7 +193,7 @@ func TestExecutorDriverExecutorRegisteredEvent(t *testing.T) {
 	}
 	c := testutil.NewMockMesosClient(t, server.PID)
 	c.SendMessage(driver.self, pbMsg)
-	assert.True(t, driver.connected)
+	assert.True(t, driver.Connected())
 	select {
 	case <-ch:
 	case <-time.After(time.Millisecond * 2):

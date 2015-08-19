@@ -20,10 +20,11 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/meta"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/yaml"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/meta"
+	"k8s.io/kubernetes/pkg/api/registered"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/util/yaml"
 )
 
 // Mapper is a convenience struct for holding references to the three interfaces
@@ -46,6 +47,9 @@ func (m *Mapper) InfoForData(data []byte, source string) (*Info, error) {
 	version, kind, err := runtime.UnstructuredJSONScheme.DataVersionAndKind(data)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get type info from %q: %v", source, err)
+	}
+	if ok := registered.IsRegisteredAPIVersion(version); !ok {
+		return nil, fmt.Errorf("API version %q in %q isn't supported, only supports API versions %q", version, source, registered.RegisteredVersions)
 	}
 	if kind == "" {
 		return nil, fmt.Errorf("kind not set in %q", source)

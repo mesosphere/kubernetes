@@ -22,6 +22,8 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
+
+	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
 )
 
 type useContextOptions struct {
@@ -43,7 +45,7 @@ func NewCmdConfigUseContext(out io.Writer, configAccess ConfigAccess) *cobra.Com
 
 			err := options.run()
 			if err != nil {
-				fmt.Printf("%v\n", err)
+				fmt.Fprintf(out, "%v\n", err)
 			}
 		},
 	}
@@ -52,19 +54,19 @@ func NewCmdConfigUseContext(out io.Writer, configAccess ConfigAccess) *cobra.Com
 }
 
 func (o useContextOptions) run() error {
-	err := o.validate()
+	config, err := o.configAccess.GetStartingConfig()
 	if err != nil {
 		return err
 	}
 
-	config, err := o.configAccess.GetStartingConfig()
+	err = o.validate(config)
 	if err != nil {
 		return err
 	}
 
 	config.CurrentContext = o.contextName
 
-	if err := ModifyConfig(o.configAccess, *config); err != nil {
+	if err := ModifyConfig(o.configAccess, *config, true); err != nil {
 		return err
 	}
 
@@ -82,10 +84,16 @@ func (o *useContextOptions) complete(cmd *cobra.Command) bool {
 	return true
 }
 
-func (o useContextOptions) validate() error {
+func (o useContextOptions) validate(config *clientcmdapi.Config) error {
 	if len(o.contextName) == 0 {
 		return errors.New("You must specify a current-context")
 	}
 
-	return nil
+	for name := range config.Contexts {
+		if name == o.contextName {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("No context exists with the name: %q.", o.contextName)
 }

@@ -26,15 +26,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/cadvisor"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/errors"
 	"github.com/docker/libcontainer/cgroups"
 	"github.com/docker/libcontainer/cgroups/fs"
 	"github.com/docker/libcontainer/configs"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/errors"
+	"k8s.io/kubernetes/pkg/util/oom"
 )
 
 const (
@@ -228,8 +229,9 @@ func ensureDockerInContainer(cadvisor cadvisor.Interface, oomScoreAdj int, manag
 			}
 		}
 
-		// Also apply oom_score_adj to processes
-		if err := util.ApplyOomScoreAdj(pid, oomScoreAdj); err != nil {
+		// Also apply oom-score-adj to processes
+		oomAdjuster := oom.NewOomAdjuster()
+		if err := oomAdjuster.ApplyOomScoreAdj(pid, oomScoreAdj); err != nil {
 			errs = append(errs, fmt.Errorf("failed to apply oom score %d to PID %d", oomScoreAdj, pid))
 		}
 	}

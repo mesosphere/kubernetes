@@ -42,7 +42,7 @@ You can use \-\-output=template \-\-template=TEMPLATE to extract specific values
 
 .PP
 \fB\-o\fP, \fB\-\-output\fP=""
-    Output format. One of: json|yaml|template|templatefile.
+    Output format. One of: json|yaml|template|templatefile|wide.
 
 .PP
 \fB\-\-output\-version\fP=""
@@ -51,6 +51,10 @@ You can use \-\-output=template \-\-template=TEMPLATE to extract specific values
 .PP
 \fB\-\-raw\fP=false
     display raw byte data
+
+.PP
+\fB\-\-sort\-by\fP=""
+    If non\-empty, sort list types using this field specification.  The field specification is expressed as a JSONPath expression (e.g. 'ObjectMeta.Name'). The field in the API resource specified by this JSONPath expression must be an integer or a string.
 
 .PP
 \fB\-t\fP, \fB\-\-template\fP=""
@@ -161,11 +165,11 @@ You can use \-\-output=template \-\-template=TEMPLATE to extract specific values
 .RS
 
 .nf
-// Show Merged kubeconfig settings.
+# Show Merged kubeconfig settings.
 $ kubectl config view
 
-// Get the password for the e2e user
-$ kubectl config view \-o template \-\-template='\{\{range .users\}\}\{\{ if eq .name "e2e" \}\}\{\{ index .user.password \}\}\{\{end\}\}\{\{end\}\}'
+# Get the password for the e2e user
+$ kubectl config view \-o template \-\-template='{{range .users}}{{ if eq .name "e2e" }}{{ index .user.password }}{{end}}{{end}}'
 
 .fi
 .RE

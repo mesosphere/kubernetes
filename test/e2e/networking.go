@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/util"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -103,8 +103,6 @@ var _ = Describe("Networking", func() {
 
 	//Now we can proceed with the test.
 	It("should function for intra-pod communication", func() {
-		// TODO: support DNS on vagrant #3580
-		SkipIfProviderIs("vagrant")
 
 		By(fmt.Sprintf("Creating a service named %q in namespace %q", svcname, f.Namespace.Name))
 		svc, err := f.Client.Services(f.Namespace.Name).Create(&api.Service{
@@ -164,7 +162,7 @@ var _ = Describe("Networking", func() {
 				"Rerun it with at least two nodes to get complete coverage.")
 		}
 
-		podNames := LaunchNetTestPodPerNode(f, nodes, svcname, "1.4")
+		podNames := LaunchNetTestPodPerNode(f, nodes, svcname, "1.6")
 
 		// Clean up the pods
 		defer func() {
@@ -219,7 +217,7 @@ var _ = Describe("Networking", func() {
 				Logf("Attempt %v: service/pod still starting. (error: '%v')", i, err)
 				continue
 			}
-			// Finally, we pass/fail the test based on if the container's response body, as to wether or not it was able to find peers.
+			// Finally, we pass/fail the test based on if the container's response body, as to whether or not it was able to find peers.
 			switch {
 			case string(body) == "pass":
 				Logf("Passed on attempt %v. Cleaning up.", i)

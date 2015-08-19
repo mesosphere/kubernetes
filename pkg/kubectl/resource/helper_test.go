@@ -26,11 +26,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/testapi"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/runtime"
 )
 
 func objBody(obj runtime.Object) io.ReadCloser {
@@ -363,7 +363,7 @@ func TestHelperList(t *testing.T) {
 	}
 }
 
-func TestHelperUpdate(t *testing.T) {
+func TestHelperReplace(t *testing.T) {
 	expectPut := func(req *http.Request) bool {
 		if req.Method != "PUT" {
 			t.Errorf("unexpected method: %#v", req)
@@ -457,7 +457,7 @@ func TestHelperUpdate(t *testing.T) {
 		if test.Object != nil {
 			data = []byte(runtime.EncodeOrDie(testapi.Codec(), test.Object))
 		}
-		_, err := modifier.Update("bar", "foo", test.Overwrite, data)
+		_, err := modifier.Replace("bar", "foo", test.Overwrite, data)
 		if (err != nil) != test.Err {
 			t.Errorf("%d: unexpected error: %t %v", i, test.Err, err)
 		}

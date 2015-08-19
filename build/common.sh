@@ -43,6 +43,7 @@ readonly KUBE_GCS_RELEASE_PREFIX=${KUBE_GCS_RELEASE_PREFIX-devel}/
 readonly KUBE_GCS_DOCKER_REG_PREFIX=${KUBE_GCS_DOCKER_REG_PREFIX-docker-reg}/
 readonly KUBE_GCS_LATEST_FILE=${KUBE_GCS_LATEST_FILE:-}
 readonly KUBE_GCS_LATEST_CONTENTS=${KUBE_GCS_LATEST_CONTENTS:-}
+readonly KUBE_GCS_DELETE_EXISTING="${KUBE_GCS_DELETE_EXISTING:-n}"
 
 # Constants
 readonly KUBE_BUILD_IMAGE_REPO=kube-build
@@ -118,6 +119,7 @@ readonly KUBE_DOCKER_WRAPPED_BINARIES=(
 #   DOCKER_MOUNT_ARGS
 function kube::build::verify_prereqs() {
   kube::log::status "Verifying Prerequisites...."
+  kube::build::ensure_tar || return 1
 
   if [[ "${1-}" != "clean" ]]; then
     if [[ -z "$(which docker)" ]]; then
@@ -194,6 +196,27 @@ function kube::build::is_osx() {
   [[ "$(uname)" == "Darwin" ]]
 }
 
+function kube::build::ensure_tar() {
+  if [[ -n "${TAR:-}" ]]; then
+    return
+  fi
+
+  # Find gnu tar if it is available, bomb out if not.
+  TAR=tar
+  if which gtar &>/dev/null; then
+      TAR=gtar
+  else
+      if which gnutar &>/dev/null; then
+	  TAR=gnutar
+      fi
+  fi
+  if ! "${TAR}" --version | grep -q GNU; then
+    echo "  !!! Cannot find GNU tar. Build on Linux or install GNU tar"
+    echo "      on Mac OS X (brew install gnu-tar)."
+    return 1
+  fi
+}
+
 function kube::build::clean_output() {
   # Clean out the output directory if it exists.
   if kube::build::has_docker ; then
@@ -250,7 +273,7 @@ function kube::build::docker_image_exists() {
 
   # We cannot just specify the IMAGE here as `docker images` doesn't behave as
   # expected.  See: https://github.com/docker/docker/issues/8048
-  "${DOCKER[@]}" images | grep -Eq "^${1}\s+${2}\s+"
+  "${DOCKER[@]}" images | grep -Eq "^(\S+/)?${1}\s+${2}\s+"
 }
 
 # Takes $1 and computes a short has for it. Useful for unique tag generation
@@ -310,7 +333,7 @@ function kube::build::source_targets() {
     api
     build
     cmd
-    docs/getting-started-guides
+    docs
     examples
     Godeps/_workspace/src
     Godeps/Godeps.json
@@ -332,12 +355,14 @@ function kube::build::source_targets() {
 
 # Set up the context directory for the kube-build image and build it.
 function kube::build::build_image() {
+  kube::build::ensure_tar
+
   local -r build_context_dir="${LOCAL_OUTPUT_IMAGE_STAGING}/${KUBE_BUILD_IMAGE}"
 
   kube::build::build_image_cross
 
   mkdir -p "${build_context_dir}"
-  tar czf "${build_context_dir}/kube-source.tar.gz" $(kube::build::source_targets)
+  "${TAR}" czf "${build_context_dir}/kube-source.tar.gz" $(kube::build::source_targets)
 
   kube::version::get_version_vars
   kube::version::save_version_vars "${build_context_dir}/kube-version-defs"
@@ -648,9 +673,6 @@ function kube::release::create_docker_images_for_server() {
 
         kube::log::status "Deleting docker image ${docker_image_tag}"
         "${DOCKER[@]}" rmi ${docker_image_tag} 2>/dev/null || true
-
-        # Now, that we have created docker images we can safely delete raw binary.
-        rm -f $1/${binary_name}
       ) &
     done
 
@@ -749,6 +771,7 @@ function kube::release::package_full_tarball() {
   cp -R "${KUBE_ROOT}/third_party/htpasswd" "${release_stage}/third_party/htpasswd"
 
   cp -R "${KUBE_ROOT}/examples" "${release_stage}/"
+  cp -R "${KUBE_ROOT}/docs" "${release_stage}/"
   cp "${KUBE_ROOT}/README.md" "${release_stage}/"
   cp "${KUBE_ROOT}/LICENSE" "${release_stage}/"
   cp "${KUBE_ROOT}/Vagrantfile" "${release_stage}/"
@@ -763,29 +786,12 @@ function kube::release::package_full_tarball() {
 # of the files to be packaged.  This assumes that ${2}/kubernetes is what is
 # being packaged.
 function kube::release::create_tarball() {
+  kube::build::ensure_tar
+
   local tarfile=$1
   local stagingdir=$2
 
-  # Find gnu tar if it is available
-  local tar=tar
-  if which gtar &>/dev/null; then
-      tar=gtar
-  else
-      if which gnutar &>/dev/null; then
-	  tar=gnutar
-      fi
-  fi
-
-  local tar_cmd=("$tar" "czf" "${tarfile}" "-C" "${stagingdir}" "kubernetes")
-  if "$tar" --version | grep -q GNU; then
-    tar_cmd=("${tar_cmd[@]}" "--owner=0" "--group=0")
-  else
-    echo "  !!! GNU tar not available.  User names will be embedded in output and"
-    echo "      release tars are not official. Build on Linux or install GNU tar"
-    echo "      on Mac OS X (brew install gnu-tar)"
-  fi
-
-  "${tar_cmd[@]}"
+  "${TAR}" czf "${tarfile}" -C "${stagingdir}" kubernetes --owner=0 --group=0
 }
 
 # ---------------------------------------------------------------------------
@@ -794,9 +800,9 @@ function kube::release::create_tarball() {
 function kube::release::gcs::release() {
   [[ ${KUBE_GCS_UPLOAD_RELEASE} =~ ^[yY]$ ]] || return 0
 
-  kube::release::gcs::verify_prereqs
-  kube::release::gcs::ensure_release_bucket
-  kube::release::gcs::copy_release_artifacts
+  kube::release::gcs::verify_prereqs || return 1
+  kube::release::gcs::ensure_release_bucket || return 1
+  kube::release::gcs::copy_release_artifacts || return 1
 }
 
 # Verify things are set up for uploading to GCS
@@ -838,11 +844,13 @@ function kube::release::gcs::ensure_release_bucket() {
 
   if ! gsutil ls "gs://${KUBE_GCS_RELEASE_BUCKET}" >/dev/null 2>&1 ; then
     echo "Creating Google Cloud Storage bucket: $KUBE_GCS_RELEASE_BUCKET"
-    gsutil mb -p "${GCLOUD_PROJECT}" "gs://${KUBE_GCS_RELEASE_BUCKET}"
+    gsutil mb -p "${GCLOUD_PROJECT}" "gs://${KUBE_GCS_RELEASE_BUCKET}" || return 1
   fi
 }
 
 function kube::release::gcs::stage_and_hash() {
+  kube::build::ensure_tar || return 1
+
   # Split the args into srcs... and dst
   local -r args=( "$@" )
   local -r split=$((${#args[@]}-1)) # Split point for src/dst args
@@ -852,8 +860,8 @@ function kube::release::gcs::stage_and_hash() {
   for src in ${srcs[@]}; do
     srcdir=$(dirname ${src})
     srcthing=$(basename ${src})
-    mkdir -p ${GCS_STAGE}/${dst}
-    tar c -C ${srcdir} ${srcthing} | tar x -C ${GCS_STAGE}/${dst}
+    mkdir -p ${GCS_STAGE}/${dst} || return 1
+    "${TAR}" c -C ${srcdir} ${srcthing} | "${TAR}" x -C ${GCS_STAGE}/${dst} || return 1
   done
 }
 
@@ -866,15 +874,15 @@ function kube::release::gcs::copy_release_artifacts() {
 
   kube::log::status "Staging release artifacts to ${GCS_STAGE}"
 
-  rm -rf ${GCS_STAGE}
-  mkdir -p ${GCS_STAGE}
+  rm -rf ${GCS_STAGE} || return 1
+  mkdir -p ${GCS_STAGE} || return 1
 
   # Stage everything in release directory
-  kube::release::gcs::stage_and_hash "${RELEASE_DIR}"/* .
+  kube::release::gcs::stage_and_hash "${RELEASE_DIR}"/* . || return 1
 
   # Having the configure-vm.sh script from the GCE cluster deploy hosted with the
   # release is useful for GKE.
-  kube::release::gcs::stage_and_hash "${RELEASE_STAGE}/full/kubernetes/cluster/gce/configure-vm.sh" extra/gce
+  kube::release::gcs::stage_and_hash "${RELEASE_STAGE}/full/kubernetes/cluster/gce/configure-vm.sh" extra/gce || return 1
 
   # Upload the "naked" binaries to GCS.  This is useful for install scripts that
   # download the binaries directly and don't need tars.
@@ -887,13 +895,13 @@ function kube::release::gcs::copy_release_artifacts() {
     if [[ -d "${RELEASE_STAGE}/server/${platform}" ]]; then
       src="${RELEASE_STAGE}/server/${platform}/kubernetes/server/bin/*"
     fi
-    kube::release::gcs::stage_and_hash "$src" "$dst"
+    kube::release::gcs::stage_and_hash "$src" "$dst" || return 1
   done
 
   kube::log::status "Hashing files in ${GCS_STAGE}"
   find ${GCS_STAGE} -type f | while read path; do
-    kube::release::md5 ${path} > "${path}.md5"
-    kube::release::sha1 ${path} > "${path}.sha1"
+    kube::release::md5 ${path} > "${path}.md5" || return 1
+    kube::release::sha1 ${path} > "${path}.sha1" || return 1
   done
 
   kube::log::status "Copying release artifacts to ${gcs_destination}"
@@ -901,15 +909,17 @@ function kube::release::gcs::copy_release_artifacts() {
   # First delete all objects at the destination
   if gsutil ls "${gcs_destination}" >/dev/null 2>&1; then
     kube::log::error "${gcs_destination} not empty."
-    read -p "Delete everything under ${gcs_destination}? [y/n] " -r || {
-      echo "EOF on prompt.  Skipping upload"
-      return
+    [[ ${KUBE_GCS_DELETE_EXISTING} =~ ^[yY]$ ]] || {
+      read -p "Delete everything under ${gcs_destination}? [y/n] " -r || {
+        echo "EOF on prompt.  Skipping upload"
+        return
+      }
+      [[ $REPLY =~ ^[yY]$ ]] || {
+        echo "Skipping upload"
+        return
+      }
     }
-    [[ $REPLY =~ ^[yY]$ ]] || {
-      echo "Skipping upload"
-      return
-    }
-    gsutil -q -m rm -f -R "${gcs_destination}"
+    gsutil -q -m rm -f -R "${gcs_destination}" || return 1
   fi
 
   local gcs_options=()
@@ -917,7 +927,7 @@ function kube::release::gcs::copy_release_artifacts() {
     gcs_options=("-h" "Cache-Control:private, max-age=0")
   fi
 
-  gsutil -q -m "${gcs_options[@]+${gcs_options[@]}}" cp -r "${GCS_STAGE}"/* ${gcs_destination}
+  gsutil -q -m "${gcs_options[@]+${gcs_options[@]}}" cp -r "${GCS_STAGE}"/* ${gcs_destination} || return 1
 
   # TODO(jbeda): Generate an HTML page with links for this release so it is easy
   # to see it.  For extra credit, generate a dynamic page that builds up the
@@ -926,26 +936,26 @@ function kube::release::gcs::copy_release_artifacts() {
 
   if [[ ${KUBE_GCS_MAKE_PUBLIC} =~ ^[yY]$ ]]; then
     kube::log::status "Marking all uploaded objects public"
-    gsutil -q -m acl ch -R -g all:R "${gcs_destination}" >/dev/null 2>&1
+    gsutil -q -m acl ch -R -g all:R "${gcs_destination}" >/dev/null 2>&1 || return 1
   fi
 
-  gsutil ls -lhr "${gcs_destination}"
+  gsutil ls -lhr "${gcs_destination}" || return 1
 }
 
 function kube::release::gcs::publish_latest() {
   local latest_file_dst="gs://${KUBE_GCS_RELEASE_BUCKET}/${KUBE_GCS_LATEST_FILE}"
 
-  mkdir -p "${RELEASE_STAGE}/upload"
-  echo ${KUBE_GCS_LATEST_CONTENTS} > "${RELEASE_STAGE}/upload/latest"
+  mkdir -p "${RELEASE_STAGE}/upload" || return 1
+  echo ${KUBE_GCS_LATEST_CONTENTS} > "${RELEASE_STAGE}/upload/latest" || return 1
 
-  gsutil -m cp "${RELEASE_STAGE}/upload/latest" "${latest_file_dst}"
+  gsutil -m cp "${RELEASE_STAGE}/upload/latest" "${latest_file_dst}" || return 1
 
   if [[ ${KUBE_GCS_MAKE_PUBLIC} =~ ^[yY]$ ]]; then
-    gsutil acl ch -R -g all:R "${latest_file_dst}" >/dev/null 2>&1
+    gsutil acl ch -R -g all:R "${latest_file_dst}" >/dev/null 2>&1 || return 1
   fi
 
   kube::log::status "gsutil cat ${latest_file_dst}:"
-  gsutil cat ${latest_file_dst}
+  gsutil cat ${latest_file_dst} || return 1
 }
 
 # Publish a new latest.txt, but only if the release we're dealing with
@@ -995,5 +1005,5 @@ function kube::release::gcs::publish_latest_official() {
   fi
 
   kube::log::status "${new_version} (just uploaded) > ${gcs_version} (latest on GCS), updating ${latest_file_dst}"
-  kube::release::gcs::publish_latest
+  kube::release::gcs::publish_latest || return 1
 }

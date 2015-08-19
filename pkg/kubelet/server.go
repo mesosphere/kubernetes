@@ -32,18 +32,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/latest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/healthz"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/httplog"
-	kubecontainer "github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/types"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/flushwriter"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/httpstream"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/httpstream/spdy"
 	"github.com/golang/glog"
 	cadvisorApi "github.com/google/cadvisor/info/v1"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/latest"
+	"k8s.io/kubernetes/pkg/healthz"
+	"k8s.io/kubernetes/pkg/httplog"
+	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/types"
+	"k8s.io/kubernetes/pkg/util/flushwriter"
+	"k8s.io/kubernetes/pkg/util/httpstream"
+	"k8s.io/kubernetes/pkg/util/httpstream/spdy"
 )
 
 // Server is a http.Handler which exposes kubelet functionality over HTTP.
@@ -65,8 +65,6 @@ func ListenAndServeKubeletServer(host HostInterface, address net.IP, port uint, 
 	s := &http.Server{
 		Addr:           net.JoinHostPort(address.String(), strconv.FormatUint(uint64(port), 10)),
 		Handler:        &handler,
-		ReadTimeout:    5 * time.Minute,
-		WriteTimeout:   5 * time.Minute,
 		MaxHeaderBytes: 1 << 20,
 	}
 	if tlsOptions != nil {
@@ -86,8 +84,6 @@ func ListenAndServeKubeletReadOnlyServer(host HostInterface, address net.IP, por
 	server := &http.Server{
 		Addr:           net.JoinHostPort(address.String(), strconv.FormatUint(uint64(port), 10)),
 		Handler:        &s,
-		ReadTimeout:    5 * time.Minute,
-		WriteTimeout:   5 * time.Minute,
 		MaxHeaderBytes: 1 << 20,
 	}
 	glog.Fatal(server.ListenAndServe())
@@ -101,9 +97,11 @@ type HostInterface interface {
 	GetRawContainerInfo(containerName string, req *cadvisorApi.ContainerInfoRequest, subcontainers bool) (map[string]*cadvisorApi.ContainerInfo, error)
 	GetCachedMachineInfo() (*cadvisorApi.MachineInfo, error)
 	GetPods() []*api.Pod
+	GetRunningPods() ([]*api.Pod, error)
 	GetPodByName(namespace, name string) (*api.Pod, bool)
 	RunInContainer(name string, uid types.UID, container string, cmd []string) ([]byte, error)
 	ExecInContainer(name string, uid types.UID, container string, cmd []string, in io.Reader, out, err io.WriteCloser, tty bool) error
+	AttachContainer(name string, uid types.UID, container string, in io.Reader, out, err io.WriteCloser, tty bool) error
 	GetKubeletContainerLogs(podFullName, containerName, tail string, follow, previous bool, stdout, stderr io.Writer) error
 	ServeLogs(w http.ResponseWriter, req *http.Request)
 	PortForward(name string, uid types.UID, port uint16, stream io.ReadWriteCloser) error
@@ -143,11 +141,14 @@ func (s *Server) InstallDefaultHandlers() {
 func (s *Server) InstallDebuggingHandlers() {
 	s.mux.HandleFunc("/run/", s.handleRun)
 	s.mux.HandleFunc("/exec/", s.handleExec)
+	s.mux.HandleFunc("/attach/", s.handleAttach)
 	s.mux.HandleFunc("/portForward/", s.handlePortForward)
 
 	s.mux.HandleFunc("/logs/", s.handleLogs)
 	s.mux.HandleFunc("/containerLogs/", s.handleContainerLogs)
 	s.mux.Handle("/metrics", prometheus.Handler())
+	// The /runningpods endpoint is used for testing only.
+	s.mux.HandleFunc("/runningpods", s.handleRunningPods)
 
 	s.mux.HandleFunc("/debug/pprof/", pprof.Index)
 	s.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -280,14 +281,38 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// handlePods returns a list of pod bound to the Kubelet and their spec
-func (s *Server) handlePods(w http.ResponseWriter, req *http.Request) {
-	pods := s.host.GetPods()
+// encodePods creates an api.PodList object from pods and returns the encoded
+// PodList.
+func encodePods(pods []*api.Pod) (data []byte, err error) {
 	podList := new(api.PodList)
 	for _, pod := range pods {
 		podList.Items = append(podList.Items, *pod)
 	}
-	data, err := latest.Codec.Encode(podList)
+	return latest.Codec.Encode(podList)
+}
+
+// handlePods returns a list of pods bound to the Kubelet and their spec.
+func (s *Server) handlePods(w http.ResponseWriter, req *http.Request) {
+	pods := s.host.GetPods()
+	data, err := encodePods(pods)
+	if err != nil {
+		s.error(w, err)
+		return
+	}
+	w.Header().Add("Content-type", "application/json")
+	w.Write(data)
+}
+
+// handleRunningPods returns a list of pods running on Kubelet. The list is
+// provided by the container runtime, and is different from the list returned
+// by handlePods, which is a set of desired pods to run.
+func (s *Server) handleRunningPods(w http.ResponseWriter, req *http.Request) {
+	pods, err := s.host.GetRunningPods()
+	if err != nil {
+		s.error(w, err)
+		return
+	}
+	data, err := encodePods(pods)
 	if err != nil {
 		s.error(w, err)
 		return
@@ -344,6 +369,42 @@ func parseContainerCoordinates(path string) (namespace, pod string, uid types.UI
 	return
 }
 
+const streamCreationTimeout = 30 * time.Second
+
+func (s *Server) handleAttach(w http.ResponseWriter, req *http.Request) {
+	u, err := url.ParseRequestURI(req.RequestURI)
+	if err != nil {
+		s.error(w, err)
+		return
+	}
+	podNamespace, podID, uid, container, err := parseContainerCoordinates(u.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pod, ok := s.host.GetPodByName(podNamespace, podID)
+	if !ok {
+		http.Error(w, "Pod does not exist", http.StatusNotFound)
+		return
+	}
+
+	stdinStream, stdoutStream, stderrStream, errorStream, conn, tty, ok := s.createStreams(w, req)
+	if conn != nil {
+		defer conn.Close()
+	}
+	if !ok {
+		// error is handled in the createStreams function
+		return
+	}
+
+	err = s.host.AttachContainer(kubecontainer.GetPodFullName(pod), uid, container, stdinStream, stdoutStream, stderrStream, tty)
+	if err != nil {
+		msg := fmt.Sprintf("Error executing command in container: %v", err)
+		glog.Error(msg)
+		errorStream.Write([]byte(msg))
+	}
+}
+
 // handleRun handles requests to run a command inside a container.
 func (s *Server) handleRun(w http.ResponseWriter, req *http.Request) {
 	u, err := url.ParseRequestURI(req.RequestURI)
@@ -371,8 +432,6 @@ func (s *Server) handleRun(w http.ResponseWriter, req *http.Request) {
 	w.Write(data)
 }
 
-const streamCreationTimeout = 30 * time.Second
-
 // handleExec handles requests to run a command inside a container.
 func (s *Server) handleExec(w http.ResponseWriter, req *http.Request) {
 	u, err := url.ParseRequestURI(req.RequestURI)
@@ -390,7 +449,22 @@ func (s *Server) handleExec(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Pod does not exist", http.StatusNotFound)
 		return
 	}
+	stdinStream, stdoutStream, stderrStream, errorStream, conn, tty, ok := s.createStreams(w, req)
+	if conn != nil {
+		defer conn.Close()
+	}
+	if !ok {
+		return
+	}
+	err = s.host.ExecInContainer(kubecontainer.GetPodFullName(pod), uid, container, u.Query()[api.ExecCommandParamm], stdinStream, stdoutStream, stderrStream, tty)
+	if err != nil {
+		msg := fmt.Sprintf("Error executing command in container: %v", err)
+		glog.Error(msg)
+		errorStream.Write([]byte(msg))
+	}
+}
 
+func (s *Server) createStreams(w http.ResponseWriter, req *http.Request) (io.Reader, io.WriteCloser, io.WriteCloser, io.WriteCloser, httpstream.Connection, bool, bool) {
 	req.ParseForm()
 	// start at 1 for error stream
 	expectedStreams := 1
@@ -407,7 +481,7 @@ func (s *Server) handleExec(w http.ResponseWriter, req *http.Request) {
 
 	if expectedStreams == 1 {
 		http.Error(w, "You must specify at least 1 of stdin, stdout, stderr", http.StatusBadRequest)
-		return
+		return nil, nil, nil, nil, nil, false, false
 	}
 
 	streamCh := make(chan httpstream.Stream)
@@ -422,9 +496,8 @@ func (s *Server) handleExec(w http.ResponseWriter, req *http.Request) {
 		// The upgrader is responsible for notifying the client of any errors that
 		// occurred during upgrading. All we can do is return here at this point
 		// if we weren't successful in upgrading.
-		return
+		return nil, nil, nil, nil, nil, false, false
 	}
-	defer conn.Close()
 
 	conn.SetIdleTimeout(s.host.StreamingConnectionIdleTimeout())
 
@@ -462,7 +535,7 @@ WaitForStreams:
 			// TODO find a way to return the error to the user. Maybe use a separate
 			// stream to report errors?
 			glog.Error("Timed out waiting for client to create streams")
-			return
+			return nil, nil, nil, nil, nil, false, false
 		}
 	}
 
@@ -471,12 +544,7 @@ WaitForStreams:
 		stdinStream.Close()
 	}
 
-	err = s.host.ExecInContainer(kubecontainer.GetPodFullName(pod), uid, container, u.Query()[api.ExecCommandParamm], stdinStream, stdoutStream, stderrStream, tty)
-	if err != nil {
-		msg := fmt.Sprintf("Error executing command in container: %v", err)
-		glog.Error(msg)
-		errorStream.Write([]byte(msg))
-	}
+	return stdinStream, stdoutStream, stderrStream, errorStream, conn, tty, true
 }
 
 func parsePodCoordinates(path string) (namespace, pod string, uid types.UID, err error) {
@@ -618,11 +686,11 @@ type StatsRequest struct {
 	NumStats int `json:"num_stats,omitempty"`
 
 	// Start time for which to query information.
-	// If ommitted, the beginning of time is assumed.
+	// If omitted, the beginning of time is assumed.
 	Start time.Time `json:"start,omitempty"`
 
 	// End time for which to query information.
-	// If ommitted, current time is assumed.
+	// If omitted, current time is assumed.
 	End time.Time `json:"end,omitempty"`
 
 	// Whether to also include information from subcontainers.

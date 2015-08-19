@@ -28,6 +28,10 @@ JSON and YAML formats are accepted.
 \fB\-h\fP, \fB\-\-help\fP=false
     help for create
 
+.PP
+\fB\-o\fP, \fB\-\-output\fP=""
+    Output mode. Use "\-o name" for shorter output (resource/name).
+
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
 .PP
@@ -132,10 +136,10 @@ JSON and YAML formats are accepted.
 .RS
 
 .nf
-// Create a pod using the data in pod.json.
-$ kubectl create \-f pod.json
+# Create a pod using the data in pod.json.
+$ kubectl create \-f ./pod.json
 
-// Create a pod based on the JSON passed into stdin.
+# Create a pod based on the JSON passed into stdin.
 $ cat pod.json | kubectl create \-f \-
 
 .fi

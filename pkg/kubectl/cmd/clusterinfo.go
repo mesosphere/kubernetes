@@ -22,9 +22,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	cmdutil "github.com/GoogleCloudPlatform/kubernetes/pkg/kubectl/cmd/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubectl/resource"
+	"k8s.io/kubernetes/pkg/api"
+	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	"k8s.io/kubernetes/pkg/kubectl/resource"
 
 	"github.com/daviddengcn/go-colortext"
 	"github.com/spf13/cobra"
@@ -46,7 +46,7 @@ func NewCmdClusterInfo(f *cmdutil.Factory, out io.Writer) *cobra.Command {
 }
 
 func RunClusterInfo(factory *cmdutil.Factory, out io.Writer, cmd *cobra.Command) error {
-	if os.Args[1] == "clusterinfo" {
+	if len(os.Args) > 1 && os.Args[1] == "clusterinfo" {
 		printDeprecationWarning("cluster-info", "clusterinfo")
 	}
 
@@ -57,9 +57,9 @@ func RunClusterInfo(factory *cmdutil.Factory, out io.Writer, cmd *cobra.Command)
 	printService(out, "Kubernetes master", client.Host)
 
 	mapper, typer := factory.Object()
-	cmdNamespace, err := factory.DefaultNamespace()
-	if err != nil {
-		return err
+	cmdNamespace := cmdutil.GetFlagString(cmd, "namespace")
+	if cmdNamespace == "" {
+		cmdNamespace = api.NamespaceSystem
 	}
 
 	// TODO use generalized labels once they are implemented (#341)

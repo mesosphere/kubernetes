@@ -17,14 +17,14 @@ limitations under the License.
 package etcd
 
 import (
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic"
-	etcdgeneric "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/secret"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/registry/generic"
+	etcdgeneric "k8s.io/kubernetes/pkg/registry/generic/etcd"
+	"k8s.io/kubernetes/pkg/registry/secret"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
 )
 
 // REST implements a RESTStorage for secrets against etcd
@@ -32,9 +32,8 @@ type REST struct {
 	*etcdgeneric.Etcd
 }
 
-// NewStorage returns a registry which will store Secret in the given helper
-func NewStorage(h tools.EtcdHelper) *REST {
-
+// NewStorage returns a registry which will store Secret in the given etcdStorage
+func NewStorage(s storage.Interface) *REST {
 	prefix := "/secrets"
 
 	store := &etcdgeneric.Etcd{
@@ -54,7 +53,7 @@ func NewStorage(h tools.EtcdHelper) *REST {
 		},
 		EndpointName: "secrets",
 
-		Helper: h,
+		Storage: s,
 	}
 
 	store.CreateStrategy = secret.Strategy

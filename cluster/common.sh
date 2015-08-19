@@ -80,7 +80,9 @@ function create-kubeconfig() {
   fi
 
   "${kubectl}" config set-cluster "${CONTEXT}" "${cluster_args[@]}"
-  "${kubectl}" config set-credentials "${CONTEXT}" "${user_args[@]}"
+  if [[ -n "${user_args[@]:-}" ]]; then
+    "${kubectl}" config set-credentials "${CONTEXT}" "${user_args[@]}"
+  fi
   "${kubectl}" config set-context "${CONTEXT}" --cluster="${CONTEXT}" --user="${CONTEXT}"
   "${kubectl}" config use-context "${CONTEXT}"  --cluster="${CONTEXT}"
 
@@ -170,7 +172,7 @@ function get-kubeconfig-bearertoken() {
 }
 
 # Sets KUBE_VERSION variable to the version passed in as an argument, or if argument is
-# latest_stable, latest_release, or latest_ci fetches and sets the correponding version number
+# latest_stable, latest_release, or latest_ci fetches and sets the corresponding version number
 #
 # Args:
 #   $1 version string from command line

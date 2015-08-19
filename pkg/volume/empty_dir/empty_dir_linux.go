@@ -22,8 +22,9 @@ import (
 	"fmt"
 	"syscall"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/mount"
+	"github.com/docker/libcontainer/selinux"
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/util/mount"
 )
 
 // Defined by Linux - the type number for tmpfs mounts.
@@ -50,4 +51,9 @@ func (m *realMountDetector) GetMountMedium(path string) (storageMedium, bool, er
 		return mediumMemory, isMnt, nil
 	}
 	return mediumUnknown, isMnt, nil
+}
+
+// selinuxEnabled determines whether SELinux is enabled.
+func selinuxEnabled() bool {
+	return selinux.SelinuxEnabled()
 }

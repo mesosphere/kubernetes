@@ -18,7 +18,6 @@ package tools
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 	"sync"
 
@@ -125,14 +124,6 @@ func (f *FakeEtcdClient) updateResponse(key string) {
 	f.Data[key] = *resp.N
 }
 
-func (f *FakeEtcdClient) AddChild(key, data string, ttl uint64) (*etcd.Response, error) {
-	f.Mutex.Lock()
-	defer f.Mutex.Unlock()
-
-	f.Ix = f.Ix + 1
-	return f.setLocked(fmt.Sprintf("%s/%d", key, f.Ix), data, ttl)
-}
-
 func (f *FakeEtcdClient) Get(key string, sort, recursive bool) (*etcd.Response, error) {
 	if f.Err != nil {
 		return nil, f.Err
@@ -145,7 +136,7 @@ func (f *FakeEtcdClient) Get(key string, sort, recursive bool) (*etcd.Response, 
 	result := f.Data[key]
 	if result.R == nil {
 		if _, ok := f.expectNotFoundGetSet[key]; !ok {
-			f.t.Fatalf("data for %s was not defined prior to invoking Get", key)
+			f.t.Logf("data for %s was not defined prior to invoking Get", key)
 		}
 		return &etcd.Response{}, f.NewError(EtcdErrorCodeNotFound)
 	}
@@ -290,7 +281,8 @@ func (f *FakeEtcdClient) Delete(key string, recursive bool) (*etcd.Response, err
 			Index:     f.ChangeIndex,
 		}
 	}
-	if IsEtcdNotFound(existing.E) {
+	etcdError, ok := existing.E.(*etcd.EtcdError)
+	if ok && etcdError != nil && etcdError.ErrorCode == EtcdErrorCodeNotFound {
 		f.DeletedKeys = append(f.DeletedKeys, key)
 		return existing.R, existing.E
 	}

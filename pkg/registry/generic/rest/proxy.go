@@ -28,12 +28,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/httpstream"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/proxy"
+	"k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/util/httpstream"
+	"k8s.io/kubernetes/pkg/util/proxy"
 
-	"github.com/GoogleCloudPlatform/kubernetes/third_party/golang/netutil"
 	"github.com/golang/glog"
+	"github.com/mxk/go-flowrate/flowrate"
+	"k8s.io/kubernetes/third_party/golang/netutil"
 )
 
 // UpgradeAwareProxyHandler is a handler for proxy requests that may require an upgrade
@@ -42,6 +43,7 @@ type UpgradeAwareProxyHandler struct {
 	Location        *url.URL
 	Transport       http.RoundTripper
 	FlushInterval   time.Duration
+	MaxBytesPerSec  int64
 	err             error
 }
 
@@ -87,7 +89,7 @@ func (h *UpgradeAwareProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Re
 
 	// From pkg/apiserver/proxy.go#ServeHTTP:
 	// Redirect requests with an empty path to a location that ends with a '/'
-	// This is essentially a hack for https://github.com/GoogleCloudPlatform/kubernetes/issues/4958.
+	// This is essentially a hack for http://issue.k8s.io/4958.
 	// Note: Keep this code after tryUpgrade to not break that flow.
 	if len(loc.Path) == 0 {
 		var queryPart string
@@ -152,7 +154,13 @@ func (h *UpgradeAwareProxyHandler) tryUpgrade(w http.ResponseWriter, req *http.R
 	wg.Add(2)
 
 	go func() {
-		_, err := io.Copy(backendConn, requestHijackedConn)
+		var writer io.WriteCloser
+		if h.MaxBytesPerSec > 0 {
+			writer = flowrate.NewWriter(backendConn, h.MaxBytesPerSec)
+		} else {
+			writer = backendConn
+		}
+		_, err := io.Copy(writer, requestHijackedConn)
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 			glog.Errorf("Error proxying data from client to backend: %v", err)
 		}
@@ -160,7 +168,13 @@ func (h *UpgradeAwareProxyHandler) tryUpgrade(w http.ResponseWriter, req *http.R
 	}()
 
 	go func() {
-		_, err := io.Copy(requestHijackedConn, backendConn)
+		var reader io.ReadCloser
+		if h.MaxBytesPerSec > 0 {
+			reader = flowrate.NewReader(backendConn, h.MaxBytesPerSec)
+		} else {
+			reader = backendConn
+		}
+		_, err := io.Copy(requestHijackedConn, reader)
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 			glog.Errorf("Error proxying data from backend to client: %v", err)
 		}
@@ -174,23 +188,56 @@ func (h *UpgradeAwareProxyHandler) tryUpgrade(w http.ResponseWriter, req *http.R
 func (h *UpgradeAwareProxyHandler) dialURL() (net.Conn, error) {
 	dialAddr := netutil.CanonicalAddr(h.Location)
 
+	var dialer func(network, addr string) (net.Conn, error)
+	if httpTransport, ok := h.Transport.(*http.Transport); ok && httpTransport.Dial != nil {
+		dialer = httpTransport.Dial
+	}
+
 	switch h.Location.Scheme {
 	case "http":
+		if dialer != nil {
+			return dialer("tcp", dialAddr)
+		}
 		return net.Dial("tcp", dialAddr)
 	case "https":
+		// TODO: this TLS logic can probably be cleaned up; it's messy in an attempt
+		// to preserve behavior that we don't know for sure is exercised.
+
 		// Get the tls config from the transport if we recognize it
 		var tlsConfig *tls.Config
+		var tlsConn *tls.Conn
+		var err error
 		if h.Transport != nil {
 			httpTransport, ok := h.Transport.(*http.Transport)
 			if ok {
 				tlsConfig = httpTransport.TLSClientConfig
 			}
 		}
+		if dialer != nil {
+			// We have a dialer; use it to open the connection, then
+			// create a tls client using the connection.
+			netConn, err := dialer("tcp", dialAddr)
+			if err != nil {
+				return nil, err
+			}
+			// tls.Client requires non-nil config
+			if tlsConfig == nil {
+				glog.Warningf("using custom dialer with no TLSClientConfig. Defaulting to InsecureSkipVerify")
+				tlsConfig = &tls.Config{
+					InsecureSkipVerify: true,
+				}
+			}
+			tlsConn = tls.Client(netConn, tlsConfig)
+			if err := tlsConn.Handshake(); err != nil {
+				return nil, err
+			}
 
-		// Dial
-		tlsConn, err := tls.Dial("tcp", dialAddr, tlsConfig)
-		if err != nil {
-			return nil, err
+		} else {
+			// Dial
+			tlsConn, err = tls.Dial("tcp", dialAddr, tlsConfig)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// Verify
@@ -202,7 +249,7 @@ func (h *UpgradeAwareProxyHandler) dialURL() (net.Conn, error) {
 
 		return tlsConn, nil
 	default:
-		return nil, fmt.Errorf("Unknown scheme: %s", h.Location.Scheme)
+		return nil, fmt.Errorf("unknown scheme: %s", h.Location.Scheme)
 	}
 }
 

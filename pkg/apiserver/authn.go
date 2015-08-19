@@ -19,20 +19,21 @@ package apiserver
 import (
 	"crypto/rsa"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authenticator"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/auth/authenticator/bearertoken"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/serviceaccount"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/password/passwordfile"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/basicauth"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/union"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/x509"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/token/tokenfile"
+	"k8s.io/kubernetes/pkg/auth/authenticator"
+	"k8s.io/kubernetes/pkg/auth/authenticator/bearertoken"
+	"k8s.io/kubernetes/pkg/controller/serviceaccount"
+	"k8s.io/kubernetes/pkg/storage"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/password/passwordfile"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/request/basicauth"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/request/keystone"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/request/union"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/request/x509"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/tokenfile"
 )
 
 // NewAuthenticator returns an authenticator.Request or an error
-func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyFile string, serviceAccountLookup bool, helper tools.EtcdHelper) (authenticator.Request, error) {
+func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyFile string, serviceAccountLookup bool, storage storage.Interface, keystoneURL string) (authenticator.Request, error) {
 	var authenticators []authenticator.Request
 
 	if len(basicAuthFile) > 0 {
@@ -60,11 +61,19 @@ func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyF
 	}
 
 	if len(serviceAccountKeyFile) > 0 {
-		serviceAccountAuth, err := newServiceAccountAuthenticator(serviceAccountKeyFile, serviceAccountLookup, helper)
+		serviceAccountAuth, err := newServiceAccountAuthenticator(serviceAccountKeyFile, serviceAccountLookup, storage)
 		if err != nil {
 			return nil, err
 		}
 		authenticators = append(authenticators, serviceAccountAuth)
+	}
+
+	if len(keystoneURL) > 0 {
+		keystoneAuth, err := newAuthenticatorFromKeystoneURL(keystoneURL)
+		if err != nil {
+			return nil, err
+		}
+		authenticators = append(authenticators, keystoneAuth)
 	}
 
 	switch len(authenticators) {
@@ -104,7 +113,7 @@ func newAuthenticatorFromTokenFile(tokenAuthFile string) (authenticator.Request,
 }
 
 // newServiceAccountAuthenticator returns an authenticator.Request or an error
-func newServiceAccountAuthenticator(keyfile string, lookup bool, helper tools.EtcdHelper) (authenticator.Request, error) {
+func newServiceAccountAuthenticator(keyfile string, lookup bool, storage storage.Interface) (authenticator.Request, error) {
 	publicKey, err := serviceaccount.ReadPublicKey(keyfile)
 	if err != nil {
 		return nil, err
@@ -114,7 +123,7 @@ func newServiceAccountAuthenticator(keyfile string, lookup bool, helper tools.Et
 	if lookup {
 		// If we need to look up service accounts and tokens,
 		// go directly to etcd to avoid recursive auth insanity
-		serviceAccountGetter = serviceaccount.NewGetterFromEtcdHelper(helper)
+		serviceAccountGetter = serviceaccount.NewGetterFromStorageInterface(storage)
 	}
 
 	tokenAuthenticator := serviceaccount.JWTTokenAuthenticator([]*rsa.PublicKey{publicKey}, lookup, serviceAccountGetter)
@@ -132,4 +141,14 @@ func newAuthenticatorFromClientCAFile(clientCAFile string) (authenticator.Reques
 	opts.Roots = roots
 
 	return x509.New(opts, x509.CommonNameUserConversion), nil
+}
+
+// newAuthenticatorFromTokenFile returns an authenticator.Request or an error
+func newAuthenticatorFromKeystoneURL(keystoneConfigFile string) (authenticator.Request, error) {
+	keystoneAuthenticator, err := keystone.NewKeystoneAuthenticator(keystoneConfigFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return basicauth.New(keystoneAuthenticator), nil
 }

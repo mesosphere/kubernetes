@@ -21,13 +21,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/latest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/latest"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/wait"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -188,17 +188,16 @@ var _ = Describe("DNS", func() {
 		// TODO: support DNS on vagrant #3580
 		SkipIfProviderIs("vagrant")
 
-		podClient := f.Client.Pods(api.NamespaceDefault)
-
+		systemClient := f.Client.Pods(api.NamespaceSystem)
 		By("Waiting for DNS Service to be Running")
-		dnsPods, err := podClient.List(dnsServiceLableSelector, fields.Everything())
+		dnsPods, err := systemClient.List(dnsServiceLableSelector, fields.Everything())
 		if err != nil {
 			Failf("Failed to list all dns service pods")
 		}
 		if len(dnsPods.Items) != 1 {
 			Failf("Unexpected number of pods (%d) matches the label selector %v", len(dnsPods.Items), dnsServiceLableSelector.String())
 		}
-		expectNoError(waitForPodRunning(f.Client, dnsPods.Items[0].Name))
+		expectNoError(waitForPodRunningInNamespace(f.Client, dnsPods.Items[0].Name, api.NamespaceSystem))
 
 		// All the names we need to be able to resolve.
 		// TODO: Spin up a separate test service and test that dns works for that service.
@@ -206,7 +205,6 @@ var _ = Describe("DNS", func() {
 			"kubernetes.default",
 			"kubernetes.default.svc",
 			"kubernetes.default.svc.cluster.local",
-			"kubernetes.default.cluster.local",
 			"google.com",
 		}
 		// Added due to #8512. This is critical for GCE and GKE deployments.
@@ -227,17 +225,17 @@ var _ = Describe("DNS", func() {
 		// TODO: support DNS on vagrant #3580
 		SkipIfProviderIs("vagrant")
 
-		podClient := f.Client.Pods(api.NamespaceDefault)
+		systemClient := f.Client.Pods(api.NamespaceSystem)
 
 		By("Waiting for DNS Service to be Running")
-		dnsPods, err := podClient.List(dnsServiceLableSelector, fields.Everything())
+		dnsPods, err := systemClient.List(dnsServiceLableSelector, fields.Everything())
 		if err != nil {
 			Failf("Failed to list all dns service pods")
 		}
 		if len(dnsPods.Items) != 1 {
 			Failf("Unexpected number of pods (%d) matches the label selector %v", len(dnsPods.Items), dnsServiceLableSelector.String())
 		}
-		expectNoError(waitForPodRunning(f.Client, dnsPods.Items[0].Name))
+		expectNoError(waitForPodRunningInNamespace(f.Client, dnsPods.Items[0].Name, api.NamespaceSystem))
 
 		// Create a test headless service.
 		By("Creating a test headless service")

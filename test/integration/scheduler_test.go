@@ -27,22 +27,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/testapi"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/apiserver"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/cache"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client/record"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/master"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/wait"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/admission/admit"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler"
-	_ "github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/algorithmprovider"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/scheduler/factory"
-	"github.com/GoogleCloudPlatform/kubernetes/test/integration/framework"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/api/testapi"
+	"k8s.io/kubernetes/pkg/apiserver"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/client/unversioned/cache"
+	"k8s.io/kubernetes/pkg/client/unversioned/record"
+	"k8s.io/kubernetes/pkg/master"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/plugin/pkg/admission/admit"
+	"k8s.io/kubernetes/plugin/pkg/scheduler"
+	_ "k8s.io/kubernetes/plugin/pkg/scheduler/algorithmprovider"
+	"k8s.io/kubernetes/plugin/pkg/scheduler/factory"
+	"k8s.io/kubernetes/test/integration/framework"
 )
 
 type nodeMutationFunc func(t *testing.T, n *api.Node, nodeStore cache.Store, c *client.Client)
@@ -53,9 +53,9 @@ type nodeStateManager struct {
 }
 
 func TestUnschedulableNodes(t *testing.T) {
-	helper, err := framework.NewHelper()
+	etcdStorage, err := framework.NewEtcdStorage()
 	if err != nil {
-		t.Fatalf("Couldn't create etcd helper: %v", err)
+		t.Fatalf("Couldn't create etcd storage: %v", err)
 	}
 	framework.DeleteAllEtcdKeys()
 
@@ -66,7 +66,7 @@ func TestUnschedulableNodes(t *testing.T) {
 	defer s.Close()
 
 	m = master.New(&master.Config{
-		EtcdHelper:            helper,
+		DatabaseStorage:       etcdStorage,
 		KubeletClient:         client.FakeKubeletClient{},
 		EnableCoreControllers: true,
 		EnableLogsSupport:     false,
@@ -79,7 +79,7 @@ func TestUnschedulableNodes(t *testing.T) {
 
 	restClient := client.NewOrDie(&client.Config{Host: s.URL, Version: testapi.Version()})
 
-	schedulerConfigFactory := factory.NewConfigFactory(restClient)
+	schedulerConfigFactory := factory.NewConfigFactory(restClient, nil)
 	schedulerConfig, err := schedulerConfigFactory.Create()
 	if err != nil {
 		t.Fatalf("Couldn't create scheduler config: %v", err)

@@ -25,29 +25,30 @@ import (
 	"sync"
 	"time"
 
-	execcfg "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/config"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/executor/messages"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/offers"
-	offerMetrics "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/offers/metrics"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/proc"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/runtime"
-	schedcfg "github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/config"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/meta"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/metrics"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/podtask"
-	"github.com/GoogleCloudPlatform/kubernetes/contrib/mesos/pkg/scheduler/uid"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/container"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	mutil "github.com/mesos/mesos-go/mesosutil"
 	bindings "github.com/mesos/mesos-go/scheduler"
+	execcfg "k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
+	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
+	"k8s.io/kubernetes/contrib/mesos/pkg/offers"
+	offerMetrics "k8s.io/kubernetes/contrib/mesos/pkg/offers/metrics"
+	"k8s.io/kubernetes/contrib/mesos/pkg/proc"
+	"k8s.io/kubernetes/contrib/mesos/pkg/runtime"
+	schedcfg "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/config"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/metrics"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/uid"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/errors"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/util"
 )
 
 type Slave struct {
@@ -101,7 +102,7 @@ func (self *slaveStorage) getSlave(slaveId string) (*Slave, bool) {
 type PluginInterface interface {
 	// the apiserver may have a different state for the pod than we do
 	// so reconcile our records, but only for this one pod
-	reconcilePod(api.Pod)
+	reconcileTask(*podtask.T)
 
 	// execute the Scheduling plugin, should start a go routine and return immediately
 	Run(<-chan struct{})
@@ -120,14 +121,16 @@ type KubernetesScheduler struct {
 
 	// Config related, write-once
 
-	schedcfg          *schedcfg.Config
-	executor          *mesos.ExecutorInfo
-	executorGroup     uint64
-	scheduleFunc      PodScheduleFunc
-	client            *client.Client
-	etcdClient        tools.EtcdGetSet
-	failoverTimeout   float64 // in seconds
-	reconcileInterval int64
+	schedcfg                 *schedcfg.Config
+	executor                 *mesos.ExecutorInfo
+	executorGroup            uint64
+	scheduleFunc             PodScheduleFunc
+	client                   *client.Client
+	etcdClient               tools.EtcdClient
+	failoverTimeout          float64 // in seconds
+	reconcileInterval        int64
+	defaultContainerCPULimit mresource.CPUShares
+	defaultContainerMemLimit mresource.MegaBytes
 
 	// Mesos context.
 
@@ -154,29 +157,33 @@ type KubernetesScheduler struct {
 }
 
 type Config struct {
-	Schedcfg          schedcfg.Config
-	Executor          *mesos.ExecutorInfo
-	ScheduleFunc      PodScheduleFunc
-	Client            *client.Client
-	EtcdClient        tools.EtcdGetSet
-	FailoverTimeout   float64
-	ReconcileInterval int64
-	ReconcileCooldown time.Duration
+	Schedcfg                 schedcfg.Config
+	Executor                 *mesos.ExecutorInfo
+	ScheduleFunc             PodScheduleFunc
+	Client                   *client.Client
+	EtcdClient               tools.EtcdClient
+	FailoverTimeout          float64
+	ReconcileInterval        int64
+	ReconcileCooldown        time.Duration
+	DefaultContainerCPULimit mresource.CPUShares
+	DefaultContainerMemLimit mresource.MegaBytes
 }
 
 // New creates a new KubernetesScheduler
 func New(config Config) *KubernetesScheduler {
 	var k *KubernetesScheduler
 	k = &KubernetesScheduler{
-		schedcfg:          &config.Schedcfg,
-		RWMutex:           new(sync.RWMutex),
-		executor:          config.Executor,
-		executorGroup:     uid.Parse(config.Executor.ExecutorId.GetValue()).Group(),
-		scheduleFunc:      config.ScheduleFunc,
-		client:            config.Client,
-		etcdClient:        config.EtcdClient,
-		failoverTimeout:   config.FailoverTimeout,
-		reconcileInterval: config.ReconcileInterval,
+		schedcfg:                 &config.Schedcfg,
+		RWMutex:                  new(sync.RWMutex),
+		executor:                 config.Executor,
+		executorGroup:            uid.Parse(config.Executor.ExecutorId.GetValue()).Group(),
+		scheduleFunc:             config.ScheduleFunc,
+		client:                   config.Client,
+		etcdClient:               config.EtcdClient,
+		failoverTimeout:          config.FailoverTimeout,
+		reconcileInterval:        config.ReconcileInterval,
+		defaultContainerCPULimit: config.DefaultContainerCPULimit,
+		defaultContainerMemLimit: config.DefaultContainerMemLimit,
 		offers: offers.CreateRegistry(offers.RegistryConfig{
 			Compat: func(o *mesos.Offer) bool {
 				// filter the offers: the executor IDs must not identify a kubelet-
@@ -425,7 +432,7 @@ func (k *KubernetesScheduler) StatusUpdate(driver bindings.SchedulerDriver, task
 	case mesos.TaskState_TASK_FAILED:
 		if task, _ := k.taskRegistry.UpdateStatus(taskStatus); task != nil {
 			if task.Has(podtask.Launched) && !task.Has(podtask.Bound) {
-				go k.plugin.reconcilePod(task.Pod)
+				go k.plugin.reconcileTask(task)
 				return
 			}
 		} else {

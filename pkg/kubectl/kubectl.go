@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/meta"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/meta"
+	"k8s.io/kubernetes/pkg/labels"
 )
 
 const kubectlAnnotationPrefix = "kubectl.kubernetes.io/"
@@ -105,16 +105,16 @@ func expandResourceShortcut(resource string) string {
 		// Please keep this alphabetized
 		"cs":     "componentstatuses",
 		"ev":     "events",
-		"limits": "limitRanges",
+		"ep":     "endpoints",
+		"limits": "limitranges",
 		"no":     "nodes",
+		"ns":     "namespaces",
 		"po":     "pods",
-		"pv":     "persistentVolumes",
-		"pvc":    "persistentVolumeClaims",
-		"quota":  "resourceQuotas",
+		"pv":     "persistentvolumes",
+		"pvc":    "persistentvolumeclaims",
+		"quota":  "resourcequotas",
 		"rc":     "replicationcontrollers",
-		// DEPRECATED: will be removed before 1.0
-		"se":  "services",
-		"svc": "services",
+		"svc":    "services",
 	}
 	if expanded, ok := shortForms[resource]; ok {
 		return expanded

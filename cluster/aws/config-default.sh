@@ -49,7 +49,7 @@ SERVICE_CLUSTER_IP_RANGE="10.0.0.0/16"  # formerly PORTAL_NET
 CLUSTER_IP_RANGE="${CLUSTER_IP_RANGE:-10.244.0.0/16}"
 MASTER_IP_RANGE="${MASTER_IP_RANGE:-10.246.0.0/24}"
 # If set to Elastic IP, master instance will be associated with this IP.
-# If set to auto, a new Elastic IP will be aquired
+# If set to auto, a new Elastic IP will be acquired
 # Otherwise amazon-given public ip will be used (it'll change with reboot).
 MASTER_RESERVED_IP="${MASTER_RESERVED_IP:-}"
 
@@ -72,10 +72,13 @@ if [[ ${KUBE_ENABLE_INSECURE_REGISTRY:-false} == "true" ]]; then
 fi
 
 # Optional: Install cluster DNS.
-ENABLE_CLUSTER_DNS=true
+ENABLE_CLUSTER_DNS="${KUBE_ENABLE_CLUSTER_DNS:-true}"
 DNS_SERVER_IP="10.0.0.10"
 DNS_DOMAIN="cluster.local"
 DNS_REPLICAS=1
+
+# Optional: Install Kubernetes UI
+ENABLE_CLUSTER_UI="${KUBE_ENABLE_CLUSTER_UI:-true}"
 
 # Admission Controllers to invoke prior to persisting objects in cluster
 ADMISSION_CONTROL=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota
@@ -85,7 +88,7 @@ ADMISSION_CONTROL=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContext
 ENABLE_MINION_PUBLIC_IP=${KUBE_ENABLE_MINION_PUBLIC_IP:-true}
 
 # OS options for minions
-KUBE_OS_DISTRIBUTION="${KUBE_OS_DISTRIBUTION:-ubuntu}"
+KUBE_OS_DISTRIBUTION="${KUBE_OS_DISTRIBUTION:-vivid}"
 KUBE_MINION_IMAGE="${KUBE_MINION_IMAGE:-}"
 COREOS_CHANNEL="${COREOS_CHANNEL:-alpha}"
 CONTAINER_RUNTIME="${KUBE_CONTAINER_RUNTIME:-docker}"

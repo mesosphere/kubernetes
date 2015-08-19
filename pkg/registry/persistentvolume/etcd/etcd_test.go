@@ -19,31 +19,28 @@ package etcd
 import (
 	"testing"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/latest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/resource"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest/resttest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/registry/registrytest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools/etcdtest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/latest"
+	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/api/rest/resttest"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
+	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
+	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/tools/etcdtest"
+	"k8s.io/kubernetes/pkg/util"
 
 	"github.com/coreos/go-etcd/etcd"
 )
 
-type testRegistry struct {
-	*registrytest.GenericRegistry
-}
-
-func newStorage(t *testing.T) (*REST, *StatusREST, *tools.FakeEtcdClient, tools.EtcdHelper) {
+func newStorage(t *testing.T) (*REST, *StatusREST, *tools.FakeEtcdClient, storage.Interface) {
 	fakeEtcdClient := tools.NewFakeEtcdClient(t)
 	fakeEtcdClient.TestIndex = true
-	helper := tools.NewEtcdHelper(fakeEtcdClient, latest.Codec, etcdtest.PathPrefix())
-	storage, statusStorage := NewStorage(helper)
-	return storage, statusStorage, fakeEtcdClient, helper
+	etcdStorage := etcdstorage.NewEtcdStorage(fakeEtcdClient, latest.Codec, etcdtest.PathPrefix())
+	storage, statusStorage := NewStorage(etcdStorage)
+	return storage, statusStorage, fakeEtcdClient, etcdStorage
 }
 
 func validNewPersistentVolume(name string) *api.PersistentVolume {
@@ -116,7 +113,7 @@ func TestDelete(t *testing.T) {
 		}
 		return fakeEtcdClient.Data[key].R.Node.TTL == 30
 	}
-	test.TestDeleteNoGraceful(createFn, gracefulSetFn)
+	test.TestDelete(createFn, gracefulSetFn)
 }
 
 func TestEtcdListPersistentVolumes(t *testing.T) {
@@ -152,34 +149,10 @@ func TestEtcdListPersistentVolumes(t *testing.T) {
 }
 
 func TestEtcdGetPersistentVolumes(t *testing.T) {
-	ctx := api.NewContext()
 	storage, _, fakeClient, _ := newStorage(t)
+	test := resttest.New(t, storage, fakeClient.SetError).ClusterScope()
 	persistentVolume := validNewPersistentVolume("foo")
-	name := persistentVolume.Name
-	key, _ := storage.KeyFunc(ctx, name)
-	key = etcdtest.AddPrefix(key)
-	fakeClient.Set(key, runtime.EncodeOrDie(latest.Codec, persistentVolume), 0)
-
-	response, err := fakeClient.Get(key, false, false)
-	if err != nil {
-		t.Fatalf("Unexpected error %v", err)
-	}
-	var persistentVolumeOut api.PersistentVolume
-	err = latest.Codec.DecodeInto([]byte(response.Node.Value), &persistentVolumeOut)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-
-	obj, err := storage.Get(ctx, name)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	got := obj.(*api.PersistentVolume)
-
-	persistentVolume.ObjectMeta.ResourceVersion = got.ObjectMeta.ResourceVersion
-	if e, a := persistentVolume, got; !api.Semantic.DeepEqual(*e, *a) {
-		t.Errorf("Unexpected persistentVolume: %#v, expected %#v", e, a)
-	}
+	test.TestGet(persistentVolume)
 }
 
 func TestListEmptyPersistentVolumesList(t *testing.T) {
@@ -320,7 +293,7 @@ func TestDeletePersistentVolumes(t *testing.T) {
 }
 
 func TestEtcdUpdateStatus(t *testing.T) {
-	storage, statusStorage, fakeClient, helper := newStorage(t)
+	storage, statusStorage, fakeClient, etcdStorage := newStorage(t)
 	ctx := api.NewContext()
 	fakeClient.TestIndex = true
 
@@ -350,7 +323,7 @@ func TestEtcdUpdateStatus(t *testing.T) {
 	}
 	var pvOut api.PersistentVolume
 	key, _ = storage.KeyFunc(ctx, "foo")
-	if err := helper.ExtractObj(key, &pvOut, false); err != nil {
+	if err := etcdStorage.Get(key, &pvOut, false); err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 	if !api.Semantic.DeepEqual(expected, pvOut) {

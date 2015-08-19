@@ -3,7 +3,7 @@
 
 .SH NAME
 .PP
-kubectl describe \- Show details of a specific resource
+kubectl describe \- Show details of a specific resource or group of resources
 
 
 .SH SYNOPSIS
@@ -13,14 +13,31 @@ kubectl describe \- Show details of a specific resource
 
 .SH DESCRIPTION
 .PP
-Show details of a specific resource.
+Show details of a specific resource or group of resources.
 
 .PP
 This command joins many API calls together to form a detailed description of a
-given resource.
+given resource or group of resources.
+
+.PP
+$ kubectl describe TYPE NAME\_PREFIX
+
+.PP
+will first check for an exact match on TYPE and NAME\_PREFIX. If no such resource
+exists, it will output details for every resource that has a name prefixed with NAME\_PREFIX
+
+.PP
+Possible resource types include (case insensitive): pods (po), services (svc),
+replicationcontrollers (rc), nodes (no), events (ev), limitranges (limits),
+persistentvolumes (pv), persistentvolumeclaims (pvc), resourcequotas (quota),
+namespaces (ns) or secrets.
 
 
 .SH OPTIONS
+.PP
+\fB\-f\fP, \fB\-\-filename\fP=[]
+    Filename, directory, or URL to a file containing the resource to describe
+
 .PP
 \fB\-h\fP, \fB\-\-help\fP=false
     help for describe
@@ -133,14 +150,24 @@ given resource.
 .RS
 
 .nf
-// Describe a node
+# Describe a node
 $ kubectl describe nodes kubernetes\-minion\-emt8.c.myproject.internal
 
-// Describe a pod
+# Describe a pod
 $ kubectl describe pods/nginx
 
-// Describe pods by label name=myLabel
+# Describe a pod using the data in pod.json.
+$ kubectl describe \-f pod.json
+
+# Describe all pods
+$ kubectl describe pods
+
+# Describe pods by label name=myLabel
 $ kubectl describe po \-l name=myLabel
+
+# Describe all pods managed by the 'frontend' replication controller (rc\-created pods
+# get the name of the rc as a prefix in the pod the name).
+$ kubectl describe pods frontend
 
 .fi
 .RE

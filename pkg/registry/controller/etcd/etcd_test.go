@@ -22,17 +22,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/errors"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/latest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api/rest/resttest"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	etcdgeneric "github.com/GoogleCloudPlatform/kubernetes/pkg/registry/generic/etcd"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools/etcdtest"
 	"github.com/coreos/go-etcd/etcd"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/errors"
+	"k8s.io/kubernetes/pkg/api/latest"
+	"k8s.io/kubernetes/pkg/api/rest/resttest"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	etcdgeneric "k8s.io/kubernetes/pkg/registry/generic/etcd"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
+	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
+	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/pkg/tools/etcdtest"
 )
 
 const (
@@ -40,17 +42,17 @@ const (
 	FAIL
 )
 
-func newHelper(t *testing.T) (*tools.FakeEtcdClient, tools.EtcdHelper) {
+func newEtcdStorage(t *testing.T) (*tools.FakeEtcdClient, storage.Interface) {
 	fakeEtcdClient := tools.NewFakeEtcdClient(t)
 	fakeEtcdClient.TestIndex = true
-	helper := tools.NewEtcdHelper(fakeEtcdClient, latest.Codec, etcdtest.PathPrefix())
-	return fakeEtcdClient, helper
+	etcdStorage := etcdstorage.NewEtcdStorage(fakeEtcdClient, latest.Codec, etcdtest.PathPrefix())
+	return fakeEtcdClient, etcdStorage
 }
 
 // newStorage creates a REST storage backed by etcd helpers
 func newStorage(t *testing.T) (*REST, *tools.FakeEtcdClient) {
-	fakeEtcdClient, h := newHelper(t)
-	storage := NewREST(h)
+	fakeEtcdClient, s := newEtcdStorage(t)
+	storage := NewREST(s)
 	return storage, fakeEtcdClient
 }
 
@@ -203,25 +205,6 @@ func TestCreateControllerWithConflictingNamespace(t *testing.T) {
 	}
 }
 
-func TestEtcdGetController(t *testing.T) {
-	ctx := api.NewDefaultContext()
-	storage, fakeClient := newStorage(t)
-	key, _ := makeControllerKey(ctx, validController.Name)
-	key = etcdtest.AddPrefix(key)
-	fakeClient.Set(key, runtime.EncodeOrDie(latest.Codec, &validController), 0)
-	ctrl, err := storage.Get(ctx, validController.Name)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	controller, ok := ctrl.(*api.ReplicationController)
-	if !ok {
-		t.Errorf("Expected a controller, got %#v", ctrl)
-	}
-	if controller.Name != validController.Name {
-		t.Errorf("Unexpected controller: %#v", controller)
-	}
-}
-
 func TestEtcdControllerValidatesUpdate(t *testing.T) {
 	ctx := api.NewDefaultContext()
 	storage, _ := newStorage(t)
@@ -329,70 +312,11 @@ func TestGenerationNumber(t *testing.T) {
 	}
 }
 
-// TestEtcdGetControllerDifferentNamespace ensures same-name controllers in different namespaces do not clash
-func TestEtcdGetControllerDifferentNamespace(t *testing.T) {
+func TestEtcdGetController(t *testing.T) {
 	storage, fakeClient := newStorage(t)
-
-	otherNs := "other"
-	ctx1 := api.NewDefaultContext()
-	ctx2 := api.WithNamespace(api.NewContext(), otherNs)
-
-	key1, _ := makeControllerKey(ctx1, validController.Name)
-	key2, _ := makeControllerKey(ctx2, validController.Name)
-
-	key1 = etcdtest.AddPrefix(key1)
-	key2 = etcdtest.AddPrefix(key2)
-
-	fakeClient.Set(key1, runtime.EncodeOrDie(latest.Codec, &validController), 0)
-	otherNsController := validController
-	otherNsController.Namespace = otherNs
-	fakeClient.Set(key2, runtime.EncodeOrDie(latest.Codec, &otherNsController), 0)
-
-	obj, err := storage.Get(ctx1, validController.Name)
-	ctrl1, _ := obj.(*api.ReplicationController)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if ctrl1.Name != "foo" {
-		t.Errorf("Unexpected controller: %#v", ctrl1)
-	}
-	if ctrl1.Namespace != "default" {
-		t.Errorf("Unexpected controller: %#v", ctrl1)
-	}
-
-	obj, err = storage.Get(ctx2, validController.Name)
-	ctrl2, _ := obj.(*api.ReplicationController)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if ctrl2.Name != "foo" {
-		t.Errorf("Unexpected controller: %#v", ctrl2)
-	}
-	if ctrl2.Namespace != "other" {
-		t.Errorf("Unexpected controller: %#v", ctrl2)
-	}
-
-}
-
-func TestEtcdGetControllerNotFound(t *testing.T) {
-	ctx := api.NewDefaultContext()
-	storage, fakeClient := newStorage(t)
-	key, _ := makeControllerKey(ctx, validController.Name)
-	key = etcdtest.AddPrefix(key)
-
-	fakeClient.Data[key] = tools.EtcdResponseWithError{
-		R: &etcd.Response{
-			Node: nil,
-		},
-		E: tools.EtcdErrorNotFound,
-	}
-	ctrl, err := storage.Get(ctx, validController.Name)
-	if ctrl != nil {
-		t.Errorf("Unexpected non-nil controller: %#v", ctrl)
-	}
-	if !errors.IsNotFound(err) {
-		t.Errorf("Unexpected error returned: %#v", err)
-	}
+	test := resttest.New(t, storage, fakeClient.SetError)
+	copy := validController
+	test.TestGet(&copy)
 }
 
 func TestEtcdUpdateController(t *testing.T) {
@@ -624,10 +548,10 @@ func TestEtcdWatchControllersFields(t *testing.T) {
 		},
 	}
 	testEtcdActions := []string{
-		tools.EtcdCreate,
-		tools.EtcdSet,
-		tools.EtcdCAS,
-		tools.EtcdDelete}
+		etcdstorage.EtcdCreate,
+		etcdstorage.EtcdSet,
+		etcdstorage.EtcdCAS,
+		etcdstorage.EtcdDelete}
 
 	controller := &api.ReplicationController{
 		ObjectMeta: api.ObjectMeta{
@@ -653,7 +577,7 @@ func TestEtcdWatchControllersFields(t *testing.T) {
 				node := &etcd.Node{
 					Value: string(controllerBytes),
 				}
-				if action == tools.EtcdDelete {
+				if action == etcdstorage.EtcdDelete {
 					prevNode = node
 				}
 				fakeClient.WaitForWatchCompletion()

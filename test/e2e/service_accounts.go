@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/fields"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/labels"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
-	"github.com/GoogleCloudPlatform/kubernetes/pkg/util/wait"
-	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/admission/serviceaccount"
+	"k8s.io/kubernetes/pkg/api"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/fields"
+	"k8s.io/kubernetes/pkg/labels"
+	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/plugin/pkg/admission/serviceaccount"
 
 	. "github.com/onsi/ginkgo"
 )
@@ -37,6 +37,7 @@ var _ = Describe("ServiceAccounts", func() {
 	It("should mount an API token into pods", func() {
 		var tokenName string
 		var tokenContent string
+		var rootCAContent string
 
 		// Standard get, update retry loop
 		expectNoError(wait.Poll(time.Millisecond*500, time.Second*10, func() (bool, error) {
@@ -54,6 +55,7 @@ var _ = Describe("ServiceAccounts", func() {
 			}
 			tokenName = secrets.Items[0].Name
 			tokenContent = string(secrets.Items[0].Data[api.ServiceAccountTokenKey])
+			rootCAContent = string(secrets.Items[0].Data[api.ServiceAccountRootCAKey])
 			return true, nil
 		}))
 
@@ -64,10 +66,17 @@ var _ = Describe("ServiceAccounts", func() {
 			Spec: api.PodSpec{
 				Containers: []api.Container{
 					{
-						Name:  "service-account-test",
+						Name:  "token-test",
 						Image: "gcr.io/google_containers/mounttest:0.2",
 						Args: []string{
 							fmt.Sprintf("--file_content=%s/%s", serviceaccount.DefaultAPITokenMountPath, api.ServiceAccountTokenKey),
+						},
+					},
+					{
+						Name:  "root-ca-test",
+						Image: "gcr.io/google_containers/mounttest:0.2",
+						Args: []string{
+							fmt.Sprintf("--file_content=%s/%s", serviceaccount.DefaultAPITokenMountPath, api.ServiceAccountRootCAKey),
 						},
 					},
 				},
@@ -77,6 +86,9 @@ var _ = Describe("ServiceAccounts", func() {
 
 		f.TestContainerOutput("consume service account token", pod, 0, []string{
 			fmt.Sprintf(`content of file "%s/%s": %s`, serviceaccount.DefaultAPITokenMountPath, api.ServiceAccountTokenKey, tokenContent),
+		})
+		f.TestContainerOutput("consume service account root CA", pod, 1, []string{
+			fmt.Sprintf(`content of file "%s/%s": %s`, serviceaccount.DefaultAPITokenMountPath, api.ServiceAccountRootCAKey, rootCAContent),
 		})
 	})
 })

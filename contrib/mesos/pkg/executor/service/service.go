@@ -342,7 +342,6 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	kubeletFinished := make(chan struct{})
 	staticPodsConfigPath := filepath.Join(kc.RootDirectory, "static-pods")
 	exec := executor.New(executor.Config{
-		Kubelet:         klet,
 		Updates:         updates,
 		SourceName:      MESOS_CFG_SOURCE,
 		APIClient:       kc.KubeClient,
@@ -357,8 +356,20 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 			}
 		},
 		ExitFunc: os.Exit,
-		PodStatusFunc: func(_ executor.KubeletInterface, pod *api.Pod) (*api.PodStatus, error) {
-			return klet.GetRuntime().GetPodStatus(pod)
+		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
+			status, err := klet.GetRuntime().GetPodStatus(pod)
+			if err != nil {
+				return nil, err
+			}
+
+			status.Phase = kubelet.GetPhase(&pod.Spec, status.ContainerStatuses)
+			hostIP, err := klet.GetHostIP()
+			if err != nil {
+				log.Errorf("Cannot get host IP: %v", err)
+			} else {
+				status.HostIP = hostIP.String()
+			}
+			return status, nil
 		},
 		StaticPodsConfigPath: staticPodsConfigPath,
 	})

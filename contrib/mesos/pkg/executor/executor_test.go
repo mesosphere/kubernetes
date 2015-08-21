@@ -320,7 +320,7 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 			Host:    testApiServer.server.URL,
 			Version: testapi.Default.Version(),
 		}),
-		PodStatusFunc: func(kl KubeletInterface, pod *api.Pod) (*api.PodStatus, error) {
+		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
 			return &api.PodStatus{
 				ContainerStatuses: []api.ContainerStatus{
 					{
@@ -475,7 +475,6 @@ func TestExecutorStaticPods(t *testing.T) {
 	defer os.RemoveAll(staticPodsConfigPath)
 
 	mockDriver := &MockExecutorDriver{}
-	updates := make(chan interface{}, 1024)
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
 		Updates: make(chan interface{}, 1), // allow kube-executor source to proceed past init
@@ -483,7 +482,7 @@ func TestExecutorStaticPods(t *testing.T) {
 			Host:    testApiServer.server.URL,
 			Version: testapi.Default.Version(),
 		}),
-		PodStatusFunc: func(kl KubeletInterface, pod *api.Pod) (*api.PodStatus, error) {
+		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
 			return &api.PodStatus{
 				ContainerStatuses: []api.ContainerStatus{
 					{
@@ -499,10 +498,11 @@ func TestExecutorStaticPods(t *testing.T) {
 		StaticPodsConfigPath: staticPodsConfigPath,
 	}
 	executor := New(config)
+
+	// register static pod source
 	hostname := "h1"
-	go executor.InitializeStaticPodsSource(func() {
-		kconfig.NewSourceFile(staticPodsConfigPath, hostname, 1*time.Second, updates)
-	})
+	fileSourceUpdates := make(chan interface{}, 1024)
+	kconfig.NewSourceFile(staticPodsConfigPath, hostname, 1*time.Second, fileSourceUpdates)
 
 	// create ExecutorInfo with static pod zip in data field
 	executorInfo := mesosutil.NewExecutorInfo(
@@ -524,7 +524,7 @@ func TestExecutorStaticPods(t *testing.T) {
 		select {
 		case <-timeout:
 			t.Fatalf("Executor should send pod updates for %v pods, only saw %v", expectedStaticPodsNum, len(seenPods))
-		case update, ok := <-updates:
+		case update, ok := <-fileSourceUpdates:
 			if !ok {
 				return
 			}
@@ -563,7 +563,7 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 			Host:    testApiServer.server.URL,
 			Version: testapi.Default.Version(),
 		}),
-		PodStatusFunc: func(kl KubeletInterface, pod *api.Pod) (*api.PodStatus, error) {
+		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
 			return &api.PodStatus{
 				ContainerStatuses: []api.ContainerStatus{
 					{

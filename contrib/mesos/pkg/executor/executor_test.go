@@ -517,7 +517,7 @@ func TestExecutorStaticPods(t *testing.T) {
 
 	// wait for static pod to start
 	seenPods := map[string]struct{}{}
-	timeout := time.After(time.Second)
+	timeout := time.After(time.Minute)
 	defer mockDriver.AssertExpectations(t)
 	for {
 		// filter by PodUpdate type

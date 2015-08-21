@@ -38,6 +38,7 @@ mesosslave1:
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
   - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[21000-21099]
+  - MESOS_ATTRIBUTES=rack:a;gen:2014
   - MESOS_SWITCH_USER=0
   - MESOS_CONTAINERIZERS=docker,mesos
   - MESOS_WORK_DIR=/var/tmp/mesos
@@ -61,6 +62,7 @@ mesosslave2:
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
   - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[21000-21099]
+  - MESOS_ATTRIBUTES=rack:b;gen:2015
   - MESOS_SWITCH_USER=0
   - MESOS_CONTAINERIZERS=docker,mesos
   - MESOS_WORK_DIR=/var/tmp/mesos

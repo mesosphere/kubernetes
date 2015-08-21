@@ -190,7 +190,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	//TODO(jdef) either configure Watch here with something useful, or else
 	// get rid of it from executor.Config
 	kubeletFinished := make(chan struct{})
-	execUpdates := make(chan kubelet.PodUpdate)
+	execUpdates := make(chan kubelet.PodUpdate, 1)
 	exec := executor.New(executor.Config{
 		Updates:         execUpdates,
 		APIClient:       apiclient,

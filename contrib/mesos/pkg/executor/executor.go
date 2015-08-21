@@ -219,6 +219,8 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 		Pods: []*api.Pod{},
 		Op:   kubelet.SET,
 	}
+
+	close(k.initialRegComplete)
 }
 
 // Reregistered is called when the executor is successfully re-registered with the slave.

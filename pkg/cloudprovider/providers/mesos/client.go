@@ -50,6 +50,7 @@ type mesosClient struct {
 type slaveNode struct {
 	hostname  string
 	resources *api.NodeResources
+	labels    map[string]string
 }
 
 type mesosState struct {
@@ -219,10 +220,11 @@ func parseMesosState(blob []byte) (*mesosState, error) {
 	type State struct {
 		ClusterName string `json:"cluster"`
 		Slaves      []*struct {
-			Id        string                 `json:"id"`        // ex: 20150106-162714-3815890698-5050-2453-S2
-			Pid       string                 `json:"pid"`       // ex: slave(1)@10.22.211.18:5051
-			Hostname  string                 `json:"hostname"`  // ex: 10.22.211.18, or slave-123.nowhere.com
-			Resources map[string]interface{} `json:"resources"` // ex: {"mem": 123, "ports": "[31000-3200]"}
+			Id         string                 `json:"id"`         // ex: 20150106-162714-3815890698-5050-2453-S2
+			Pid        string                 `json:"pid"`        // ex: slave(1)@10.22.211.18:5051
+			Hostname   string                 `json:"hostname"`   // ex: 10.22.211.18, or slave-123.nowhere.com
+			Resources  map[string]interface{} `json:"resources"`  // ex: {"mem": 123, "ports": "[31000-3200]"}
+			Attributes map[string]string      `json:"attributes"` // ex: {"rack": "a", "gen": 2014}
 		} `json:"slaves"`
 	}
 	state := &State{ClusterName: defaultClusterName}
@@ -234,7 +236,11 @@ func parseMesosState(blob []byte) (*mesosState, error) {
 		if slave.Hostname == "" {
 			continue
 		}
-		node := &slaveNode{hostname: slave.Hostname}
+		node := &slaveNode{
+			hostname: slave.Hostname,
+			labels:   map[string]string{},
+		}
+
 		cap := api.ResourceList{}
 		if slave.Resources != nil && len(slave.Resources) > 0 {
 			// attempt to translate CPU (cores) and memory (MB) resources
@@ -263,6 +269,13 @@ func parseMesosState(blob []byte) (*mesosState, error) {
 			}
 			log.V(4).Infof("node %q reporting capacity %v", node.hostname, cap)
 		}
+
+		if slave.Attributes != nil && len(slave.Attributes) > 0 {
+			for k, v := range slave.Attributes {
+				node.labels[k] = v
+			}
+		}
+
 		nodes = append(nodes, node)
 	}
 

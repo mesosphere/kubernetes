@@ -18,6 +18,8 @@ package mesos
 
 import (
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/scalingdata/gcfg"
@@ -35,15 +37,28 @@ const (
 //  mesos-master        = leader.mesos:5050
 //	http-client-timeout = 500ms
 //	state-cache-ttl     = 1h
-
-type ConfigWrapper struct {
-	Mesos_Cloud Config
-}
+//
+// [mesos-node]
+//  labels = {"rack": "a", "gen": "2014"}
 
 type Config struct {
+	Mesos_Cloud Cloud
+	Mesos_Node Node
+}
+
+type Cloud struct {
 	MesosMaster            string   `gcfg:"mesos-master"`
 	MesosHttpClientTimeout Duration `gcfg:"http-client-timeout"`
 	StateCacheTTL          Duration `gcfg:"state-cache-ttl"`
+}
+
+type Label struct {
+	key, value string
+}
+
+type Node struct {
+	Labels []Label `gcfg:"label"`
+	Name   string  `gcfg:"name"`
 }
 
 type Duration struct {
@@ -58,22 +73,41 @@ func (d *Duration) UnmarshalText(data []byte) error {
 	return err
 }
 
+func (l *Label) UnmarshalText(data []byte) error {
+	s := string(data)
+	cs := strings.SplitN(s, ":", 2)
+	l.key = cs[0]
+	if len(cs) == 2 {
+		l.value = cs[1]
+	}
+	return nil
+}
+
 func createDefaultConfig() *Config {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+
 	return &Config{
-		MesosMaster:            DefaultMesosMaster,
-		MesosHttpClientTimeout: Duration{Duration: DefaultHttpClientTimeout},
-		StateCacheTTL:          Duration{Duration: DefaultStateCacheTTL},
+		Mesos_Cloud: Cloud{
+			MesosMaster:            DefaultMesosMaster,
+			MesosHttpClientTimeout: Duration{Duration: DefaultHttpClientTimeout},
+			StateCacheTTL:          Duration{Duration: DefaultStateCacheTTL},
+		},
+		Mesos_Node: Node{
+			Labels: []Label{},
+			Name: hostname,
+		},
 	}
 }
 
 func readConfig(configReader io.Reader) (*Config, error) {
 	config := createDefaultConfig()
-	wrapper := &ConfigWrapper{Mesos_Cloud: *config}
 	if configReader != nil {
-		if err := gcfg.ReadInto(wrapper, configReader); err != nil {
+		if err := gcfg.ReadInto(config, configReader); err != nil {
 			return nil, err
 		}
-		config = &(wrapper.Mesos_Cloud)
 	}
 	return config, nil
 }

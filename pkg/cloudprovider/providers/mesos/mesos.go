@@ -55,7 +55,7 @@ type MesosCloud struct {
 }
 
 func (c *MesosCloud) MasterURI() string {
-	return c.config.MesosMaster
+	return c.config.Mesos_Cloud.MesosMaster
 }
 
 func newMesosCloud(configReader io.Reader) (*MesosCloud, error) {
@@ -64,13 +64,13 @@ func newMesosCloud(configReader io.Reader) (*MesosCloud, error) {
 		return nil, err
 	}
 
-	log.V(1).Infof("new mesos cloud, master='%v'", config.MesosMaster)
-	if d, err := detector.New(config.MesosMaster); err != nil {
+	log.V(1).Infof("new mesos cloud, master='%v'", config.Mesos_Cloud.MesosMaster)
+	if d, err := detector.New(config.Mesos_Cloud.MesosMaster); err != nil {
 		log.V(1).Infof("failed to create master detector: %v", err)
 		return nil, err
 	} else if cl, err := newMesosClient(d,
-		config.MesosHttpClientTimeout.Duration,
-		config.StateCacheTTL.Duration); err != nil {
+		config.Mesos_Cloud.MesosHttpClientTimeout.Duration,
+		config.Mesos_Cloud.StateCacheTTL.Duration); err != nil {
 		log.V(1).Infof("failed to create mesos cloud client: %v", err)
 		return nil, err
 	} else {
@@ -186,7 +186,37 @@ func (c *MesosCloud) ExternalID(instance string) (string, error) {
 
 // Labels returns the cloud provider node labels of the specified instance.
 func (c *MesosCloud) Labels(name string) (map[string]string, error) {
-	return map[string]string{}, nil
+	// if we MesosMaster is set, we are on a service node and query
+	// the Mesos master. Otherwise, we are on a slave and use the labels
+	// from the cloud config.
+	if c.config.Mesos_Cloud.MesosMaster != "" {
+		ctx, cancel := context.WithCancel(context.TODO())
+		defer cancel()
+
+		nodes, err := c.client.listSlaves(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get labels of node %s: %v", name, err)
+		}
+		if nodes == nil {
+			return nil, fmt.Errorf("failed to get nodes to get labels of node %v", name)
+		}
+
+		for _, n := range nodes {
+			if n.hostname == name {
+				return n.labels, nil
+			}
+		}
+
+		return nil, fmt.Errorf("failed to find node %s to get labels", name)
+	} else if name == c.config.Mesos_Node.Name {
+		labels := map[string]string{}
+		for _, l := range c.config.Mesos_Node.Labels {
+			labels[l.key] = l.value
+		}
+		return labels, nil
+	}
+
+	return nil, fmt.Errorf("unknown node %s", name)
 }
 
 // InstanceID returns the cloud provider ID of the specified instance.

@@ -18,10 +18,12 @@ package mesos
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 	"time"
 
 	log "github.com/golang/glog"
+	"os"
 )
 
 // test mesos.createDefaultConfig
@@ -30,16 +32,25 @@ func Test_createDefaultConfig(t *testing.T) {
 
 	config := createDefaultConfig()
 
-	if config.MesosMaster != DefaultMesosMaster {
-		t.Fatalf("Default config has the expected MesosMaster value")
+	if got, want := config.Mesos_Cloud.MesosMaster, DefaultMesosMaster; got != want {
+		t.Fatalf("unexpected MesosMaster: got=%q, want=%q", got, want)
 	}
 
-	if config.MesosHttpClientTimeout.Duration != DefaultHttpClientTimeout {
-		t.Fatalf("Default config has the expected MesosHttpClientTimeout value")
+	if got, want := config.Mesos_Cloud.MesosHttpClientTimeout.Duration, DefaultHttpClientTimeout; got != want {
+		t.Fatalf("unexpected MesosHttpClientTimeout: got=%q, want=%q", got, want)
 	}
 
-	if config.StateCacheTTL.Duration != DefaultStateCacheTTL {
-		t.Fatalf("Default config has the expected StateCacheTTL value")
+	if got, want := config.Mesos_Cloud.StateCacheTTL.Duration, DefaultStateCacheTTL; got != want {
+		t.Fatalf("unexpected StateCacheTTL: got=%q, want=%q", got, want)
+	}
+
+	if got, want := len(config.Mesos_Node.Labels), 0; got != want {
+		t.Fatalf("unexpected number of labels: got=%q, want=%q", got, want)
+	}
+
+	hostname, _ := os.Hostname()
+	if got, want := config.Mesos_Node.Name, hostname; got != want {
+		t.Fatalf("unexpected node name: got=%q, want=%q", got, want)
 	}
 }
 
@@ -51,25 +62,38 @@ func Test_readConfig(t *testing.T) {
 [mesos-cloud]
 	mesos-master        = leader.mesos:5050
 	http-client-timeout = 500ms
-	state-cache-ttl     = 1h`
+	state-cache-ttl     = 1h
+
+[mesos-node]
+    label = rack:a
+    label = gen:2014
+    name = mesosslave1
+`
 
 	reader := bytes.NewBufferString(configString)
 
 	config, err := readConfig(reader)
-
 	if err != nil {
-		t.Fatalf("Reading configuration does not yield an error: %#v", err)
+		t.Fatalf("Reading configuration yielded an error: %#v", err)
 	}
 
-	if config.MesosMaster != "leader.mesos:5050" {
-		t.Fatalf("Parsed config has the expected MesosMaster value")
+	if got, want := config.Mesos_Cloud.MesosMaster, "leader.mesos:5050"; got != want {
+		t.Fatalf("unexpected MesosMaster: got=%q, want=%q", got, want)
 	}
 
-	if config.MesosHttpClientTimeout.Duration != time.Duration(500)*time.Millisecond {
-		t.Fatalf("Parsed config has the expected MesosHttpClientTimeout value")
+	if got, want := config.Mesos_Cloud.MesosHttpClientTimeout.Duration, time.Duration(500)*time.Millisecond; got != want {
+		t.Fatalf("unexpected MesosHttpClientTimeout: got=%q, want=%q", got, want)
 	}
 
-	if config.StateCacheTTL.Duration != time.Duration(1)*time.Hour {
-		t.Fatalf("Parsed config has the expected StateCacheTTL value")
+	if got, want := config.Mesos_Cloud.StateCacheTTL.Duration, time.Duration(1)*time.Hour; got != want {
+		t.Fatalf("unexpected StateCacheTTL: got=%q, want=%q", got, want)
+	}
+
+	if got, want := config.Mesos_Node.Labels, []Label{{"rack", "a"}, {"gen", "2014"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected labels: got=%q, want=%q", got, want)
+	}
+
+	if got, want := config.Mesos_Node.Name, "mesosslave1"; got != want {
+		t.Fatalf("unexpected node name: got=%q, want=%q", got, want)
 	}
 }

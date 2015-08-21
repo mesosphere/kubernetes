@@ -22,6 +22,7 @@ import (
 	"github.com/mesos/mesos-go/mesosproto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"k8s.io/kubernetes/pkg/kubelet"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 )
 
@@ -67,7 +68,7 @@ func (m *MockExecutorDriver) SendFrameworkMessage(msg string) (mesosproto.Status
 func NewTestKubernetesExecutor() *KubernetesExecutor {
 	return New(Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1024),
+		Updates: make(chan kubelet.PodUpdate, 1024),
 	})
 }
 

@@ -101,12 +101,11 @@ type podStatusFunc func() (*api.PodStatus, error)
 // KubernetesExecutor is an mesos executor that runs pods
 // in a minion machine.
 type KubernetesExecutor struct {
-	updateChan           chan<- interface{} // to send pod config updates to the kubelet
+	updateChan           chan<- kubelet.PodUpdate // to send pod config updates to the kubelet
 	state                stateType
 	tasks                map[string]*kuberTask
 	pods                 map[string]*api.Pod
 	lock                 sync.RWMutex
-	sourcename           string
 	client               *client.Client
 	events               <-chan watch.Event
 	done                 chan struct{}                     // signals shutdown
@@ -124,8 +123,7 @@ type KubernetesExecutor struct {
 }
 
 type Config struct {
-	Updates              chan<- interface{} // to send pod config updates to the kubelet
-	SourceName           string
+	Updates              chan<- kubelet.PodUpdate // to send pod config updates to the kubelet
 	APIClient            *client.Client
 	Watch                watch.Interface
 	Docker               dockertools.DockerInterface
@@ -148,7 +146,6 @@ func New(config Config) *KubernetesExecutor {
 		state:                disconnectedState,
 		tasks:                make(map[string]*kuberTask),
 		pods:                 make(map[string]*api.Pod),
-		sourcename:           config.SourceName,
 		client:               config.APIClient,
 		done:                 make(chan struct{}),
 		outgoing:             make(chan func() (mesos.Status, error), 1024),
@@ -218,7 +215,10 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 		k.initializeStaticPodsSource(executorInfo.Data)
 	}
 
-	k.initialRegistration.Do(k.onInitialRegistration)
+	k.updateChan <- kubelet.PodUpdate{
+		Pods: []*api.Pod{},
+		Op:   kubelet.SET,
+	}
 }
 
 // Reregistered is called when the executor is successfully re-registered with the slave.
@@ -230,19 +230,6 @@ func (k *KubernetesExecutor) Reregistered(driver bindings.ExecutorDriver, slaveI
 	log.Infof("Reregistered with slave %v\n", slaveInfo)
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to reregister/transition to a connected state")
-	}
-
-	k.initialRegistration.Do(k.onInitialRegistration)
-}
-
-func (k *KubernetesExecutor) onInitialRegistration() {
-	defer close(k.initialRegComplete)
-
-	// emit an empty update to allow the mesos "source" to be marked as seen
-	k.updateChan <- kubelet.PodUpdate{
-		Pods:   []*api.Pod{},
-		Op:     kubelet.SET,
-		Source: k.sourcename,
 	}
 }
 
@@ -768,6 +755,8 @@ func (k *KubernetesExecutor) doShutdown(driver bindings.ExecutorDriver) {
 
 	// signal to all listeners that this KubeletExecutor is done!
 	close(k.done)
+
+	close(k.updateChan)
 
 	if k.shutdownAlert != nil {
 		func() {

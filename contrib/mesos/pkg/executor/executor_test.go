@@ -228,29 +228,24 @@ func TestSuicide_WithTasks(t *testing.T) {
 // after Register is called.
 func TestExecutorRegister(t *testing.T) {
 	mockDriver := &MockExecutorDriver{}
-	updates := make(chan interface{}, 1024)
+	updates := make(chan kubelet.PodUpdate, 1024)
 	executor := New(Config{
-		Docker:     dockertools.ConnectToDockerOrDie("fake://"),
-		Updates:    updates,
-		SourceName: "executor_test",
+		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
+		Updates: updates,
 	})
 
 	executor.Init(mockDriver)
 	executor.Registered(mockDriver, nil, nil, nil)
 
 	initialPodUpdate := kubelet.PodUpdate{
-		Pods:   []*api.Pod{},
-		Op:     kubelet.SET,
-		Source: executor.sourcename,
+		Pods: []*api.Pod{},
+		Op:   kubelet.SET,
 	}
 	receivedInitialPodUpdate := false
 	select {
-	case m := <-updates:
-		update, ok := m.(kubelet.PodUpdate)
-		if ok {
-			if reflect.DeepEqual(initialPodUpdate, update) {
-				receivedInitialPodUpdate = true
-			}
+	case update := <-updates:
+		if reflect.DeepEqual(initialPodUpdate, update) {
+			receivedInitialPodUpdate = true
 		}
 	case <-time.After(time.Second):
 	}
@@ -312,7 +307,7 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 	defer testApiServer.server.Close()
 
 	mockDriver := &MockExecutorDriver{}
-	updates := make(chan interface{}, 1024)
+	updates := make(chan kubelet.PodUpdate, 1024)
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
 		Updates: updates,
@@ -330,7 +325,7 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 						},
 					},
 				},
-				Phase: api.PodRunning,
+				Phase:  api.PodRunning,
 				HostIP: "127.0.0.1",
 			}, nil
 		},
@@ -380,9 +375,8 @@ func TestExecutorLaunchAndKillTask(t *testing.T) {
 
 	gotPodUpdate := false
 	select {
-	case m := <-updates:
-		update, ok := m.(kubelet.PodUpdate)
-		if ok && len(update.Pods) == 1 {
+	case update := <-updates:
+		if len(update.Pods) == 1 {
 			gotPodUpdate = true
 		}
 	case <-time.After(time.Second):
@@ -477,7 +471,7 @@ func TestExecutorStaticPods(t *testing.T) {
 	mockDriver := &MockExecutorDriver{}
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1), // allow kube-executor source to proceed past init
+		Updates: make(chan kubelet.PodUpdate, 1), // allow kube-executor source to proceed past init
 		APIClient: client.NewOrDie(&client.Config{
 			Host:    testApiServer.server.URL,
 			Version: testapi.Default.Version(),
@@ -558,7 +552,7 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 	kubeletFinished := make(chan struct{})
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1024),
+		Updates: make(chan kubelet.PodUpdate, 1024),
 		APIClient: client.NewOrDie(&client.Config{
 			Host:    testApiServer.server.URL,
 			Version: testapi.Default.Version(),
@@ -573,7 +567,7 @@ func TestExecutorFrameworkMessage(t *testing.T) {
 						},
 					},
 				},
-				Phase: api.PodRunning,
+				Phase:  api.PodRunning,
 				HostIP: "127.0.0.1",
 			}, nil
 		},
@@ -735,7 +729,7 @@ func TestExecutorShutdown(t *testing.T) {
 	var exitCalled int32 = 0
 	config := Config{
 		Docker:  dockertools.ConnectToDockerOrDie("fake://"),
-		Updates: make(chan interface{}, 1024),
+		Updates: make(chan kubelet.PodUpdate, 1024),
 		ShutdownAlert: func() {
 			close(kubeletFinished)
 		},

@@ -120,6 +120,10 @@ type KubernetesExecutor struct {
 	podStatusFunc        func(*api.Pod) (*api.PodStatus, error)
 	staticPodsConfigPath string
 	initialRegComplete   chan struct{}
+
+	// values filled by registration
+	slaveName string
+	labels    map[string]string
 }
 
 type Config struct {
@@ -199,20 +203,39 @@ func (k *KubernetesExecutor) isDone() bool {
 	}
 }
 
+func (k *KubernetesExecutor) SlaveName() string {
+	return k.slaveName
+}
+
+func (k *KubernetesExecutor) Labels() map[string]string {
+	return k.labels
+}
+
 // Registered is called when the executor is successfully registered with the slave.
 func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 	executorInfo *mesos.ExecutorInfo, frameworkInfo *mesos.FrameworkInfo, slaveInfo *mesos.SlaveInfo) {
 	if k.isDone() {
 		return
 	}
-	log.Infof("Executor %v of framework %v registered with slave %v\n",
-		executorInfo, frameworkInfo, slaveInfo)
+
+	log.Infof("Executor %v of framework %v registered with slave %v\n", executorInfo, frameworkInfo, slaveInfo)
+
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to register/transition to a connected state")
 	}
 
 	if executorInfo != nil && executorInfo.Data != nil {
 		k.initializeStaticPodsSource(executorInfo.Data)
+	}
+
+	k.slaveName = slaveInfo.GetHostname()
+	k.labels = map[string]string{}
+	for _, a := range slaveInfo.GetAttributes() {
+		if a == nil || a.GetType() != mesos.Value_TEXT {
+			continue
+		}
+
+		k.labels[a.GetName()] = a.GetText().GetValue()
 	}
 
 	k.updateChan <- kubelet.PodUpdate{

@@ -38,6 +38,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/redirfd"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
+	mcloud "k8s.io/kubernetes/pkg/cloudprovider/providers/mesos"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	"k8s.io/kubernetes/pkg/healthz"
 	"k8s.io/kubernetes/pkg/kubelet"
@@ -250,6 +251,19 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 
 	<-exec.InitialRegComplete()
 
+	// create mesos cloud provider with executor information from registration
+	el := exec.Labels()
+	mlabels := make([]mcloud.Label, 0, len(el))
+	for k, v := range el {
+		mlabels = append(mlabels, mcloud.Label{Key:k, Value:v})
+	}
+	cloud, err := mcloud.New(&mcloud.Config{
+		Mesos_Node: mcloud.Node{
+			Name: exec.SlaveName(),
+			Labels: mlabels,
+		},
+	})
+
 	// prepare kubelet
 	kcfg := app.KubeletConfig{
 		Address:            s.Address,
@@ -288,7 +302,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		TLSOptions:                     tlsOptions,
 		ImageGCPolicy:                  imageGCPolicy,
 		DiskSpacePolicy:                diskSpacePolicy,
-		Cloud:                          nil, // TODO(jdef) Cloud, specifying null here because we don't want all kubelets polling mesos-master; need to account for this in the cloudprovider impl
+		Cloud:                          cloud,
 		NodeStatusUpdateFrequency: s.NodeStatusUpdateFrequency,
 		ResourceContainer:         s.ResourceContainer,
 		CgroupRoot:                s.CgroupRoot,

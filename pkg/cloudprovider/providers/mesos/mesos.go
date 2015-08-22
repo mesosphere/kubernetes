@@ -41,7 +41,12 @@ func init() {
 	cloudprovider.RegisterCloudProvider(
 		ProviderName,
 		func(configReader io.Reader) (cloudprovider.Interface, error) {
-			provider, err := newMesosCloud(configReader)
+			config, err := readConfig(configReader)
+			if err != nil {
+				return nil, err
+			}
+
+			provider, err := New(config)
 			if err == nil {
 				CloudProvider = provider
 			}
@@ -58,28 +63,34 @@ func (c *MesosCloud) MasterURI() string {
 	return c.config.Mesos_Cloud.MesosMaster
 }
 
-func newMesosCloud(configReader io.Reader) (*MesosCloud, error) {
-	config, err := readConfig(configReader)
-	if err != nil {
-		return nil, err
-	}
+func New(config *Config) (*MesosCloud, error) {
+	cloud := MesosCloud{config: config}
 
 	log.V(1).Infof("new mesos cloud, master='%v'", config.Mesos_Cloud.MesosMaster)
-	if d, err := detector.New(config.Mesos_Cloud.MesosMaster); err != nil {
-		log.V(1).Infof("failed to create master detector: %v", err)
-		return nil, err
-	} else if cl, err := newMesosClient(d,
-		config.Mesos_Cloud.MesosHttpClientTimeout.Duration,
-		config.Mesos_Cloud.StateCacheTTL.Duration); err != nil {
-		log.V(1).Infof("failed to create mesos cloud client: %v", err)
-		return nil, err
-	} else {
-		return &MesosCloud{client: cl, config: config}, nil
+	if config.Mesos_Cloud.MesosMaster != "" {
+		d, err := detector.New(config.Mesos_Cloud.MesosMaster)
+		if err != nil {
+			log.V(1).Infof("failed to create master detector: %v", err)
+			return nil, err
+		}
+
+		cloud.client, err = newMesosClient(d,
+			config.Mesos_Cloud.MesosHttpClientTimeout.Duration,
+			config.Mesos_Cloud.StateCacheTTL.Duration)
+		if err != nil {
+			log.V(1).Infof("failed to create mesos cloud client: %v", err)
+			return nil, err
+		}
 	}
+
+	return &cloud, nil
 }
 
 // Implementation of Instances.CurrentNodeName
 func (c *MesosCloud) CurrentNodeName(hostname string) (string, error) {
+	if c.config.Mesos_Node.Name != "" {
+		return c.config.Mesos_Node.Name, nil
+	}
 	return hostname, nil
 }
 
@@ -126,6 +137,10 @@ func (c *MesosCloud) ProviderName() string {
 
 // ListClusters lists the names of the available Mesos clusters.
 func (c *MesosCloud) ListClusters() ([]string, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("failed to list clusters because of no mesos master connection")
+	}
+
 	// Always returns a single cluster (this one!)
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
@@ -189,7 +204,7 @@ func (c *MesosCloud) Labels(name string) (map[string]string, error) {
 	// if we MesosMaster is set, we are on a service node and query
 	// the Mesos master. Otherwise, we are on a slave and use the labels
 	// from the cloud config.
-	if c.config.Mesos_Cloud.MesosMaster != "" {
+	if c.client != nil {
 		ctx, cancel := context.WithCancel(context.TODO())
 		defer cancel()
 
@@ -211,7 +226,7 @@ func (c *MesosCloud) Labels(name string) (map[string]string, error) {
 	} else if name == c.config.Mesos_Node.Name {
 		labels := map[string]string{}
 		for _, l := range c.config.Mesos_Node.Labels {
-			labels[l.key] = l.value
+			labels[l.Key] = l.Value
 		}
 		return labels, nil
 	}
@@ -227,6 +242,10 @@ func (c *MesosCloud) InstanceID(name string) (string, error) {
 // List lists instances that match 'filter' which is a regular expression
 // which must match the entire instance name (fqdn).
 func (c *MesosCloud) List(filter string) ([]string, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("failed to list node because of no mesos master connection")
+	}
+
 	//TODO(jdef) use a timeout here? 15s?
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()

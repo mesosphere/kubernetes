@@ -53,7 +53,7 @@ type Cloud struct {
 }
 
 type Label struct {
-	key, value string
+	Key, Value string
 }
 
 type Node struct {
@@ -76,9 +76,9 @@ func (d *Duration) UnmarshalText(data []byte) error {
 func (l *Label) UnmarshalText(data []byte) error {
 	s := string(data)
 	cs := strings.SplitN(s, ":", 2)
-	l.key = cs[0]
+	l.Key = cs[0]
 	if len(cs) == 2 {
-		l.value = cs[1]
+		l.Value = cs[1]
 	}
 	return nil
 }

@@ -255,11 +255,11 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	el := exec.Labels()
 	mlabels := make([]mcloud.Label, 0, len(el))
 	for k, v := range el {
-		mlabels = append(mlabels, mcloud.Label{Key:k, Value:v})
+		mlabels = append(mlabels, mcloud.Label{Key: k, Value: v})
 	}
 	cloud, err := mcloud.New(&mcloud.Config{
 		Mesos_Node: mcloud.Node{
-			Name: exec.SlaveName(),
+			Name:   exec.SlaveName(),
 			Labels: mlabels,
 		},
 	})

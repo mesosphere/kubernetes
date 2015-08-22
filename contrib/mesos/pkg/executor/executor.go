@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/kubelet"
@@ -229,14 +230,7 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 	}
 
 	k.slaveName = slaveInfo.GetHostname()
-	k.labels = map[string]string{}
-	for _, a := range slaveInfo.GetAttributes() {
-		if a == nil || a.GetType() != mesos.Value_TEXT {
-			continue
-		}
-
-		k.labels[a.GetName()] = a.GetText().GetValue()
-	}
+	k.labels = podtask.SlaveLabels(slaveInfo.GetAttributes())
 
 	k.updateChan <- kubelet.PodUpdate{
 		Pods: []*api.Pod{},

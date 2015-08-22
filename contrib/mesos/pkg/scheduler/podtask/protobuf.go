@@ -17,6 +17,8 @@ limitations under the License.
 package podtask
 
 import (
+	"strconv"
+
 	"github.com/gogo/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 )
@@ -54,4 +56,22 @@ func foreachRange(offer *mesos.Offer, resourceName string, f func(begin, end uin
 			}
 		}
 	}
+}
+
+// SlaveLabels converts slave attributes into string key/value labels
+func SlaveLabels(attrs []*mesos.Attribute) map[string]string {
+	l := map[string]string{}
+	for _, a := range attrs {
+		if a == nil {
+			continue
+		}
+
+		switch a.GetType() {
+		case mesos.Value_TEXT:
+			l[a.GetName()] = a.GetText().GetValue()
+		case mesos.Value_SCALAR:
+			l[a.GetName()] = strconv.FormatFloat(a.GetScalar().GetValue(), 'G', -1, 64)
+		}
+	}
+	return l
 }

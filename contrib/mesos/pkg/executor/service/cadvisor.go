@@ -52,7 +52,11 @@ func (mc *MesosCadvisor) MachineInfo() (*cadvisorApi.MachineInfo, error) {
 		// TODO(sttts): use custom executor CPU and mem values here, not the defaults
 		switch r.GetName() {
 		case "cpus":
-			mesosMi.NumCores = int(r.GetScalar().GetValue() - float64(sservice.DefaultExecutorCPUs))
+			mesosMi.NumCores = int(r.GetScalar().GetValue())
+			// We indentionally ignore DefaultExecutorCPU here because cores are integers
+			// and we would loose a complete cpu here. This is not dramatic though
+			// because ExecutorCPU is only set to the minumm allowed of 0.01 and
+			// it's only about shares anyway, no hard cpu limit.
 		case "mem":
 			mesosMi.MemoryCapacity = int64(r.GetScalar().GetValue()-float64(sservice.DefaultExecutorMem)) * 1024 * 1024
 		}

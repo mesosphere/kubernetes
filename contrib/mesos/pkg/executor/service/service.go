@@ -36,13 +36,13 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
 	"k8s.io/kubernetes/contrib/mesos/pkg/redirfd"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	mcloud "k8s.io/kubernetes/pkg/cloudprovider/providers/mesos"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	"k8s.io/kubernetes/pkg/healthz"
 	"k8s.io/kubernetes/pkg/kubelet"
-	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
 	kconfig "k8s.io/kubernetes/pkg/kubelet/config"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/util"
@@ -136,11 +136,6 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	credentialprovider.SetPreferredDockercfgPath(s.RootDirectory)
 
 	shutdownCloser, err := s.syncExternalShutdownWatcher()
-	if err != nil {
-		return err
-	}
-
-	cadvisorInterface, err := cadvisor.New(s.CadvisorPort)
 	if err != nil {
 		return err
 	}
@@ -252,17 +247,22 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	<-exec.InitialRegComplete()
 
 	// create mesos cloud provider with executor information from registration
-	el := exec.Labels()
-	mlabels := make([]mcloud.Label, 0, len(el))
-	for k, v := range el {
-		mlabels = append(mlabels, mcloud.Label{Key: k, Value: v})
+	si := exec.SlaveInfo()
+	l := []mcloud.Label{}
+	for k, v := range podtask.SlaveLabels(si.GetAttributes()) {
+		l = append(l, mcloud.Label{Key: k, Value: v})
 	}
 	cloud, err := mcloud.New(&mcloud.Config{
 		Mesos_Node: mcloud.Node{
-			Name:   exec.SlaveName(),
-			Labels: mlabels,
+			Name:   si.GetHostname(),
+			Labels: l,
 		},
 	})
+
+	cadvisorInterface, err := NewMesosCadvisor(si, s.CadvisorPort)
+	if err != nil {
+		return err
+	}
 
 	// prepare kubelet
 	kcfg := app.KubeletConfig{

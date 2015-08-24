@@ -75,8 +75,8 @@ const (
 	defaultReconcileInterval = 300    // 5m default task reconciliation interval
 	defaultReconcileCooldown = 15 * time.Second
 	defaultFrameworkName     = "Kubernetes"
-	defaultExecutorCPUs      = mresource.CPUShares(0.25)  // initial CPU allocated for executor
-	defaultExecutorMem       = mresource.MegaBytes(128.0) // initial memory allocated for executor
+	DefaultExecutorCPUs      = mresource.CPUShares(0.25)  // initial CPU allocated for executor
+	DefaultExecutorMem       = mresource.MegaBytes(128.0) // initial memory allocated for executor
 )
 
 type SchedulerServer struct {
@@ -178,8 +178,8 @@ func NewSchedulerServer() *SchedulerServer {
 		MesosCgroupPrefix:      minioncfg.DefaultCgroupPrefix,
 		MesosMaster:            defaultMesosMaster,
 		MesosUser:              defaultMesosUser,
-		MesosExecutorCPUs:      defaultExecutorCPUs,
-		MesosExecutorMem:       defaultExecutorMem,
+		MesosExecutorCPUs:      DefaultExecutorCPUs,
+		MesosExecutorMem:       DefaultExecutorMem,
 		ReconcileInterval:      defaultReconcileInterval,
 		ReconcileCooldown:      defaultReconcileCooldown,
 		Checkpoint:             true,

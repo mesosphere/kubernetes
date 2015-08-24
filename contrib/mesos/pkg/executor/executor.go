@@ -33,7 +33,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/kubelet"
@@ -123,8 +122,7 @@ type KubernetesExecutor struct {
 	initialRegComplete   chan struct{}
 
 	// values filled by registration
-	slaveName string
-	labels    map[string]string
+	slaveInfo * mesos.SlaveInfo
 }
 
 type Config struct {
@@ -204,13 +202,10 @@ func (k *KubernetesExecutor) isDone() bool {
 	}
 }
 
-func (k *KubernetesExecutor) SlaveName() string {
-	return k.slaveName
+func (k *KubernetesExecutor) SlaveInfo() *mesos.SlaveInfo {
+	return k.slaveInfo
 }
 
-func (k *KubernetesExecutor) Labels() map[string]string {
-	return k.labels
-}
 
 // Registered is called when the executor is successfully registered with the slave.
 func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
@@ -229,8 +224,7 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 		k.initializeStaticPodsSource(executorInfo.Data)
 	}
 
-	k.slaveName = slaveInfo.GetHostname()
-	k.labels = podtask.SlaveLabels(slaveInfo.GetAttributes())
+	k.slaveInfo = slaveInfo
 
 	k.updateChan <- kubelet.PodUpdate{
 		Pods: []*api.Pod{},

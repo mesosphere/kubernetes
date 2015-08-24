@@ -37,7 +37,7 @@ mesosslave1:
   - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
-  - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[21000-21099]
+  - MESOS_RESOURCES=cpus:2.02;mem:1536;disk:25600;ports:[21000-21099]
   - MESOS_ATTRIBUTES=rack:a;gen:2014
   - MESOS_SWITCH_USER=0
   - MESOS_CONTAINERIZERS=docker,mesos
@@ -61,7 +61,7 @@ mesosslave2:
   - MESOS_PORT=5051
   - MESOS_LOG_DIR=/var/log/mesos
   - MESOS_LOGGING_LEVEL=INFO
-  - MESOS_RESOURCES=cpus:4;mem:1280;disk:25600;ports:[21000-21099]
+  - MESOS_RESOURCES=cpus:2.02;mem:1536;disk:25600;ports:[21000-21099]
   - MESOS_ATTRIBUTES=rack:b;gen:2015
   - MESOS_SWITCH_USER=0
   - MESOS_CONTAINERIZERS=docker,mesos

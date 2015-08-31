@@ -56,8 +56,9 @@ const (
 // scheduler abstraction to allow for easier unit testing
 type schedulerInterface interface {
 	sync.Locker // synchronize scheduler plugin operations
+
 	SlaveIndex
-	algorithm() PodScheduleFunc // see types.go
+	algorithm() PodScheduler
 	offers() offers.Registry
 	tasks() podtask.Registry
 
@@ -76,8 +77,8 @@ type k8smScheduler struct {
 	internal *KubernetesScheduler
 }
 
-func (k *k8smScheduler) algorithm() PodScheduleFunc {
-	return k.internal.scheduleFunc
+func (k *k8smScheduler) algorithm() PodScheduler {
+	return k.internal
 }
 
 func (k *k8smScheduler) offers() offers.Registry {
@@ -318,7 +319,7 @@ func (k *kubeScheduler) doSchedule(task *podtask.T, err error) (string, error) {
 		}
 	}
 	if err == nil && offer == nil {
-		offer, err = k.api.algorithm()(k.api.offers(), k.api, task)
+		offer, err = k.api.algorithm().SchedulePod(k.api.offers(), k.api, task)
 	}
 	if err != nil {
 		return "", err
@@ -556,7 +557,7 @@ func (k *errorHandler) handleSchedulingError(pod *api.Pod, schedulingErr error) 
 				defer k.api.Unlock()
 				switch task, state := k.api.tasks().Get(task.ID); state {
 				case podtask.StatePending:
-					return !task.Has(podtask.Launched) && task.AcceptOffer(offer)
+					return !task.Has(podtask.Launched) && k.api.algorithm().FitPredicate()(task, offer)
 				default:
 					// no point in continuing to check for matching offers
 					return true

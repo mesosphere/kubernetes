@@ -24,8 +24,22 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 )
 
+type fcfsPodScheduler struct {
+	fitPredicate podtask.FitPredicate
+}
+
+func NewFCFSPodScheduler(fitPredicate podtask.FitPredicate) PodScheduler {
+	return &fcfsPodScheduler{
+		fitPredicate: fitPredicate,
+	}
+}
+
+func (fps *fcfsPodScheduler) FitPredicate() podtask.FitPredicate {
+	return fps.fitPredicate
+}
+
 // A first-come-first-serve scheduler: acquires the first offer that can support the task
-func FCFSScheduleFunc(r offers.Registry, unused SlaveIndex, task *podtask.T) (offers.Perishable, error) {
+func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, unused SlaveIndex, task *podtask.T) (offers.Perishable, error) {
 	podName := fmt.Sprintf("%s/%s", task.Pod.Namespace, task.Pod.Name)
 	var acceptedOffer offers.Perishable
 	err := r.Walk(func(p offers.Perishable) (bool, error) {
@@ -33,7 +47,7 @@ func FCFSScheduleFunc(r offers.Registry, unused SlaveIndex, task *podtask.T) (of
 		if offer == nil {
 			return false, fmt.Errorf("nil offer while scheduling task %v", task.ID)
 		}
-		if task.AcceptOffer(offer) {
+		if fps.fitPredicate(task, offer) {
 			if p.Acquire() {
 				acceptedOffer = p
 				log.V(3).Infof("Pod %s accepted offer %v", podName, offer.Id.GetValue())

@@ -118,13 +118,13 @@ type KubernetesScheduler struct {
 	// and the invoking the pod registry interfaces.
 	// In particular, changes to podtask.T objects are currently guarded by this lock.
 	*sync.RWMutex
+	PodScheduler
 
 	// Config related, write-once
 
 	schedcfg                 *schedcfg.Config
 	executor                 *mesos.ExecutorInfo
 	executorGroup            uint64
-	scheduleFunc             PodScheduleFunc
 	client                   *client.Client
 	etcdClient               tools.EtcdClient
 	failoverTimeout          float64 // in seconds
@@ -159,7 +159,7 @@ type KubernetesScheduler struct {
 type Config struct {
 	Schedcfg                 schedcfg.Config
 	Executor                 *mesos.ExecutorInfo
-	ScheduleFunc             PodScheduleFunc
+	Scheduler                PodScheduler
 	Client                   *client.Client
 	EtcdClient               tools.EtcdClient
 	FailoverTimeout          float64
@@ -177,7 +177,7 @@ func New(config Config) *KubernetesScheduler {
 		RWMutex:                  new(sync.RWMutex),
 		executor:                 config.Executor,
 		executorGroup:            uid.Parse(config.Executor.ExecutorId.GetValue()).Group(),
-		scheduleFunc:             config.ScheduleFunc,
+		PodScheduler:             config.Scheduler,
 		client:                   config.Client,
 		etcdClient:               config.EtcdClient,
 		failoverTimeout:          config.FailoverTimeout,

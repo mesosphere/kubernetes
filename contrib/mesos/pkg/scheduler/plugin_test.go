@@ -396,7 +396,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	testScheduler := New(Config{
 		Executor:                 executor,
 		Client:                   client.NewOrDie(&client.Config{Host: testApiServer.server.URL, Version: testapi.Version()}),
-		ScheduleFunc:             FCFSScheduleFunc,
+		Scheduler:                NewFCFSPodScheduler(podtask.DefaultPredicate),
 		Schedcfg:                 *schedcfg.CreateDefaultConfig(),
 		DefaultContainerCPULimit: mresource.DefaultDefaultContainerCPULimit,
 		DefaultContainerMemLimit: mresource.DefaultDefaultContainerMemLimit,

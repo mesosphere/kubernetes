@@ -57,6 +57,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/ha"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/metrics"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/uid"
 	"k8s.io/kubernetes/pkg/api"
@@ -651,10 +652,14 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Fatalf("misconfigured etcd: %v", err)
 	}
 
+	fitPredicate := podtask.DefaultPredicate
+	//TODO(jdef) downgrade predicate if user indicates "minimal-resource-fit"
+
+	fcfs := scheduler.NewFCFSPodScheduler(fitPredicate)
 	mesosPodScheduler := scheduler.New(scheduler.Config{
 		Schedcfg:                 *sc,
 		Executor:                 executor,
-		ScheduleFunc:             scheduler.FCFSScheduleFunc,
+		Scheduler:                fcfs,
 		Client:                   client,
 		EtcdClient:               etcdClient,
 		FailoverTimeout:          s.FailoverTimeout,

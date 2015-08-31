@@ -28,7 +28,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/metrics"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/labels"
 
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
@@ -209,65 +208,6 @@ func (t *T) Reset() {
 	log.V(3).Infof("Clearing offer(s) from pod %v", t.Pod.Name)
 	t.Offer = nil
 	t.Spec = Spec{}
-}
-
-func (t *T) AcceptOffer(offer *mesos.Offer) bool {
-	if offer == nil {
-		return false
-	}
-
-	// if the user has specified a target host, make sure this offer is for that host
-	if t.Pod.Spec.NodeName != "" && offer.GetHostname() != t.Pod.Spec.NodeName {
-		return false
-	}
-
-	// check the NodeSelector
-	if len(t.Pod.Spec.NodeSelector) > 0 {
-		slaveLabels := map[string]string{}
-		for _, a := range offer.Attributes {
-			if a.GetType() == mesos.Value_TEXT {
-				slaveLabels[a.GetName()] = a.GetText().GetValue()
-			}
-		}
-		selector := labels.SelectorFromSet(t.Pod.Spec.NodeSelector)
-		if !selector.Matches(labels.Set(slaveLabels)) {
-			return false
-		}
-	}
-
-	// check ports
-	if _, err := t.mapper.Generate(t, offer); err != nil {
-		log.V(3).Info(err)
-		return false
-	}
-
-	// find offered cpu and mem
-	var (
-		offeredCpus mresource.CPUShares
-		offeredMem  mresource.MegaBytes
-	)
-	for _, resource := range offer.Resources {
-		if resource.GetName() == "cpus" {
-			offeredCpus = mresource.CPUShares(*resource.GetScalar().Value)
-		}
-
-		if resource.GetName() == "mem" {
-			offeredMem = mresource.MegaBytes(*resource.GetScalar().Value)
-		}
-	}
-
-	// calculate cpu and mem sum over all containers of the pod
-	// TODO (@sttts): also support pod.spec.resources.limit.request
-	// TODO (@sttts): take into account the executor resources
-	cpu := mresource.PodCPULimit(&t.Pod)
-	mem := mresource.PodMemLimit(&t.Pod)
-	log.V(4).Infof("trying to match offer with pod %v/%v: cpus: %.2f mem: %.2f MB", t.Pod.Namespace, t.Pod.Name, cpu, mem)
-	if (cpu > offeredCpus) || (mem > offeredMem) {
-		log.V(3).Infof("not enough resources for pod %v/%v: cpus: %.2f mem: %.2f MB", t.Pod.Namespace, t.Pod.Name, cpu, mem)
-		return false
-	}
-
-	return true
 }
 
 func (t *T) Set(f FlagType) {

@@ -60,11 +60,13 @@ const (
 
 type KubeletExecutorServer struct {
 	*app.KubeletServer
-	SuicideTimeout time.Duration
-	ShutdownFD     int
-	ShutdownFIFO   string
-	cgroupRoot     string
-	cgroupPrefix   string
+	SuicideTimeout      time.Duration
+	ShutdownFD          int
+	ShutdownFIFO        string
+	ContainPodResources bool
+
+	cgroupRoot   string
+	cgroupPrefix string
 }
 
 func findMesosCgroup(prefix string) string {
@@ -87,9 +89,10 @@ func findMesosCgroup(prefix string) string {
 
 func NewKubeletExecutorServer() *KubeletExecutorServer {
 	k := &KubeletExecutorServer{
-		KubeletServer:  app.NewKubeletServer(),
-		SuicideTimeout: config.DefaultSuicideTimeout,
-		cgroupPrefix:   config.DefaultCgroupPrefix,
+		KubeletServer:       app.NewKubeletServer(),
+		SuicideTimeout:      config.DefaultSuicideTimeout,
+		ContainPodResources: true,
+		cgroupPrefix:        config.DefaultCgroupPrefix,
 	}
 	if pwd, err := os.Getwd(); err != nil {
 		log.Warningf("failed to determine current directory: %v", err)
@@ -107,6 +110,7 @@ func (s *KubeletExecutorServer) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&s.SuicideTimeout, "suicide-timeout", s.SuicideTimeout, "Self-terminate after this period of inactivity. Zero disables suicide watch.")
 	fs.IntVar(&s.ShutdownFD, "shutdown-fd", s.ShutdownFD, "File descriptor used to signal shutdown to external watchers, requires shutdown-fifo flag")
 	fs.StringVar(&s.ShutdownFIFO, "shutdown-fifo", s.ShutdownFIFO, "FIFO used to signal shutdown to external watchers, requires shutdown-fd flag")
+	fs.BoolVar(&s.ContainPodResources, "contain-pod-resources", s.ContainPodResources, "Allocate pod CPU and memory resources from offers and reparent pod containers into mesos cgroups; disable if you're having strange mesos/docker/systemd interactions.")
 	fs.StringVar(&s.cgroupPrefix, "cgroup-prefix", s.cgroupPrefix, "The cgroup prefix concatenated with MESOS_DIRECTORY must give the executor cgroup set by Mesos")
 }
 
@@ -131,9 +135,11 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		log.Info(err)
 	}
 
-	// derive the executor cgroup and use it as docker container cgroup root
-	mesosCgroup := findMesosCgroup(s.cgroupPrefix)
-	s.cgroupRoot = mesosCgroup
+	if s.ContainPodResources {
+		// derive the executor cgroup and use it as docker container cgroup root
+		s.cgroupRoot = findMesosCgroup(s.cgroupPrefix)
+	}
+
 	log.V(2).Infof("passing cgroup %q to the kubelet as cgroup root", s.CgroupRoot)
 
 	// empty string for the docker and system containers (= cgroup paths). This
@@ -144,7 +150,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	// We set kubelet container to its own cgroup below the executor cgroup.
 	// In contrast to the docker and system container, this has no other
 	// undesired side-effects.
-	s.ResourceContainer = mesosCgroup + "/kubelet"
+	s.ResourceContainer = s.cgroupRoot + "/kubelet"
 
 	// create apiserver client
 	var apiclient *client.Client

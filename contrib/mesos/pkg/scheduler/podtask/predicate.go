@@ -80,33 +80,6 @@ func PortsPredicate(t *T, offer *mesos.Offer) bool {
 	return true
 }
 
-func MinimalResourcesPredicate(t *T, offer *mesos.Offer) bool {
-	// bogus numbers that we use to make sure that there's some set of minimal offered resources on the slave
-	const (
-		minimalCpus = 0.25
-		minimalMem  = 64.0
-	)
-	var (
-		offeredCpus float64
-		offeredMem  float64
-	)
-	for _, resource := range offer.Resources {
-		if resource.GetName() == "cpus" {
-			offeredCpus = resource.GetScalar().GetValue()
-		}
-
-		if resource.GetName() == "mem" {
-			offeredMem = resource.GetScalar().GetValue()
-		}
-	}
-	log.V(4).Infof("trying to match offer with pod %v/%v: cpus: %.2f mem: %.2f MB", t.Pod.Namespace, t.Pod.Name, minimalCpus, minimalMem)
-	if (minimalCpus > offeredCpus) || (minimalMem > offeredMem) {
-		log.V(3).Infof("not enough resources for pod %v/%v: cpus: %.2f mem: %.2f MB", t.Pod.Namespace, t.Pod.Name, minimalCpus, minimalMem)
-		return false
-	}
-	return true
-}
-
 func PodFitsResourcesPredicate(t *T, offer *mesos.Offer) bool {
 	// find offered cpu and mem
 	var (

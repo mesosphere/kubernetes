@@ -23,9 +23,16 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 )
 
-type PodScheduler interface {
+type AllocationStrategy interface {
 	// FitPredicate returns the selector used to determine pod fitness w/ respect to a given offer
 	FitPredicate() podtask.FitPredicate
+
+	// Procurement returns a func that obtains resources for a task from resource offer
+	Procurement() podtask.Procurement
+}
+
+type PodScheduler interface {
+	AllocationStrategy
 
 	// SchedulePod implements how to schedule pods among slaves.
 	// We can have different implementation for different scheduling policy.

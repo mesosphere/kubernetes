@@ -18,7 +18,6 @@ package podtask
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -147,59 +146,6 @@ func (t *T) BuildTaskInfo() *mesos.TaskInfo {
 		info.Resources = append(info.Resources, portsResource)
 	}
 	return info
-}
-
-// Fill the Spec in the T, should be called during k8s scheduling, before binding.
-func (t *T) FillFromDetails(details *mesos.Offer) error {
-	if details == nil {
-		//programming error
-		panic("offer details are nil")
-	}
-
-	// compute used resources
-	cpu := mresource.PodCPULimit(&t.Pod)
-	mem := mresource.PodMemLimit(&t.Pod)
-	log.V(3).Infof("Recording offer(s) %s/%s against pod %v: cpu: %.2f, mem: %.2f MB", details.Id, t.Pod.Namespace, t.Pod.Name, cpu, mem)
-
-	t.Spec = Spec{
-		SlaveID:       details.GetSlaveId().GetValue(),
-		AssignedSlave: details.GetHostname(),
-		CPU:           cpu,
-		Memory:        mem,
-	}
-
-	// fill in port mapping
-	if mapping, err := t.mapper.Generate(t, details); err != nil {
-		t.Reset()
-		return err
-	} else {
-		ports := []uint64{}
-		for _, entry := range mapping {
-			ports = append(ports, entry.OfferPort)
-		}
-		t.Spec.PortMap = mapping
-		t.Spec.Ports = ports
-	}
-
-	// hostname needs of the executor needs to match that of the offer, otherwise
-	// the kubelet node status checker/updater is very unhappy
-	const HOSTNAME_OVERRIDE_FLAG = "--hostname-override="
-	hostname := details.GetHostname() // required field, non-empty
-	hostnameOverride := HOSTNAME_OVERRIDE_FLAG + hostname
-
-	argv := t.executor.Command.Arguments
-	overwrite := false
-	for i, arg := range argv {
-		if strings.HasPrefix(arg, HOSTNAME_OVERRIDE_FLAG) {
-			overwrite = true
-			argv[i] = hostnameOverride
-			break
-		}
-	}
-	if !overwrite {
-		t.executor.Command.Arguments = append(argv, hostnameOverride)
-	}
-	return nil
 }
 
 // Clear offer-related details from the task, should be called if/when an offer

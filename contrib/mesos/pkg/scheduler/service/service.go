@@ -652,21 +652,22 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Fatalf("misconfigured etcd: %v", err)
 	}
 
-	fitPredicate := podtask.DefaultPredicate
-	//TODO(jdef) downgrade predicate if user indicates "minimal-resource-fit"
+	as := scheduler.NewAllocationStrategy(
+		podtask.DefaultPredicate,
+		podtask.NewDefaultProcurement(s.DefaultContainerCPULimit, s.DefaultContainerMemLimit))
 
-	fcfs := scheduler.NewFCFSPodScheduler(fitPredicate)
+	//TODO(jdef) downgrade allocation strategy if user disables "pod-resource-containment"
+
+	fcfs := scheduler.NewFCFSPodScheduler(as)
 	mesosPodScheduler := scheduler.New(scheduler.Config{
-		Schedcfg:                 *sc,
-		Executor:                 executor,
-		Scheduler:                fcfs,
-		Client:                   client,
-		EtcdClient:               etcdClient,
-		FailoverTimeout:          s.FailoverTimeout,
-		ReconcileInterval:        s.ReconcileInterval,
-		ReconcileCooldown:        s.ReconcileCooldown,
-		DefaultContainerCPULimit: s.DefaultContainerCPULimit,
-		DefaultContainerMemLimit: s.DefaultContainerMemLimit,
+		Schedcfg:          *sc,
+		Executor:          executor,
+		Scheduler:         fcfs,
+		Client:            client,
+		EtcdClient:        etcdClient,
+		FailoverTimeout:   s.FailoverTimeout,
+		ReconcileInterval: s.ReconcileInterval,
+		ReconcileCooldown: s.ReconcileCooldown,
 	})
 
 	masterUri := s.MesosMaster

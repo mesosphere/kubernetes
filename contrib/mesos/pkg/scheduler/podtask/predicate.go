@@ -30,6 +30,8 @@ var DefaultPredicate = RequireAllPredicate([]FitPredicate{
 	PortsPredicate,
 }).Fit
 
+// FitPredicate implementations determine if the given task "fits" into offered Mesos resources.
+// Neither the task or offer should be modified.
 type FitPredicate func(*T, *mesos.Offer) bool
 
 type RequireAllPredicate []FitPredicate

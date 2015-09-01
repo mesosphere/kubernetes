@@ -55,6 +55,7 @@ type MinionServer struct {
 	logMaxSize      resource.Quantity
 	logMaxBackups   int
 	logMaxAgeInDays int
+	logVerbosity    int32 // see glog.Level
 
 	runProxy     bool
 	proxyLogV    int
@@ -271,6 +272,9 @@ func (ms *MinionServer) Run(hks hyperkube.Interface, _ []string) error {
 
 func (ms *MinionServer) AddExecutorFlags(fs *pflag.FlagSet) {
 	ms.KubeletExecutorServer.AddFlags(fs)
+
+	// hack to forward log verbosity flag to the executor
+	fs.Int32Var(&ms.logVerbosity, "v", ms.logVerbosity, "log level for V logs")
 }
 
 func (ms *MinionServer) AddMinionFlags(fs *pflag.FlagSet) {

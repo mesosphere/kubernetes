@@ -24,7 +24,7 @@ import (
 // bogus numbers that we use to make sure that there's some set of minimal offered resources on the slave
 const (
 	minimalCpus = 0.01
-	minimalMem  = 32.0
+	minimalMem  = 0.25
 )
 
 var (

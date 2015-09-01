@@ -135,12 +135,13 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		log.Info(err)
 	}
 
+	// derive the executor cgroup and use it as docker container cgroup root
+	mesosCgroup := findMesosCgroup(s.cgroupPrefix)
 	if s.ContainPodResources {
-		// derive the executor cgroup and use it as docker container cgroup root
-		s.cgroupRoot = findMesosCgroup(s.cgroupPrefix)
+		s.cgroupRoot = mesosCgroup
 	}
 
-	log.V(2).Infof("passing cgroup %q to the kubelet as cgroup root", s.CgroupRoot)
+	log.V(2).Infof("passing cgroup %q to the kubelet as cgroup root", s.cgroupRoot)
 
 	// empty string for the docker and system containers (= cgroup paths). This
 	// stops the kubelet taking any control over other system processes.
@@ -150,7 +151,7 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	// We set kubelet container to its own cgroup below the executor cgroup.
 	// In contrast to the docker and system container, this has no other
 	// undesired side-effects.
-	s.ResourceContainer = s.cgroupRoot + "/kubelet"
+	s.ResourceContainer = mesosCgroup + "/kubelet"
 
 	// create apiserver client
 	var apiclient *client.Client

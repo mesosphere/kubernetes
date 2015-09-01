@@ -371,7 +371,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--cgroup-prefix=%v", s.ExecutorCgroupPrefix))
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--cadvisor-port=%v", s.KubeletCadvisorPort))
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--sync-frequency=%v", s.KubeletSyncFrequency))
-	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--contain-pod-resources=%b", s.ContainPodResources))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--contain-pod-resources=%t", s.ContainPodResources))
 
 	if s.AuthPath != "" {
 		//TODO(jdef) should probably support non-local files, e.g. hdfs:///some/config/file

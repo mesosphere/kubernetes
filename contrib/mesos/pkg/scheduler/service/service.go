@@ -141,6 +141,7 @@ type SchedulerServer struct {
 	StaticPodsConfigPath          string
 	DockerCfgPath                 string
 	ContainPodResources           bool
+	AccountForPodResources        bool
 
 	executable  string // path to the binary running this service
 	client      *client.Client
@@ -173,18 +174,19 @@ func NewSchedulerServer() *SchedulerServer {
 		MinionLogMaxBackups:   minioncfg.DefaultLogMaxBackups,
 		MinionLogMaxAgeInDays: minioncfg.DefaultLogMaxAgeInDays,
 
-		MesosAuthProvider:    sasl.ProviderName,
-		MesosMaster:          defaultMesosMaster,
-		MesosUser:            defaultMesosUser,
-		ReconcileInterval:    defaultReconcileInterval,
-		ReconcileCooldown:    defaultReconcileCooldown,
-		Checkpoint:           true,
-		FrameworkName:        defaultFrameworkName,
-		HA:                   false,
-		mux:                  http.NewServeMux(),
-		KubeletCadvisorPort:  4194, // copied from github.com/GoogleCloudPlatform/kubernetes/blob/release-0.14/cmd/kubelet/app/server.go
-		KubeletSyncFrequency: 10 * time.Second,
-		ContainPodResources:  true,
+		MesosAuthProvider:      sasl.ProviderName,
+		MesosMaster:            defaultMesosMaster,
+		MesosUser:              defaultMesosUser,
+		ReconcileInterval:      defaultReconcileInterval,
+		ReconcileCooldown:      defaultReconcileCooldown,
+		Checkpoint:             true,
+		FrameworkName:          defaultFrameworkName,
+		HA:                     false,
+		mux:                    http.NewServeMux(),
+		KubeletCadvisorPort:    4194, // copied from github.com/GoogleCloudPlatform/kubernetes/blob/release-0.14/cmd/kubelet/app/server.go
+		KubeletSyncFrequency:   10 * time.Second,
+		ContainPodResources:    true,
+		AccountForPodResources: true,
 	}
 	// cache this for later use. also useful in case the original binary gets deleted, e.g.
 	// during upgrades, development deployments, etc.
@@ -233,7 +235,8 @@ func (s *SchedulerServer) addCoreFlags(fs *pflag.FlagSet) {
 	fs.IPVar(&s.ServiceAddress, "service-address", s.ServiceAddress, "The service portal IP address that the scheduler should register with (if unset, chooses randomly)")
 	fs.Var(&s.DefaultContainerCPULimit, "default-container-cpu-limit", "Containers without a CPU resource limit are admitted this much CPU shares")
 	fs.Var(&s.DefaultContainerMemLimit, "default-container-mem-limit", "Containers without a memory resource limit are admitted this much amount of memory in MB")
-	fs.BoolVar(&s.ContainPodResources, "contain-pod-resources", s.ContainPodResources, "Allocate pod CPU and memory resources from offers and reparent pod containers into mesos cgroups; disable if you're having strange mesos/docker/systemd interactions.")
+	fs.BoolVar(&s.ContainPodResources, "contain-pod-resources", s.ContainPodResources, "Reparent pod containers into mesos cgroups; disable if you're having strange mesos/docker/systemd interactions.")
+	fs.BoolVar(&s.AccountForPodResources, "account-for-pod-resources", s.AccountForPodResources, "Allocate pod CPU and memory resources from offers (Default: true)")
 
 	fs.IntVar(&s.ExecutorLogV, "executor-logv", s.ExecutorLogV, "Logging verbosity of spawned minion and executor processes.")
 	fs.BoolVar(&s.ExecutorBindall, "executor-bindall", s.ExecutorBindall, "When true will set -address of the executor to 0.0.0.0.")
@@ -660,8 +663,8 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		podtask.DefaultPredicate,
 		podtask.NewDefaultProcurement(s.DefaultContainerCPULimit, s.DefaultContainerMemLimit))
 
-	// downgrade allocation strategy if user disables "pod-resource-containment"
-	if !s.ContainPodResources {
+	// downgrade allocation strategy if user disables "account-for-pod-resources"
+	if !s.AccountForPodResources {
 		as = scheduler.NewAllocationStrategy(
 			podtask.DefaultMinimalPredicate,
 			podtask.DefaultMinimalProcurement)

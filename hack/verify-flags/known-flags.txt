@@ -1,5 +1,6 @@
 accept-hosts
 accept-paths
+account-for-pod-resources
 admission-control
 admission-control-config-file
 advertise-address

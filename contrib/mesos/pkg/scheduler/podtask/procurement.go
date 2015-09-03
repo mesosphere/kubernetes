@@ -24,8 +24,8 @@ import (
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 )
 
-// NewDefaultProcurement returns the default procurement strategy that combines validation,
-// node, pod-resource, and ports procurement. c and m are resource quantities written into
+// NewDefaultProcurement returns the default procurement strategy that combines validation
+// and responsible Mesos resource procurement. c and m are resource quantities written into
 // k8s api.Pod.Spec's that don't declare resources (all containers in k8s-mesos require cpu
 // and memory limits).
 func NewDefaultProcurement(c mresource.CPUShares, m mresource.MegaBytes) Procurement {
@@ -46,11 +46,16 @@ func NewDefaultProcurement(c mresource.CPUShares, m mresource.MegaBytes) Procure
 // Both the task and/or offer may be modified.
 type Procurement func(*T, *mesos.Offer) error
 
+// AllOrNothingProcurement provides a convenient wrapper around multiple Procurement
+// objectives: the failure of any Procurement in the set results in Procure failing.
+// see AllOrNothingProcurement.Procure
 type AllOrNothingProcurement []Procurement
 
-func (a AllOrNothingProcurement) Procure(t *T, details *mesos.Offer) error {
+// Procure runs each Procurement in the receiver list. The first Procurement func that
+// fails triggers T.Reset() and the error is returned, otherwise returns nil.
+func (a AllOrNothingProcurement) Procure(t *T, offer *mesos.Offer) error {
 	for _, p := range a {
-		if err := p(t, details); err != nil {
+		if err := p(t, offer); err != nil {
 			t.Reset()
 			return err
 		}
@@ -60,8 +65,8 @@ func (a AllOrNothingProcurement) Procure(t *T, details *mesos.Offer) error {
 
 // ValidateProcurement checks that the offered resources are kosher, and if not panics.
 // If things check out ok, t.Spec is cleared and nil is returned.
-func ValidateProcurement(t *T, details *mesos.Offer) error {
-	if details == nil {
+func ValidateProcurement(t *T, offer *mesos.Offer) error {
+	if offer == nil {
 		//programming error
 		panic("offer details are nil")
 	}
@@ -71,14 +76,14 @@ func ValidateProcurement(t *T, details *mesos.Offer) error {
 
 // NodeProcurement updates t.Spec in preparation for the task to be launched on the
 // slave associated with the offer.
-func NodeProcurement(t *T, details *mesos.Offer) error {
-	t.Spec.SlaveID = details.GetSlaveId().GetValue()
-	t.Spec.AssignedSlave = details.GetHostname()
+func NodeProcurement(t *T, offer *mesos.Offer) error {
+	t.Spec.SlaveID = offer.GetSlaveId().GetValue()
+	t.Spec.AssignedSlave = offer.GetHostname()
 
 	// hostname needs of the executor needs to match that of the offer, otherwise
 	// the kubelet node status checker/updater is very unhappy
 	const HOSTNAME_OVERRIDE_FLAG = "--hostname-override="
-	hostname := details.GetHostname() // required field, non-empty
+	hostname := offer.GetHostname() // required field, non-empty
 	hostnameOverride := HOSTNAME_OVERRIDE_FLAG + hostname
 
 	argv := t.executor.Command.Arguments
@@ -101,10 +106,12 @@ type RequireSomePodResources struct {
 	defaultContainerMemLimit mresource.MegaBytes
 }
 
-func (r *RequireSomePodResources) Procure(t *T, details *mesos.Offer) error {
+func (r *RequireSomePodResources) Procure(t *T, offer *mesos.Offer) error {
 	// write resource limits into the pod spec which is transferred to the executor. From here
 	// on we can expect that the pod spec of a task has proper limits for CPU and memory.
 	// TODO(sttts): For a later separation of the kubelet and the executor also patch the pod on the apiserver
+	// TODO(jdef): changing the state of t.Pod here feels dirty, especially since we don't use a kosher
+	// method to clone the api.Pod state in T.Clone(). This needs some love.
 	if unlimitedCPU := mresource.LimitPodCPU(&t.Pod, r.defaultContainerCPULimit); unlimitedCPU {
 		log.Warningf("Pod %s/%s without cpu limits is admitted %.2f cpu shares", t.Pod.Namespace, t.Pod.Name, mresource.PodCPULimit(&t.Pod))
 	}
@@ -116,12 +123,12 @@ func (r *RequireSomePodResources) Procure(t *T, details *mesos.Offer) error {
 
 // PodResourcesProcurement converts k8s pod cpu and memory resource requirements into
 // mesos resource allocations.
-func PodResourcesProcurement(t *T, details *mesos.Offer) error {
+func PodResourcesProcurement(t *T, offer *mesos.Offer) error {
 	// compute used resources
 	cpu := mresource.PodCPULimit(&t.Pod)
 	mem := mresource.PodMemLimit(&t.Pod)
 
-	log.V(3).Infof("Recording offer(s) %s/%s against pod %v: cpu: %.2f, mem: %.2f MB", details.Id, t.Pod.Namespace, t.Pod.Name, cpu, mem)
+	log.V(3).Infof("Recording offer(s) %s/%s against pod %v: cpu: %.2f, mem: %.2f MB", offer.Id, t.Pod.Namespace, t.Pod.Name, cpu, mem)
 
 	t.Spec.CPU = cpu
 	t.Spec.Memory = mem
@@ -129,9 +136,9 @@ func PodResourcesProcurement(t *T, details *mesos.Offer) error {
 }
 
 // PortsProcurement convert host port mappings into mesos port resource allocations.
-func PortsProcurement(t *T, details *mesos.Offer) error {
+func PortsProcurement(t *T, offer *mesos.Offer) error {
 	// fill in port mapping
-	if mapping, err := t.mapper.Generate(t, details); err != nil {
+	if mapping, err := t.mapper.Generate(t, offer); err != nil {
 		return err
 	} else {
 		ports := []uint64{}

@@ -1725,22 +1725,21 @@ func (kl *Kubelet) admitPods(allPods []*api.Pod, podSyncTypes map[types.UID]Sync
 // state every sync_frequency seconds. Never returns.
 func (kl *Kubelet) syncLoop(updates <-chan PodUpdate, handler SyncHandler) {
 	glog.Info("Starting kubelet main sync loop.")
-	for {
-		kl.syncLoopIteration(updates, handler)
+	for kl.syncLoopIteration(updates, handler) {
 	}
 }
 
-func (kl *Kubelet) syncLoopIteration(updates <-chan PodUpdate, handler SyncHandler) {
+func (kl *Kubelet) syncLoopIteration(updates <-chan PodUpdate, handler SyncHandler) bool {
 	kl.syncLoopMonitor.Store(time.Now())
 	if !kl.containerRuntimeUp() {
 		time.Sleep(5 * time.Second)
 		glog.Infof("Skipping pod synchronization, container runtime is not up.")
-		return
+		return true
 	}
 	if !kl.doneNetworkConfigure() {
 		time.Sleep(5 * time.Second)
 		glog.Infof("Skipping pod synchronization, network is not configured")
-		return
+		return true
 	}
 	unsyncedPod := false
 	podSyncTypes := make(map[types.UID]SyncPodType)
@@ -1748,7 +1747,7 @@ func (kl *Kubelet) syncLoopIteration(updates <-chan PodUpdate, handler SyncHandl
 	case u, ok := <-updates:
 		if !ok {
 			glog.Errorf("Update channel is closed. Exiting the sync loop.")
-			return
+			return false
 		}
 		kl.podManager.UpdatePods(u, podSyncTypes)
 		unsyncedPod = true
@@ -1775,6 +1774,7 @@ func (kl *Kubelet) syncLoopIteration(updates <-chan PodUpdate, handler SyncHandl
 		glog.Errorf("Couldn't sync containers: %v", err)
 	}
 	kl.syncLoopMonitor.Store(time.Now())
+	return true
 }
 
 func (kl *Kubelet) LatestLoopEntryTime() time.Time {

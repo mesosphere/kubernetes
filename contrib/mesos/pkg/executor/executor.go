@@ -28,11 +28,14 @@ import (
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
+	"github.com/mesos/mesos-go/mesosproto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	mutil "github.com/mesos/mesos-go/mesosutil"
 	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	sservice "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/service"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/kubelet"
@@ -98,6 +101,12 @@ type suicideWatcher interface {
 
 type podStatusFunc func() (*api.PodStatus, error)
 
+type NodeInfo struct {
+	Labels map[string]string
+	Cores  int
+	Mem    int64 // in bytes
+}
+
 // KubernetesExecutor is an mesos executor that runs pods
 // in a minion machine.
 type KubernetesExecutor struct {
@@ -120,9 +129,8 @@ type KubernetesExecutor struct {
 	podStatusFunc        func(*api.Pod) (*api.PodStatus, error)
 	staticPodsConfigPath string
 	initialRegComplete   chan struct{}
-
-	// values filled by registration
-	slaveInfo * mesos.SlaveInfo
+	nodeInfoLock         sync.Mutex
+	nodeInfo             NodeInfo
 }
 
 type Config struct {
@@ -202,10 +210,47 @@ func (k *KubernetesExecutor) isDone() bool {
 	}
 }
 
-func (k *KubernetesExecutor) SlaveInfo() *mesos.SlaveInfo {
-	return k.slaveInfo
+func (k *KubernetesExecutor) NodeInfo() (ni NodeInfo) {
+	k.nodeInfoLock.Lock()
+	defer k.nodeInfoLock.Unlock()
+
+	// clone k.nodeInfo
+	ni = k.nodeInfo
+	ni.Labels = map[string]string{}
+	for k, v := range k.nodeInfo.Labels {
+		ni.Labels[k] = v
+	}
+
+	return
 }
 
+func (k *KubernetesExecutor) updateNodeInfo(slaveInfo *mesos.SlaveInfo) {
+	k.nodeInfoLock.Lock()
+	defer k.nodeInfoLock.Unlock()
+
+	// TODO(sttts): when executor and kubelet are independent processes, update the Node api object here
+	// Then the ugly locking will go away.
+
+	k.nodeInfo.Labels = podtask.SlaveAttributesToLabels(slaveInfo.Attributes)
+
+	for _, r := range slaveInfo.GetResources() {
+		if r == nil || r.GetType() != mesosproto.Value_SCALAR {
+			continue
+		}
+
+		// TODO(sttts): use custom executor CPU and mem values here, not the defaults
+		switch r.GetName() {
+		case "cpus":
+			k.nodeInfo.Cores = int(r.GetScalar().GetValue())
+		// We intentionally ignore DefaultExecutorCPU here because cores are integers
+		// and we would loose a complete cpu here. This is not dramatic though
+		// because ExecutorCPU is only set to the minumm allowed of 0.01 and
+		// it's only about shares anyway, no hard cpu limit.
+		case "mem":
+			k.nodeInfo.Mem = int64(r.GetScalar().GetValue()-float64(sservice.DefaultExecutorMem)) * 1024 * 1024
+		}
+	}
+}
 
 // Registered is called when the executor is successfully registered with the slave.
 func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
@@ -224,8 +269,9 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 		k.initializeStaticPodsSource(executorInfo.Data)
 	}
 
-	k.slaveInfo = slaveInfo
+	k.updateNodeInfo(slaveInfo)
 
+	// emit first event to mark the pod config source as seen
 	k.updateChan <- kubelet.PodUpdate{
 		Pods: []*api.Pod{},
 		Op:   kubelet.SET,
@@ -244,6 +290,8 @@ func (k *KubernetesExecutor) Reregistered(driver bindings.ExecutorDriver, slaveI
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to reregister/transition to a connected state")
 	}
+
+	k.updateNodeInfo(slaveInfo)
 }
 
 // initializeStaticPodsSource unzips the data slice into the static-pods directory

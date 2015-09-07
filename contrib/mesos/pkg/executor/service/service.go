@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/golang/glog"
@@ -36,7 +37,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
 	"k8s.io/kubernetes/contrib/mesos/pkg/redirfd"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	mcloud "k8s.io/kubernetes/pkg/cloudprovider/providers/mesos"
@@ -61,6 +61,7 @@ type KubeletExecutorServer struct {
 	SuicideTimeout time.Duration
 	ShutdownFD     int
 	ShutdownFIFO   string
+	kletLock       sync.Mutex
 	klet           *kubelet.Kubelet
 }
 
@@ -202,6 +203,9 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 		},
 		ExitFunc: os.Exit,
 		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
+			s.kletLock.Lock()
+			defer s.kletLock.Unlock()
+
 			if s.klet == nil {
 				return nil, fmt.Errorf("PodStatucFunc called before kubelet is initialized")
 			}
@@ -247,19 +251,19 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 	<-exec.InitialRegComplete()
 
 	// create mesos cloud provider with executor information from registration
-	si := exec.SlaveInfo()
 	l := []mcloud.Label{}
-	for k, v := range podtask.SlaveLabels(si.GetAttributes()) {
+	ni := exec.NodeInfo()
+	for k, v := range ni.Labels {
 		l = append(l, mcloud.Label{Key: k, Value: v})
 	}
 	cloud, err := mcloud.New(&mcloud.Config{
 		Mesos_Node: mcloud.Node{
-			Name:   si.GetHostname(),
+			Name:   s.HostnameOverride, // for Mesos NodeName equals HostName
 			Labels: l,
 		},
 	})
 
-	cadvisorInterface, err := NewMesosCadvisor(si, s.CadvisorPort)
+	cadvisorInterface, err := NewMesosCadvisor(ni.Cores, ni.Mem, s.CadvisorPort)
 	if err != nil {
 		return err
 	}
@@ -392,8 +396,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	fileSourceUpdates := pc.Channel(kubelet.FileSource)
 	kconfig.NewSourceFile(staticPodsConfigPath, kc.Hostname, kc.FileCheckFrequency, fileSourceUpdates)
 
-	var err error
-	ks.klet, err = kubelet.NewMainKubelet(
+	klet, err := kubelet.NewMainKubelet(
 		kc.Hostname,
 		kc.NodeName,
 		kc.DockerClient,
@@ -438,6 +441,10 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	if err != nil {
 		return nil, nil, err
 	}
+
+	ks.kletLock.Lock()
+	ks.klet = klet
+	ks.kletLock.Unlock()
 
 	k := &kubeletExecutor{
 		Kubelet:      ks.klet,

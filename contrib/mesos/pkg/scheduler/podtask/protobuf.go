@@ -58,8 +58,8 @@ func foreachRange(offer *mesos.Offer, resourceName string, f func(begin, end uin
 	}
 }
 
-// SlaveLabels converts slave attributes into string key/value labels
-func SlaveLabels(attrs []*mesos.Attribute) map[string]string {
+// SlaveAttributesToLabels converts slave attributes into string key/value labels
+func SlaveAttributesToLabels(attrs []*mesos.Attribute) map[string]string {
 	l := map[string]string{}
 	for _, a := range attrs {
 		if a == nil {

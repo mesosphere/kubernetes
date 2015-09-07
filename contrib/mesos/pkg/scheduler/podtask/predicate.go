@@ -57,7 +57,7 @@ func NodeSelectorPredicate(t *T, offer *mesos.Offer) bool {
 
 	// check the NodeSelector
 	if len(t.Pod.Spec.NodeSelector) > 0 {
-		slaveLabels := SlaveLabels(offer.Attributes)
+		slaveLabels := SlaveAttributesToLabels(offer.Attributes)
 		selector := labels.SelectorFromSet(t.Pod.Spec.NodeSelector)
 		if !selector.Matches(labels.Set(slaveLabels)) {
 			return false
@@ -103,4 +103,3 @@ func PodFitsResourcesPredicate(t *T, offer *mesos.Offer) bool {
 	}
 	return true
 }
-

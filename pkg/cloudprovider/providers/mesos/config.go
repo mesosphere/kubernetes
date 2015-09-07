@@ -39,11 +39,13 @@ const (
 //	state-cache-ttl     = 1h
 //
 // [mesos-node]
-//  labels = {"rack": "a", "gen": "2014"}
+//  name = slave3
+//  label = rack:a
+//  label = gen:2014
 
 type Config struct {
 	Mesos_Cloud Cloud
-	Mesos_Node Node
+	Mesos_Node  Node
 }
 
 type Cloud struct {
@@ -97,7 +99,7 @@ func createDefaultConfig() *Config {
 		},
 		Mesos_Node: Node{
 			Labels: []Label{},
-			Name: hostname,
+			Name:   hostname,
 		},
 	}
 }

@@ -201,7 +201,7 @@ func (c *MesosCloud) ExternalID(instance string) (string, error) {
 
 // Labels returns the cloud provider node labels of the specified instance.
 func (c *MesosCloud) Labels(name string) (map[string]string, error) {
-	// if we MesosMaster is set, we are on a service node and query
+	// if MesosMaster is set, we are on a service node and query
 	// the Mesos master. Otherwise, we are on a slave and use the labels
 	// from the cloud config.
 	if c.client != nil {

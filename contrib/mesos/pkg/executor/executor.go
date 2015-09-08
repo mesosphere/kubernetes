@@ -130,6 +130,8 @@ type KubernetesExecutor struct {
 	staticPodsConfigPath string
 	initialRegComplete   chan struct{}
 	nodeInfo             NodeInfo
+	executorMem          float64 // the memory limit from the ExecutorInfo in MB
+	executorCPU          float64 // the cpu share from the ExecutorInfo
 }
 
 type Config struct {
@@ -223,30 +225,44 @@ func (k *KubernetesExecutor) NodeInfo() (ni NodeInfo) {
 	return
 }
 
-func (k *KubernetesExecutor) updateNodeInfo(slaveInfo *mesos.SlaveInfo) {
+func (k *KubernetesExecutor) updateNodeInfo(si *mesos.SlaveInfo, ei *mesos.ExecutorInfo) {
 	k.lock.Lock()
 	defer k.lock.Unlock()
 
 	// TODO(sttts): when executor and kubelet are independent processes, update the Node api object here
 	// Then the ugly locking will go away.
 
-	k.nodeInfo.Labels = podtask.SlaveAttributesToLabels(slaveInfo.Attributes)
+	k.nodeInfo.Labels = podtask.SlaveAttributesToLabels(si.Attributes)
 
-	for _, r := range slaveInfo.GetResources() {
+	// get executor resources
+	if ei != nil {
+		for _, r := range ei.GetResources() {
+			if r == nil || r.GetType() != mesosproto.Value_SCALAR {
+				continue
+			}
+
+			switch r.GetName() {
+			case "cpus":
+				k.executorCPU = r.GetScalar().GetValue()
+			case "mem":
+				k.executorMem = r.GetScalar().GetValue()
+			}
+		}
+	}
+
+	// get resource capacity of the node
+	for _, r := range si.GetResources() {
 		if r == nil || r.GetType() != mesosproto.Value_SCALAR {
 			continue
 		}
 
-		// TODO(sttts): use custom executor CPU and mem values here, not the defaults
 		switch r.GetName() {
 		case "cpus":
-			k.nodeInfo.Cores = int(r.GetScalar().GetValue())
-		// We intentionally ignore DefaultExecutorCPU here because cores are integers
-		// and we would loose a complete cpu here. This is not dramatic though
-		// because ExecutorCPU is only set to the minumm allowed of 0.01 and
-		// it's only about shares anyway, no hard cpu limit.
+			k.nodeInfo.Cores = int(r.GetScalar().GetValue() - float64(int(k.executorCPU)))
+			// We intentionally take the floor of executorCPU because cores are integers
+			// and we would loose a complete cpu here if the value is <1.
 		case "mem":
-			k.nodeInfo.Mem = int64(r.GetScalar().GetValue()-float64(sservice.DefaultExecutorMem)) * 1024 * 1024
+			k.nodeInfo.Mem = int64(r.GetScalar().GetValue()-k.executorMem) * 1024 * 1024
 		}
 	}
 }
@@ -268,7 +284,7 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 		k.initializeStaticPodsSource(executorInfo.Data)
 	}
 
-	k.updateNodeInfo(slaveInfo)
+	k.updateNodeInfo(slaveInfo, executorInfo)
 
 	// emit first event to mark the pod config source as seen
 	k.updateChan <- kubelet.PodUpdate{
@@ -290,7 +306,7 @@ func (k *KubernetesExecutor) Reregistered(driver bindings.ExecutorDriver, slaveI
 		log.Errorf("failed to reregister/transition to a connected state")
 	}
 
-	k.updateNodeInfo(slaveInfo)
+	k.updateNodeInfo(slaveInfo, nil)
 }
 
 // initializeStaticPodsSource unzips the data slice into the static-pods directory

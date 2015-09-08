@@ -20,6 +20,7 @@ package messages
 
 const (
 	ContainersDisappeared    = "containers-disappeared"
+	ContainersFinished       = "containers-finished"
 	CreateBindingFailure     = "create-binding-failure"
 	CreateBindingSuccess     = "create-binding-success"
 	ExecutorUnregistered     = "executor-unregistered"

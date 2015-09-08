@@ -17,7 +17,6 @@ limitations under the License.
 package service
 
 import (
-	"fmt"
 	"io"
 	"math/rand"
 	"net"
@@ -26,7 +25,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	log "github.com/golang/glog"
@@ -37,7 +35,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
 	"k8s.io/kubernetes/contrib/mesos/pkg/redirfd"
-	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	mcloud "k8s.io/kubernetes/pkg/cloudprovider/providers/mesos"
 	"k8s.io/kubernetes/pkg/credentialprovider"
@@ -61,7 +58,6 @@ type KubeletExecutorServer struct {
 	SuicideTimeout time.Duration
 	ShutdownFD     int
 	ShutdownFIFO   string
-	kletLock       sync.Mutex
 	klet           *kubelet.Kubelet
 }
 
@@ -202,28 +198,6 @@ func (s *KubeletExecutorServer) Run(hks hyperkube.Interface, _ []string) error {
 			}
 		},
 		ExitFunc: os.Exit,
-		PodStatusFunc: func(pod *api.Pod) (*api.PodStatus, error) {
-			s.kletLock.Lock()
-			defer s.kletLock.Unlock()
-
-			if s.klet == nil {
-				return nil, fmt.Errorf("PodStatucFunc called before kubelet is initialized")
-			}
-
-			status, err := s.klet.GetRuntime().GetPodStatus(pod)
-			if err != nil {
-				return nil, err
-			}
-
-			status.Phase = kubelet.GetPhase(&pod.Spec, status.ContainerStatuses)
-			hostIP, err := s.klet.GetHostIP()
-			if err != nil {
-				log.Errorf("Cannot get host IP: %v", err)
-			} else {
-				status.HostIP = hostIP.String()
-			}
-			return status, nil
-		},
 		StaticPodsConfigPath: staticPodsConfigPath,
 	})
 
@@ -442,9 +416,7 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 		return nil, nil, err
 	}
 
-	ks.kletLock.Lock()
 	ks.klet = klet
-	ks.kletLock.Unlock()
 
 	k := &kubeletExecutor{
 		Kubelet:      ks.klet,

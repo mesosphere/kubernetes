@@ -569,7 +569,7 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 	task, found := k.tasks[taskId]
 	if !found {
 		log.V(1).Infof("task %v not found, probably killed: aborting launch, reporting lost", taskId)
-		k.reportLostTask(driver, taskId, messages.LaunchTaskFailed)
+		k.removePodTask(driver, taskId, messages.LaunchTaskFailed, mesos.TaskState_TASK_LOST)
 		return
 	}
 
@@ -678,7 +678,7 @@ waitForRunningPod:
 	k.lock.Lock()
 	defer k.lock.Unlock()
 reportLost:
-	k.reportLostTask(driver, taskId, messages.LaunchTaskFailed)
+	k.removePodTask(driver, taskId, messages.LaunchTaskFailed, mesos.TaskState_TASK_LOST)
 }
 
 func (k *KubernetesExecutor) __launchTask(driver bindings.ExecutorDriver, taskId, podFullName string, psf podStatusFunc) {
@@ -719,7 +719,7 @@ func (k *KubernetesExecutor) checkForLostPodTask(driver bindings.ExecutorDriver,
 			return false
 		} else {
 			log.Warningf("Detected lost pod, reporting lost task %v", taskId)
-			k.reportLostTask(driver, taskId, messages.ContainersDisappeared)
+			k.removePodTask(driver, taskId, messages.ContainersDisappeared, mesos.TaskState_TASK_LOST)
 		}
 	} else {
 		log.V(2).Infof("Task %v no longer registered, stop monitoring for lost pods", taskId)
@@ -743,12 +743,6 @@ func (k *KubernetesExecutor) KillTask(driver bindings.ExecutorDriver, taskId *me
 	k.lock.Lock()
 	defer k.lock.Unlock()
 	k.removePodTask(driver, taskId.GetValue(), messages.TaskKilled, mesos.TaskState_TASK_KILLED)
-}
-
-// Reports a lost task to the slave and updates internal task and pod tracking state.
-// Assumes that the caller is locking around pod and task state.
-func (k *KubernetesExecutor) reportLostTask(driver bindings.ExecutorDriver, tid, reason string) {
-	k.removePodTask(driver, tid, reason, mesos.TaskState_TASK_LOST)
 }
 
 // deletes the pod and task associated with the task identified by tid and sends a task
@@ -800,7 +794,7 @@ func (k *KubernetesExecutor) FrameworkMessage(driver bindings.ExecutorDriver, me
 			// clean up pod state
 			k.lock.Lock()
 			defer k.lock.Unlock()
-			k.reportLostTask(driver, taskId, messages.TaskLostAck)
+			k.removePodTask(driver, taskId, messages.TaskLostAck, mesos.TaskState_TASK_LOST)
 		}
 	}
 

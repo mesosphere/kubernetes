@@ -212,7 +212,7 @@ func (k *KubernetesExecutor) isDone() bool {
 
 func (k *KubernetesExecutor) NodeInfo() (ni NodeInfo) {
 	k.lock.RLock()
-	defer k.lock.RLock()
+	defer k.lock.RUnlock()
 
 	// clone k.nodeInfo
 	ni = k.nodeInfo

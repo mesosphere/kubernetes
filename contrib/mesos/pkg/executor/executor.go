@@ -129,7 +129,6 @@ type KubernetesExecutor struct {
 	podStatusFunc        func(*api.Pod) (*api.PodStatus, error)
 	staticPodsConfigPath string
 	initialRegComplete   chan struct{}
-	nodeInfoLock         sync.Mutex
 	nodeInfo             NodeInfo
 }
 
@@ -211,8 +210,8 @@ func (k *KubernetesExecutor) isDone() bool {
 }
 
 func (k *KubernetesExecutor) NodeInfo() (ni NodeInfo) {
-	k.nodeInfoLock.Lock()
-	defer k.nodeInfoLock.Unlock()
+	k.lock.RLock()
+	defer k.lock.RLock()
 
 	// clone k.nodeInfo
 	ni = k.nodeInfo
@@ -225,8 +224,8 @@ func (k *KubernetesExecutor) NodeInfo() (ni NodeInfo) {
 }
 
 func (k *KubernetesExecutor) updateNodeInfo(slaveInfo *mesos.SlaveInfo) {
-	k.nodeInfoLock.Lock()
-	defer k.nodeInfoLock.Unlock()
+	k.lock.Lock()
+	defer k.lock.Unlock()
 
 	// TODO(sttts): when executor and kubelet are independent processes, update the Node api object here
 	// Then the ugly locking will go away.

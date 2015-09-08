@@ -98,8 +98,6 @@ type suicideWatcher interface {
 	Stop() bool
 }
 
-type podStatusFunc func() (*api.PodStatus, error)
-
 type NodeInfo struct {
 	Labels map[string]string
 	Cores  int
@@ -125,7 +123,6 @@ type KubernetesExecutor struct {
 	kubeletFinished      <-chan struct{} // signals that kubelet Run() died
 	initialRegistration  sync.Once
 	exitFunc             func(int)
-	podStatusFunc        func(*api.Pod) (*api.PodStatus, error)
 	staticPodsConfigPath string
 	initialRegComplete   chan struct{}
 	nodeInfo             NodeInfo
@@ -142,7 +139,6 @@ type Config struct {
 	SuicideTimeout       time.Duration
 	KubeletFinished      <-chan struct{} // signals that kubelet Run() died
 	ExitFunc             func(int)
-	PodStatusFunc        func(*api.Pod) (*api.PodStatus, error)
 	StaticPodsConfigPath string
 }
 
@@ -166,7 +162,6 @@ func New(config Config) *KubernetesExecutor {
 		suicideWatch:         &suicideTimer{},
 		shutdownAlert:        config.ShutdownAlert,
 		exitFunc:             config.ExitFunc,
-		podStatusFunc:        config.PodStatusFunc,
 		initialRegComplete:   make(chan struct{}),
 		staticPodsConfigPath: config.StaticPodsConfigPath,
 	}
@@ -373,6 +368,7 @@ func (k *KubernetesExecutor) LaunchTask(driver bindings.ExecutorDriver, taskInfo
 		// may be duplicated messages or duplicated task id.
 		return
 	}
+
 	// remember this task so that:
 	// (a) we ignore future launches for it
 	// (b) we have a record of it so that we can kill it if needed
@@ -380,6 +376,7 @@ func (k *KubernetesExecutor) LaunchTask(driver bindings.ExecutorDriver, taskInfo
 	k.tasks[taskId] = &kuberTask{
 		mesosTaskInfo: taskInfo,
 	}
+
 	k.resetSuicideWatch(driver)
 
 	go k.launchTask(driver, taskId, pod)
@@ -542,12 +539,12 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 		}
 	}
 
-	podFullName := container.GetPodFullName(pod)
 
 	// allow a recently failed-over scheduler the chance to recover the task/pod binding:
 	// it may have failed and recovered before the apiserver is able to report the updated
 	// binding information. replays of this status event will signal to the scheduler that
 	// the apiserver should be up-to-date.
+	podFullName := container.GetPodFullName(pod)
 	data, err := json.Marshal(api.PodStatusResult{
 		ObjectMeta: api.ObjectMeta{
 			Name:     podFullName,
@@ -595,51 +592,12 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 	}
 	k.sendStatus(driver, statusUpdate)
 
-	// Delay reporting 'task running' until container is up.
-	psf := podStatusFunc(func() (*api.PodStatus, error) {
-		return k.podStatusFunc(pod)
-	})
-
-	go k._launchTask(driver, taskId, podFullName, psf)
+	go k._launchTask(driver, taskId, pod)
 }
 
-func (k *KubernetesExecutor) _launchTask(driver bindings.ExecutorDriver, taskId, podFullName string, psf podStatusFunc) {
-
+func (k *KubernetesExecutor) _launchTask(driver bindings.ExecutorDriver, taskId string, pod *api.Pod) {
 	expired := make(chan struct{})
 	time.AfterFunc(launchGracePeriod, func() { close(expired) })
-
-	getMarshalledInfo := func() (data []byte, cancel bool) {
-		// potentially long call..
-		if podStatus, err := psf(); err == nil && podStatus != nil {
-			select {
-			case <-expired:
-				cancel = true
-			default:
-				k.lock.Lock()
-				defer k.lock.Unlock()
-				if _, found := k.tasks[taskId]; !found {
-					// don't bother with the pod status if the task is already gone
-					cancel = true
-					break
-				} else if podStatus.Phase != api.PodRunning {
-					// avoid sending back a running status before it's really running
-					break
-				}
-				log.V(2).Infof("Found pod status: '%v'", podStatus)
-				result := api.PodStatusResult{
-					ObjectMeta: api.ObjectMeta{
-						Name:     podFullName,
-						SelfLink: "/podstatusresult",
-					},
-					Status: *podStatus,
-				}
-				if data, err = json.Marshal(result); err != nil {
-					log.Errorf("failed to marshal pod status result: %v", err)
-				}
-			}
-		}
-		return
-	}
 
 waitForRunningPod:
 	for {
@@ -648,53 +606,59 @@ waitForRunningPod:
 			log.Warningf("Launch expired grace period of '%v'", launchGracePeriod)
 			break waitForRunningPod
 		case <-time.After(containerPollTime):
-			if data, cancel := getMarshalledInfo(); cancel {
-				break waitForRunningPod
-			} else if data == nil {
-				continue waitForRunningPod
-			} else {
+			lost, running := func() (bool, bool) {
 				k.lock.Lock()
 				defer k.lock.Unlock()
+
 				if _, found := k.tasks[taskId]; !found {
-					goto reportLost
+					return true, false
 				}
 
+				// get pod status, potentially take some time
+				currentPod, err := k.client.Pods(pod.Namespace).Get(pod.Name)
+				if err != nil || currentPod.Status.Phase != api.PodRunning {
+					return false, false
+				}
+
+				if _, found := k.tasks[taskId]; !found {
+					return true, false
+				}
+
+				return false, true
+			}()
+			if lost {
+				break waitForRunningPod
+			}
+
+			if running {
 				statusUpdate := &mesos.TaskStatus{
 					TaskId:  mutil.NewTaskID(taskId),
 					State:   mesos.TaskState_TASK_RUNNING.Enum(),
-					Message: proto.String(fmt.Sprintf("pod-running:%s", podFullName)),
-					Data:    data,
+					Message: proto.String(fmt.Sprintf("pod-running:%s", container.GetPodFullName(pod))),
 				}
 
 				k.sendStatus(driver, statusUpdate)
 
 				// continue to monitor the health of the pod
-				go k.__launchTask(driver, taskId, podFullName, psf)
+				go k.__launchTask(driver, taskId, pod)
 				return
 			}
 		}
 	}
 
-	k.lock.Lock()
-	defer k.lock.Unlock()
-reportLost:
 	k.removePodTask(driver, taskId, messages.LaunchTaskFailed, mesos.TaskState_TASK_LOST)
 }
 
-func (k *KubernetesExecutor) __launchTask(driver bindings.ExecutorDriver, taskId, podFullName string, psf podStatusFunc) {
-	// TODO(nnielsen): Monitor health of pod and report if lost.
+func (k *KubernetesExecutor) __launchTask(driver bindings.ExecutorDriver, taskId string, pod *api.Pod) {
+	// Wait for the pod to go away and stop monitoring once it does
+	// TODO (jdefelice) replace with an /events watch?
+
 	// Should we also allow this to fail a couple of times before reporting lost?
 	// What if the docker daemon is restarting and we can't connect, but it's
 	// going to bring the pods back online as soon as it restarts?
-	knownPod := func() bool {
-		_, err := psf()
-		return err == nil
-	}
-	// Wait for the pod to go away and stop monitoring once it does
-	// TODO (jdefelice) replace with an /events watch?
 	for {
 		time.Sleep(containerPollTime)
-		if k.checkForLostPodTask(driver, taskId, knownPod) {
+		if stop := k.checkForLostPodTask(driver, taskId, pod); stop {
 			return
 		}
 	}
@@ -704,7 +668,7 @@ func (k *KubernetesExecutor) __launchTask(driver bindings.ExecutorDriver, taskId
 // whether the pod is running. It will only return false if the task is still registered and the pod is
 // registered in Docker. Otherwise it returns true. If there's still a task record on file, but no pod
 // in Docker, then we'll also send a TASK_LOST event.
-func (k *KubernetesExecutor) checkForLostPodTask(driver bindings.ExecutorDriver, taskId string, isKnownPod func() bool) bool {
+func (k *KubernetesExecutor) checkForLostPodTask(driver bindings.ExecutorDriver, taskId string, pod *api.Pod) bool {
 	// TODO (jdefelice) don't send false alarms for deleted pods (KILLED tasks)
 	k.lock.Lock()
 	defer k.lock.Unlock()
@@ -714,17 +678,28 @@ func (k *KubernetesExecutor) checkForLostPodTask(driver bindings.ExecutorDriver,
 	// handing to it. otherwise, we're probably reporting a TASK_LOST prematurely. Should probably
 	// consult RestartPolicy to determine appropriate behavior. Should probably also gracefully handle
 	// docker daemon restarts.
-	if _, ok := k.tasks[taskId]; ok {
-		if isKnownPod() {
-			return false
-		} else {
-			log.Warningf("Detected lost pod, reporting lost task %v", taskId)
-			k.removePodTask(driver, taskId, messages.ContainersDisappeared, mesos.TaskState_TASK_LOST)
-		}
-	} else {
-		log.V(2).Infof("Task %v no longer registered, stop monitoring for lost pods", taskId)
+	if _, ok := k.tasks[taskId]; !ok {
+		return true
 	}
-	return true
+
+	currentPod, err := k.client.Pods(pod.Namespace).Get(pod.Name)
+	if err != nil {
+		log.Warningf("Detected lost pod, reporting lost task %v", taskId)
+		k.removePodTask(driver, taskId, messages.ContainersDisappeared, mesos.TaskState_TASK_LOST)
+
+	}
+
+	switch currentPod.Status.Phase {
+	case api.PodRunning, api.PodPending:
+		return false
+	case api.PodSucceeded:
+		k.removePodTask(driver, taskId, messages.ContainersFinished, mesos.TaskState_TASK_FINISHED)
+		return true
+	default:
+		log.V(2).Infof("Task %v no longer registered, stop monitoring for lost pods", taskId)
+		k.removePodTask(driver, taskId, messages.ContainersDisappeared, mesos.TaskState_TASK_LOST)
+		return true
+	}
 }
 
 // KillTask is called when the executor receives a request to kill a task.

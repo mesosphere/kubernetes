@@ -230,7 +230,8 @@
 		},
 		{
 			"ImportPath": "github.com/gogo/protobuf/proto",
-			"Rev": "ab6cea4a44ef42b748cd88d2d372047b75806e0c"
+			"Comment": "v0.1-55-g2093b57",
+			"Rev": "2093b57e5ca2ccbee4626814100bc1aada691b18"
 		},
 		{
 			"ImportPath": "github.com/golang/glog",
@@ -387,35 +388,43 @@
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/auth",
-			"Rev": "6440c09c9d8a1b365f3c3e9b2297dd856abd017c"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/detector",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/executor",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/mesosproto",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/mesosutil",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/messenger",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/scheduler",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/mesos/mesos-go/upid",
-			"Rev": "4b1767c0dfc51020e01f35da5b38472f40ce572a"
+			"Comment": "mesos-0.24.0-20-gb164c06",
+			"Rev": "b164c06f346af1e93aecb6502f83d31dbacdbb91"
 		},
 		{
 			"ImportPath": "github.com/miekg/dns",
@@ -471,7 +480,11 @@
 		},
 		{
 			"ImportPath": "github.com/samuel/go-zookeeper/zk",
-			"Rev": "d0e0d8e11f318e000a8cc434616d69e329edc374"
+			"Rev": "177002e16a0061912f02377e2dd8951a8b3551bc"
+		},
+		{
+			"ImportPath": "github.com/scalingdata/gcfg",
+			"Rev": "37aabad69cfd3d20b8390d902a8b10e245c615ff"
 		},
 		{
 			"ImportPath": "github.com/shurcooL/sanitized_anchor_name",

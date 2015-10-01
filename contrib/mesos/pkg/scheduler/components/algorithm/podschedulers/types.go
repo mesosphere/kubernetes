@@ -17,21 +17,13 @@ limitations under the License.
 package podschedulers
 
 import (
+	"github.com/mesos/mesos-go/mesosproto"
 	"k8s.io/kubernetes/contrib/mesos/pkg/offers"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	"k8s.io/kubernetes/pkg/api"
 )
 
-type AllocationStrategy interface {
-	// FitPredicate returns the selector used to determine pod fitness w/ respect to a given offer
-	FitPredicate() podtask.FitPredicate
-
-	// Procurement returns a func that obtains resources for a task from resource offer
-	Procurement() podtask.Procurement
-}
-
 type PodScheduler interface {
-	AllocationStrategy
-
 	// SchedulePod implements how to schedule pods among slaves.
 	// We can have different implementation for different scheduling policy.
 	//
@@ -41,5 +33,8 @@ type PodScheduler interface {
 	// state w/ relevant offer details.
 	//
 	// See the FCFSPodScheduler for example.
-	SchedulePod(r offers.Registry, task *podtask.T) (offers.Perishable, error)
+	SchedulePod(r offers.Registry, task *podtask.T) (offers.Perishable, *podtask.Spec, error)
+
+	// Fit tries to do a procurement without side-effects and return true if it is successful
+	Fit(*podtask.T, *mesosproto.Offer, *api.Node) bool
 }

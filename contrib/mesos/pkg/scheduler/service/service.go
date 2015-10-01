@@ -58,6 +58,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/components/algorithm/podschedulers"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/components/framework"
 	schedcfg "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/config"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/executorinfo"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/ha"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/metrics"
@@ -80,7 +81,8 @@ import (
 const (
 	defaultMesosMaster       = "localhost:5050"
 	defaultMesosUser         = "root" // should have privs to execute docker and iptables commands
-	defaultReconcileInterval = 300    // 5m default task reconciliation interval
+	defaultMesosRoles        = "*"
+	defaultReconcileInterval = 300 // 5m default task reconciliation interval
 	defaultReconcileCooldown = 15 * time.Second
 	defaultNodeRelistPeriod  = 5 * time.Minute
 	defaultFrameworkName     = "Kubernetes"
@@ -101,7 +103,7 @@ type SchedulerServer struct {
 	proxyPath           string
 	mesosMaster         string
 	mesosUser           string
-	mesosRole           string
+	mesosRoles          []string
 	mesosAuthPrincipal  string
 	mesosAuthSecretFile string
 	mesosCgroupPrefix   string
@@ -152,7 +154,6 @@ type SchedulerServer struct {
 	staticPodsConfigPath          string
 	dockerCfgPath                 string
 	containPodResources           bool
-	accountForPodResources        bool
 	nodeRelistPeriod              time.Duration
 	sandboxOverlay                string
 
@@ -187,23 +188,23 @@ func NewSchedulerServer() *SchedulerServer {
 		minionLogMaxBackups:   minioncfg.DefaultLogMaxBackups,
 		minionLogMaxAgeInDays: minioncfg.DefaultLogMaxAgeInDays,
 
-		mesosAuthProvider:      sasl.ProviderName,
-		mesosCgroupPrefix:      minioncfg.DefaultCgroupPrefix,
-		mesosMaster:            defaultMesosMaster,
-		mesosUser:              defaultMesosUser,
-		mesosExecutorCPUs:      defaultExecutorCPUs,
-		mesosExecutorMem:       defaultExecutorMem,
-		reconcileInterval:      defaultReconcileInterval,
-		reconcileCooldown:      defaultReconcileCooldown,
-		checkpoint:             true,
-		frameworkName:          defaultFrameworkName,
-		ha:                     false,
-		mux:                    http.NewServeMux(),
-		kubeletCadvisorPort:    4194, // copied from github.com/GoogleCloudPlatform/kubernetes/blob/release-0.14/cmd/kubelet/app/server.go
-		kubeletSyncFrequency:   10 * time.Second,
-		containPodResources:    true,
-		accountForPodResources: true,
-		nodeRelistPeriod:       defaultNodeRelistPeriod,
+		mesosAuthProvider:    sasl.ProviderName,
+		mesosCgroupPrefix:    minioncfg.DefaultCgroupPrefix,
+		mesosMaster:          defaultMesosMaster,
+		mesosUser:            defaultMesosUser,
+		mesosExecutorCPUs:    defaultExecutorCPUs,
+		mesosExecutorMem:     defaultExecutorMem,
+		mesosRoles:           strings.Split(defaultMesosRoles, ","),
+		reconcileInterval:    defaultReconcileInterval,
+		reconcileCooldown:    defaultReconcileCooldown,
+		checkpoint:           true,
+		frameworkName:        defaultFrameworkName,
+		ha:                   false,
+		mux:                  http.NewServeMux(),
+		kubeletCadvisorPort:  4194, // copied from github.com/GoogleCloudPlatform/kubernetes/blob/release-0.14/cmd/kubelet/app/server.go
+		kubeletSyncFrequency: 10 * time.Second,
+		containPodResources:  true,
+		nodeRelistPeriod:     defaultNodeRelistPeriod,
 	}
 	// cache this for later use. also useful in case the original binary gets deleted, e.g.
 	// during upgrades, development deployments, etc.
@@ -232,7 +233,7 @@ func (s *SchedulerServer) addCoreFlags(fs *pflag.FlagSet) {
 
 	fs.StringVar(&s.mesosMaster, "mesos-master", s.mesosMaster, "Location of the Mesos master. The format is a comma-delimited list of of hosts like zk://host1:port,host2:port/mesos. If using ZooKeeper, pay particular attention to the leading zk:// and trailing /mesos! If not using ZooKeeper, standard URLs like http://localhost are also acceptable.")
 	fs.StringVar(&s.mesosUser, "mesos-user", s.mesosUser, "Mesos user for this framework, defaults to root.")
-	fs.StringVar(&s.mesosRole, "mesos-role", s.mesosRole, "Mesos role for this framework, defaults to none.")
+	fs.StringSliceVar(&s.mesosRoles, "mesos-roles", s.mesosRoles, "Mesos framework roles. The first role will be used to launch pods having no "+meta.RolesKey+" label.")
 	fs.StringVar(&s.mesosAuthPrincipal, "mesos-authentication-principal", s.mesosAuthPrincipal, "Mesos authentication principal.")
 	fs.StringVar(&s.mesosAuthSecretFile, "mesos-authentication-secret-file", s.mesosAuthSecretFile, "Mesos authentication secret file.")
 	fs.StringVar(&s.mesosAuthProvider, "mesos-authentication-provider", s.mesosAuthProvider, fmt.Sprintf("Authentication provider to use, default is SASL that supports mechanisms: %+v", mech.ListSupported()))
@@ -256,7 +257,6 @@ func (s *SchedulerServer) addCoreFlags(fs *pflag.FlagSet) {
 	fs.Var(&s.defaultContainerCPULimit, "default-container-cpu-limit", "Containers without a CPU resource limit are admitted this much CPU shares")
 	fs.Var(&s.defaultContainerMemLimit, "default-container-mem-limit", "Containers without a memory resource limit are admitted this much amount of memory in MB")
 	fs.BoolVar(&s.containPodResources, "contain-pod-resources", s.containPodResources, "Reparent pod containers into mesos cgroups; disable if you're having strange mesos/docker/systemd interactions.")
-	fs.BoolVar(&s.accountForPodResources, "account-for-pod-resources", s.accountForPodResources, "Allocate pod CPU and memory resources from offers (Default: true)")
 	fs.DurationVar(&s.nodeRelistPeriod, "node-monitor-period", s.nodeRelistPeriod, "Period between relisting of all nodes from the apiserver.")
 
 	fs.IntVar(&s.executorLogV, "executor-logv", s.executorLogV, "Logging verbosity of spawned minion and executor processes.")
@@ -479,11 +479,9 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 
 	// calculate ExecutorInfo hash to be used for validating compatibility
 	// of ExecutorInfo's generated by other HA schedulers.
-	ehash := hashExecutorInfo(execInfo)
-	eid := uid.New(ehash, execcfg.DefaultInfoID)
-	execInfo.ExecutorId = &mesos.ExecutorID{Value: proto.String(eid.String())}
-
-	return execInfo, eid, nil
+	eid, uid := executorinfo.NewExecutorID(execInfo)
+	execInfo.ExecutorId = eid
+	return execInfo, uid, nil
 }
 
 // TODO(jdef): hacked from kubelet/server/server.go
@@ -529,6 +527,10 @@ func (s *SchedulerServer) getDriver() (driver bindings.SchedulerDriver) {
 }
 
 func (s *SchedulerServer) Run(hks hyperkube.Interface, _ []string) error {
+	if n := len(s.mesosRoles); n == 0 || n > 2 || (n == 2 && s.mesosRoles[0] != "*" && s.mesosRoles[1] != "*") {
+		log.Fatalf(`only one custom role allowed in addition to "*"`)
+	}
+
 	// get scheduler low-level config
 	sc := schedcfg.CreateDefaultConfig()
 	if s.schedulerConfigFileName != "" {
@@ -667,7 +669,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Warningf("user-specified reconcile cooldown too small, defaulting to %v", s.reconcileCooldown)
 	}
 
-	executor, eid, err := s.prepareExecutorInfo(hks)
+	eiPrototype, eid, err := s.prepareExecutorInfo(hks)
 	if err != nil {
 		log.Fatalf("misconfigured executor: %v", err)
 	}
@@ -679,24 +681,6 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 	etcdClient, err := newEtcd(s.etcdConfigFile, s.etcdServerList)
 	if err != nil {
 		log.Fatalf("misconfigured etcd: %v", err)
-	}
-
-	as := podschedulers.NewAllocationStrategy(
-		podtask.NewDefaultPredicate(
-			s.defaultContainerCPULimit,
-			s.defaultContainerMemLimit,
-		),
-		podtask.NewDefaultProcurement(
-			s.defaultContainerCPULimit,
-			s.defaultContainerMemLimit,
-		),
-	)
-
-	// downgrade allocation strategy if user disables "account-for-pod-resources"
-	if !s.accountForPodResources {
-		as = podschedulers.NewAllocationStrategy(
-			podtask.DefaultMinimalPredicate,
-			podtask.DefaultMinimalProcurement)
 	}
 
 	// mirror all nodes into the nodeStore
@@ -716,10 +700,13 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		return n.(*api.Node)
 	}
 
-	fcfs := podschedulers.NewFCFSPodScheduler(as, lookupNode)
+	eiRegistry := executorinfo.NewRegistry(lookupNode, eiPrototype, client)
+	pr := podtask.NewDefaultProcurement(eiPrototype, eiRegistry)
+	fcfs := podschedulers.NewFCFSPodScheduler(pr, lookupNode)
+
 	framework := framework.New(framework.Config{
 		SchedulerConfig:   *sc,
-		Executor:          executor,
+		Executor:          eiPrototype,
 		Client:            client,
 		FailoverTimeout:   s.failoverTimeout,
 		ReconcileInterval: s.reconcileInterval,
@@ -763,7 +750,20 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 
 	// create scheduler core with all components arranged around it
 	lw := cache.NewListWatchFromClient(client, "pods", api.NamespaceAll, fields.Everything())
-	sched := components.New(sc, framework, fcfs, client, recorder, schedulerProcess.Terminal(), s.mux, lw)
+	sched := components.New(
+		sc,
+		framework,
+		fcfs,
+		client,
+		recorder,
+		schedulerProcess.Terminal(),
+		s.mux,
+		lw,
+		eiPrototype,
+		s.mesosRoles,
+		s.defaultContainerCPULimit,
+		s.defaultContainerMemLimit,
+	)
 
 	runtime.On(framework.Registration(), func() { sched.Run(schedulerProcess.Terminal()) })
 	runtime.On(framework.Registration(), s.newServiceWriter(schedulerProcess.Terminal()))
@@ -869,9 +869,16 @@ func (s *SchedulerServer) buildFrameworkInfo() (info *mesos.FrameworkInfo, cred 
 	if s.failoverTimeout > 0 {
 		info.FailoverTimeout = proto.Float64(s.failoverTimeout)
 	}
-	if s.mesosRole != "" {
-		info.Role = proto.String(s.mesosRole)
+
+	for _, role := range s.mesosRoles {
+		if role != "*" {
+			// mesos currently supports only one role per framework info
+			// The framework will be offered role's resources as well as * resources
+			info.Role = proto.String(role)
+			break
+		}
 	}
+
 	if s.mesosAuthPrincipal != "" {
 		info.Principal = proto.String(s.mesosAuthPrincipal)
 		if s.mesosAuthSecretFile == "" {

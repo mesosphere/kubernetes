@@ -21,51 +21,29 @@ import (
 
 	log "github.com/golang/glog"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/mesos/mesos-go/mesosproto"
 	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	"k8s.io/kubernetes/contrib/mesos/pkg/offers"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/errors"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	"k8s.io/kubernetes/pkg/api"
 )
 
-type allocationStrategy struct {
-	fitPredicate podtask.FitPredicate
-	procurement  podtask.Procurement
-}
-
-func (a *allocationStrategy) FitPredicate() podtask.FitPredicate {
-	return a.fitPredicate
-}
-
-func (a *allocationStrategy) Procurement() podtask.Procurement {
-	return a.procurement
-}
-
-func NewAllocationStrategy(fitPredicate podtask.FitPredicate, procurement podtask.Procurement) AllocationStrategy {
-	if fitPredicate == nil {
-		panic("fitPredicate is required")
-	}
-	if procurement == nil {
-		panic("procurement is required")
-	}
-	return &allocationStrategy{
-		fitPredicate: fitPredicate,
-		procurement:  procurement,
-	}
-}
-
 type fcfsPodScheduler struct {
-	AllocationStrategy
-	lookupNode node.LookupFunc
+	procurement podtask.Procurement
+	lookupNode  node.LookupFunc
 }
 
-func NewFCFSPodScheduler(as AllocationStrategy, lookupNode node.LookupFunc) PodScheduler {
-	return &fcfsPodScheduler{as, lookupNode}
+func NewFCFSPodScheduler(pr podtask.Procurement, lookupNode node.LookupFunc) PodScheduler {
+	return &fcfsPodScheduler{pr, lookupNode}
 }
 
 // A first-come-first-serve scheduler: acquires the first offer that can support the task
-func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, task *podtask.T) (offers.Perishable, error) {
+func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, task *podtask.T) (offers.Perishable, *podtask.Spec, error) {
 	podName := fmt.Sprintf("%s/%s", task.Pod.Namespace, task.Pod.Name)
 	var acceptedOffer offers.Perishable
+	var acceptedSpec *podtask.Spec
 	err := r.Walk(func(p offers.Perishable) (bool, error) {
 		offer := p.Details()
 		if offer == nil {
@@ -82,25 +60,44 @@ func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, task *podtask.T) (of
 			return false, nil
 		}
 
-		if fps.FitPredicate()(task, offer, n) {
-			if p.Acquire() {
-				acceptedOffer = p
-				log.V(3).Infof("Pod %s accepted offer %v", podName, offer.Id.GetValue())
-				return true, nil // stop, we found an offer
-			}
+		spec := &podtask.Spec{}
+		err := fps.procurement.Procure(task, offer, n, spec)
+		if err != nil {
+			log.V(2).Infof(
+				"Offer %q does not fit pod %s/%s: %v",
+				offer.Id, task.Pod.Namespace, task.Pod.Name, err,
+			)
+			return false, nil // continue
 		}
-		return false, nil // continue
+
+		if !p.Acquire() {
+			log.V(2).Infof(
+				"Could not acquire offer %q for pod %s/%s",
+				offer.Id, task.Pod.Namespace, task.Pod.Name,
+			)
+			return false, nil // continue
+		}
+
+		acceptedOffer = p
+		acceptedSpec = spec
+		log.V(3).Infof("Pod %s accepted offer %v", podName, offer.Id.GetValue())
+		return true, nil // stop, we found an offer
 	})
 	if acceptedOffer != nil {
 		if err != nil {
 			log.Warningf("problems walking the offer registry: %v, attempting to continue", err)
 		}
-		return acceptedOffer, nil
+		return acceptedOffer, acceptedSpec, nil
 	}
 	if err != nil {
 		log.V(2).Infof("failed to find a fit for pod: %s, err = %v", podName, err)
-		return nil, err
+		return nil, nil, err
 	}
 	log.V(2).Infof("failed to find a fit for pod: %s", podName)
-	return nil, errors.NoSuitableOffersErr
+	return nil, nil, errors.NoSuitableOffersErr
+}
+
+func (fps *fcfsPodScheduler) Fit(t *podtask.T, offer *mesosproto.Offer, n *api.Node) bool {
+	clone := proto.Clone(offer).(*mesosproto.Offer)
+	return fps.procurement.Procure(t, clone, n, &podtask.Spec{}) == nil
 }

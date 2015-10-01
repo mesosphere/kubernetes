@@ -28,7 +28,6 @@ import (
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	mutil "github.com/mesos/mesos-go/mesosutil"
 	bindings "github.com/mesos/mesos-go/scheduler"
-	execcfg "k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	"k8s.io/kubernetes/contrib/mesos/pkg/offers"
@@ -126,14 +125,6 @@ func New(config Config) Framework {
 				n := config.LookupNode(o.GetHostname())
 				if n == nil || !node.IsUpToDate(n, node.SlaveAttributesToLabels(o.GetAttributes())) {
 					return false
-				}
-
-				// the executor IDs must not identify a kubelet-executor with a group that doesn't match ours
-				for _, eid := range o.GetExecutorIds() {
-					execuid := uid.Parse(eid.GetValue())
-					if execuid.Name() == execcfg.DefaultInfoID && execuid.Group() != k.executorGroup {
-						return false
-					}
 				}
 
 				return true
@@ -703,11 +694,16 @@ func (ks *framework) KillTask(id string) error {
 }
 
 func (ks *framework) LaunchTask(t *podtask.T) error {
+	taskInfo, err := t.BuildTaskInfo()
+	if err != nil {
+		return err
+	}
+
 	// assume caller is holding scheduler lock
-	taskList := []*mesos.TaskInfo{t.BuildTaskInfo(ks.executor)}
+	taskList := []*mesos.TaskInfo{taskInfo}
 	offerIds := []*mesos.OfferID{t.Offer.Details().Id}
 	filters := &mesos.Filters{}
-	_, err := ks.driver.LaunchTasks(offerIds, taskList, filters)
+	_, err = ks.driver.LaunchTasks(offerIds, taskList, filters)
 	return err
 }
 

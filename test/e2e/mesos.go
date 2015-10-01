@@ -18,6 +18,8 @@ package e2e
 
 import (
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/unversioned"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/labels"
 
 	. "github.com/onsi/ginkgo"
@@ -27,9 +29,13 @@ import (
 
 var _ = Describe("Mesos", func() {
 	framework := NewFramework("pods")
+	var c *client.Client
+	var ns string
 
 	BeforeEach(func() {
 		SkipUnlessProviderIs("mesos/docker")
+		c = framework.Client
+		ns = framework.Namespace.Name
 	})
 
 	It("applies slave attributes as labels", func() {
@@ -49,5 +55,47 @@ var _ = Describe("Mesos", func() {
 			}
 		}
 		Expect(len(addr)).NotTo(Equal(""))
+	})
+
+	It("schedules pods labelled with roles on correct slaves", func() {
+		// launch a pod to find a node which can launch a pod. We intentionally do
+		// not just take the node list and choose the first of them. Depending on the
+		// cluster and the scheduler it might be that a "normal" pod cannot be
+		// scheduled onto it.
+		By("Trying to launch a pod without a label to get a node which can launch it.")
+		podName := "with-label"
+		_, err := c.Pods(ns).Create(&api.Pod{
+			TypeMeta: unversioned.TypeMeta{
+				Kind: "Pod",
+			},
+			ObjectMeta: api.ObjectMeta{
+				Name: podName,
+				Labels: map[string]string{
+					"k8s.mesosphere.io/roles": "role1",
+				},
+			},
+			Spec: api.PodSpec{
+				Containers: []api.Container{
+					{
+						Name:  podName,
+						Image: "beta.gcr.io/google_containers/pause:2.0",
+					},
+				},
+			},
+		})
+		expectNoError(err)
+
+		expectNoError(waitForPodRunningInNamespace(c, podName, ns))
+		pod, err := c.Pods(ns).Get(podName)
+		expectNoError(err)
+
+		nodeClient := framework.Client.Nodes()
+		role1 := labels.SelectorFromSet(map[string]string{
+			"k8s.mesosphere.io/attribute-role": "role1",
+		})
+		nodes, err := nodeClient.List(role1, fields.Everything())
+		expectNoError(err)
+
+		Expect(nodes.Items[0].Name).To(Equal(pod.Spec.NodeName))
 	})
 })

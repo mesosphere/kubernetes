@@ -36,11 +36,10 @@ const (
 )
 
 // Create creates a new node api object with the given hostname and labels
-func Create(client *client.Client, hostName string, labels map[string]string) (*api.Node, error) {
+func Create(client *client.Client, hostName string, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
 	n := api.Node{
 		ObjectMeta: api.ObjectMeta{
-			Name:   hostName,
-			Labels: map[string]string{"kubernetes.io/hostname": hostName},
+			Name: hostName,
 		},
 		Spec: api.NodeSpec{
 			ExternalID: hostName,
@@ -49,30 +48,35 @@ func Create(client *client.Client, hostName string, labels map[string]string) (*
 			Phase: api.NodePending,
 		},
 	}
-	for k, v := range labels {
-		n.Labels[k] = v
-	}
+
+	n.Labels = mergeMaps(
+		map[string]string{"kubernetes.io/hostname": hostName},
+		slaveAttrLabels,
+	)
+
+	n.Annotations = annotations
 
 	// try to create
 	return client.Nodes().Create(&n)
 }
 
 // Update updates an existing node api object with new labels
-func Update(client *client.Client, n *api.Node, labels map[string]string) (*api.Node, error) {
+func Update(client *client.Client, n *api.Node, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
 	patch := struct {
 		Metadata struct {
-			Labels map[string]string `json:"labels"`
+			Labels      map[string]string `json:"labels"`
+			Annotations map[string]string `json:"annotations"`
 		} `json:"metadata"`
 	}{}
-	patch.Metadata.Labels = map[string]string{}
-	for k, v := range n.Labels {
-		if !IsSlaveAttributeLabel(k) {
-			patch.Metadata.Labels[k] = v
-		}
-	}
-	for k, v := range labels {
-		patch.Metadata.Labels[k] = v
-	}
+
+	// update labels derived from Mesos slave attributes, keep all other labels
+	patch.Metadata.Labels = mergeMaps(
+		filterMap(n.Labels, IsNotSlaveAttributeLabel),
+		slaveAttrLabels,
+	)
+
+	patch.Metadata.Annotations = mergeMaps(n.Annotations, annotations)
+
 	patchJson, _ := json.Marshal(patch)
 	log.V(4).Infof("Patching labels of node %q: %v", n.Name, string(patchJson))
 	err := client.Patch(api.MergePatchType).RequestURI(n.SelfLink).Body(patchJson).Do().Error()
@@ -90,8 +94,8 @@ func Update(client *client.Client, n *api.Node, labels map[string]string) (*api.
 }
 
 // CreateOrUpdate tries to create a node api object or updates an already existing one
-func CreateOrUpdate(client *client.Client, hostName string, labels map[string]string) (*api.Node, error) {
-	n, err := Create(client, hostName, labels)
+func CreateOrUpdate(client *client.Client, hostName string, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
+	n, err := Create(client, hostName, slaveAttrLabels, annotations)
 	if err == nil {
 		return n, nil
 	}
@@ -100,6 +104,7 @@ func CreateOrUpdate(client *client.Client, hostName string, labels map[string]st
 	}
 
 	// fall back to update an old node with new labels
+	// TODO(sttts): potential race when somebody else modifies labels and/or annotation after the get and before the patching
 	n, err = client.Nodes().Get(hostName)
 	if err != nil {
 		return nil, fmt.Errorf("error getting node %q: %v", hostName, err)
@@ -107,19 +112,24 @@ func CreateOrUpdate(client *client.Client, hostName string, labels map[string]st
 	if n == nil {
 		return nil, fmt.Errorf("no node instance returned for %q", hostName)
 	}
-	return Update(client, n, labels)
+	return Update(client, n, slaveAttrLabels, annotations)
+}
+
+// IsNotSlaveAttributeLabel returns true iff the given label is not derived from a slave attribute
+func IsNotSlaveAttributeLabel(key, value string) bool {
+	return !IsSlaveAttributeLabel(key, value)
 }
 
 // IsSlaveAttributeLabel returns true iff the given label is derived from a slave attribute
-func IsSlaveAttributeLabel(l string) bool {
-	return strings.HasPrefix(l, labelPrefix)
+func IsSlaveAttributeLabel(key, value string) bool {
+	return strings.HasPrefix(key, labelPrefix)
 }
 
 // IsUpToDate returns true iff the node's slave labels match the given attributes labels
 func IsUpToDate(n *api.Node, labels map[string]string) bool {
 	slaveLabels := map[string]string{}
 	for k, v := range n.Labels {
-		if IsSlaveAttributeLabel(k) {
+		if IsSlaveAttributeLabel(k, "") {
 			slaveLabels[k] = v
 		}
 	}
@@ -157,4 +167,29 @@ func SlaveAttributesToLabels(attrs []*mesos.Attribute) map[string]string {
 		l[k] = v
 	}
 	return l
+}
+
+func filterMap(m map[string]string, predicate func(string, string) bool) map[string]string {
+	result := make(map[string]string, len(m))
+	for k, v := range m {
+		if predicate(k, v) {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+func mergeMaps(ms ...map[string]string) map[string]string {
+	var l int
+	for _, m := range ms {
+		l += len(m)
+	}
+
+	result := make(map[string]string, l)
+	for _, m := range ms {
+		for k, v := range m {
+			result[k] = v
+		}
+	}
+	return result
 }

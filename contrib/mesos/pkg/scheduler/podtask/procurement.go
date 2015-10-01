@@ -17,31 +17,43 @@ limitations under the License.
 package podtask
 
 import (
+	"fmt"
+	"math"
+
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
+	"github.com/mesos/mesos-go/mesosutil"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/executorinfo"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/labels"
 )
 
 // NewDefaultProcurement returns the default procurement strategy that combines validation
 // and responsible Mesos resource procurement. c and m are resource quantities written into
 // k8s api.Pod.Spec's that don't declare resources (all containers in k8s-mesos require cpu
 // and memory limits).
-func NewDefaultProcurement(c mresource.CPUShares, m mresource.MegaBytes) Procurement {
-	resourceProcurer := &RequirePodResources{
-		defaultContainerCPULimit: c,
-		defaultContainerMemLimit: m,
-	}
+func NewDefaultProcurement(prototype *mesos.ExecutorInfo, eir executorinfo.Registry) Procurement {
 	return AllOrNothingProcurement([]Procurement{
-		ValidateProcurement,
-		NodeProcurement,
-		resourceProcurer.Procure,
-		PortsProcurement,
-	}).Procure
+		NewValidateProcurement(),
+		NewNodeProcurement(),
+		NewPodResourcesProcurement(),
+		NewPortsProcurement(),
+		NewExecutorResourceProcurer(prototype, eir),
+	})
 }
 
 // Procurement funcs allocate resources for a task from an offer.
-// Both the task and/or offer may be modified.
-type Procurement func(*T, *mesos.Offer) error
+// Both the offer and the spec may be modified, the task and the node must not.
+type ProcurementFunc func(*T, *mesos.Offer, *api.Node, *Spec) error
+
+func (p ProcurementFunc) Procure(t *T, o *mesos.Offer, n *api.Node, s *Spec) error {
+	return p(t, o, n, s)
+}
+
+type Procurement interface {
+	Procure(*T, *mesos.Offer, *api.Node, *Spec) error
+}
 
 // AllOrNothingProcurement provides a convenient wrapper around multiple Procurement
 // objectives: the failure of any Procurement in the set results in Procure failing.
@@ -50,77 +62,212 @@ type AllOrNothingProcurement []Procurement
 
 // Procure runs each Procurement in the receiver list. The first Procurement func that
 // fails triggers T.Reset() and the error is returned, otherwise returns nil.
-func (a AllOrNothingProcurement) Procure(t *T, offer *mesos.Offer) error {
+func (a AllOrNothingProcurement) Procure(t *T, offer *mesos.Offer, n *api.Node, spec *Spec) error {
 	for _, p := range a {
-		if err := p(t, offer); err != nil {
-			t.Reset()
+		err := p.Procure(t, offer, n, spec)
+		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// ValidateProcurement checks that the offered resources are kosher, and if not panics.
+// NewValidateProcurement checks that the offered resources are kosher, and if not panics.
 // If things check out ok, t.Spec is cleared and nil is returned.
-func ValidateProcurement(t *T, offer *mesos.Offer) error {
-	if offer == nil {
-		//programming error
-		panic("offer details are nil")
-	}
-	t.Spec = Spec{}
-	return nil
-}
-
-// NodeProcurement updates t.Spec in preparation for the task to be launched on the
-// slave associated with the offer.
-func NodeProcurement(t *T, offer *mesos.Offer) error {
-	t.Spec.SlaveID = offer.GetSlaveId().GetValue()
-	t.Spec.AssignedSlave = offer.GetHostname()
-	return nil
-}
-
-type RequirePodResources struct {
-	defaultContainerCPULimit mresource.CPUShares
-	defaultContainerMemLimit mresource.MegaBytes
-}
-
-func (r *RequirePodResources) Procure(t *T, offer *mesos.Offer) error {
-	// write resource limits into the pod spec which is transferred to the executor. From here
-	// on we can expect that the pod spec of a task has proper limits for CPU and memory.
-	// TODO(sttts): For a later separation of the kubelet and the executor also patch the pod on the apiserver
-	// TODO(sttts): fall back to requested resources if resource limit cannot be fulfilled by the offer
-	// TODO(jdef): changing the state of t.Pod here feels dirty, especially since we don't use a kosher
-	// method to clone the api.Pod state in T.Clone(). This needs some love.
-	_, cpuLimit, _, err := mresource.LimitPodCPU(&t.Pod, r.defaultContainerCPULimit)
-	if err != nil {
-		return err
-	}
-
-	_, memLimit, _, err := mresource.LimitPodMem(&t.Pod, r.defaultContainerMemLimit)
-	if err != nil {
-		return err
-	}
-
-	log.V(3).Infof("Recording offer(s) %s/%s against pod %v: cpu: %.2f, mem: %.2f MB", offer.Id, t.Pod.Namespace, t.Pod.Name, cpuLimit, memLimit)
-
-	t.Spec.CPU = cpuLimit
-	t.Spec.Memory = memLimit
-
-	return nil
-}
-
-// PortsProcurement convert host port mappings into mesos port resource allocations.
-func PortsProcurement(t *T, offer *mesos.Offer) error {
-	// fill in port mapping
-	if mapping, err := t.mapper.Generate(t, offer); err != nil {
-		return err
-	} else {
-		ports := []uint64{}
-		for _, entry := range mapping {
-			ports = append(ports, entry.OfferPort)
+func NewValidateProcurement() Procurement {
+	return ProcurementFunc(func(t *T, offer *mesos.Offer, _ *api.Node, spec *Spec) error {
+		if offer == nil {
+			//programming error
+			panic("offer details are nil")
 		}
-		t.Spec.PortMap = mapping
-		t.Spec.Ports = ports
+		return nil
+	})
+}
+
+// NewNodeProcurement returns a Procurement updating t.Spec in preparation for the task to be launched on the
+// slave associated with the offer.
+func NewNodeProcurement() Procurement {
+	return ProcurementFunc(func(t *T, offer *mesos.Offer, n *api.Node, spec *Spec) error {
+		// if the user has specified a target host, make sure this offer is for that host
+		if t.Pod.Spec.NodeName != "" && offer.GetHostname() != t.Pod.Spec.NodeName {
+			return fmt.Errorf(
+				"NodeName %q does not match offer hostname %q",
+				t.Pod.Spec.NodeName, offer.GetHostname(),
+			)
+		}
+
+		// check the NodeSelector
+		if len(t.Pod.Spec.NodeSelector) > 0 {
+			if n.Labels == nil {
+				return fmt.Errorf(
+					"NodeSelector %v does not match empty labels of pod %s/%s",
+					t.Pod.Spec.NodeSelector, t.Pod.Namespace, t.Pod.Name,
+				)
+			}
+			selector := labels.SelectorFromSet(t.Pod.Spec.NodeSelector)
+			if !selector.Matches(labels.Set(n.Labels)) {
+				return fmt.Errorf(
+					"NodeSelector %v does not match labels %v of pod %s/%s",
+					t.Pod.Spec.NodeSelector, t.Pod.Labels, t.Pod.Namespace, t.Pod.Name,
+				)
+			}
+		}
+
+		spec.SlaveID = offer.GetSlaveId().GetValue()
+		spec.AssignedSlave = offer.GetHostname()
+
+		return nil
+	})
+}
+
+// NewPodResourcesProcurement converts k8s pod cpu and memory resource requirements into
+// mesos resource allocations.
+func NewPodResourcesProcurement() Procurement {
+	return ProcurementFunc(func(t *T, offer *mesos.Offer, _ *api.Node, spec *Spec) error {
+		// TODO(sttts): fall back to requested resources if resource limit cannot be fulfilled by the offer
+		_, limits, err := api.PodRequestsAndLimits(&t.Pod)
+		if err != nil {
+			return err
+		}
+
+		wantedCpus := float64(mresource.NewCPUShares(limits[api.ResourceCPU]))
+		wantedMem := float64(mresource.NewMegaBytes(limits[api.ResourceMemory]))
+
+		log.V(4).Infof(
+			"trying to match offer with pod %v/%v: cpus: %.2f mem: %.2f MB",
+			t.Pod.Namespace, t.Pod.Name, wantedCpus, wantedMem,
+		)
+
+		podRoles := t.Roles()
+		procuredCpu, remaining := procureRoleResources("cpus", wantedCpus, podRoles, offer.GetResources())
+		if procuredCpu == nil {
+			return fmt.Errorf(
+				"not enough cpu resources for pod %s/%s: want=%v",
+				t.Pod.Namespace, t.Pod.Name, wantedCpus,
+			)
+		}
+
+		procuredMem, remaining := procureRoleResources("mem", wantedMem, podRoles, remaining)
+		if procuredMem == nil {
+			return fmt.Errorf(
+				"not enough mem resources for pod %s/%s: want=%v",
+				t.Pod.Namespace, t.Pod.Name, wantedMem,
+			)
+		}
+
+		spec.Resources = append(spec.Resources, append(procuredCpu, procuredMem...)...)
+		return nil
+	})
+}
+
+// NewPortsProcurement returns a Procurement procuring ports
+func NewPortsProcurement() Procurement {
+	return ProcurementFunc(func(t *T, offer *mesos.Offer, _ *api.Node, spec *Spec) error {
+		// fill in port mapping
+		if mapping, err := t.mapper.Map(t, offer); err != nil {
+			return err
+		} else {
+			ports := []Port{}
+			for _, entry := range mapping {
+				ports = append(ports, Port{
+					Port: entry.OfferPort,
+					Role: entry.Role,
+				})
+			}
+			spec.PortMap = mapping
+			spec.Resources = append(spec.Resources, portRangeResources(ports)...)
+		}
+		return nil
+	})
+}
+
+// NewExecutorResourceProcurer returns a Procurement procuring executor resources
+// If a given offer has no executor IDs set, the given prototype executor resources are considered for procurement.
+// If a given offer has one executor ID set, only pod resources are being procured.
+// An offer with more than one executor ID implies an invariant violation and the first executor ID is being considered.
+func NewExecutorResourceProcurer(prototype *mesos.ExecutorInfo, registry executorinfo.Registry) Procurement {
+	return ProcurementFunc(func(t *T, offer *mesos.Offer, _ *api.Node, spec *Spec) error {
+		eids := len(offer.GetExecutorIds())
+		switch {
+		case eids == 0:
+			wantedCpus := sumResources(filterResources(prototype.GetResources(), isScalar, hasName("cpus")))
+			wantedMem := sumResources(filterResources(prototype.GetResources(), isScalar, hasName("mem")))
+
+			procuredCpu, remaining := procureRoleResources("cpus", wantedCpus, t.allowedRoles, offer.GetResources())
+			if procuredCpu == nil {
+				return fmt.Errorf("not enough cpu resources for executor: want=%v", wantedCpus)
+			}
+
+			procuredMem, remaining := procureRoleResources("mem", wantedMem, t.allowedRoles, remaining)
+			if procuredMem == nil {
+				return fmt.Errorf("not enough mem resources for executor: want=%v", wantedMem)
+			}
+
+			offer.Resources = remaining
+			spec.Executor = registry.New(offer.GetHostname(), append(procuredCpu, procuredMem...))
+			return nil
+
+		case eids > 1:
+			log.Errorf("got %d executor IDs in offer, want 1 (procuring first)", eids)
+			fallthrough
+
+		default: // eids >= 1
+			// read 1st executor id executor info from cache/attributes/...
+			eid := offer.GetExecutorIds()[0].GetValue()
+			log.V(5).Infof("found executor id %q", eid)
+
+			e, err := registry.Get(offer.GetHostname(), eid)
+			if err != nil {
+				return err
+			}
+
+			spec.Executor = e
+			return nil
+		}
+	})
+}
+
+// smallest number such that 1.0 + epsilon != 1.0
+// see https://github.com/golang/go/issues/966
+var epsilon = math.Nextafter(1, 2) - 1
+
+// procureRoleResources procures offered resources that
+// 1. Match the given name
+// 2. Match the given roles
+// 3. The given wanted scalar value can be fully consumed by offered resources
+// Roles are being considered in the specified roles slice ordering.
+func procureRoleResources(name string, want float64, roles []string, offered []*mesos.Resource) (procured, remaining []*mesos.Resource) {
+	sorted := byRoles(roles...).sort(offered)
+	procured = make([]*mesos.Resource, 0, len(sorted))
+	remaining = make([]*mesos.Resource, 0, len(sorted))
+
+	for _, r := range sorted {
+		if want >= epsilon && resourceMatchesAll(r, hasName(name), isScalar) {
+			left, role := r.GetScalar().GetValue(), r.Role
+			consumed := math.Min(want, left)
+
+			want -= consumed
+			left -= consumed
+
+			if left >= epsilon {
+				r = mesosutil.NewScalarResource(name, left)
+				r.Role = role
+				remaining = append(remaining, r)
+			}
+
+			consumedRes := mesosutil.NewScalarResource(name, consumed)
+			consumedRes.Role = role
+			procured = append(procured, consumedRes)
+		} else {
+			remaining = append(remaining, r)
+		}
 	}
-	return nil
+
+	// demanded value (want) was not fully consumed violating invariant 3.
+	// thus no resources must be procured
+	if want >= epsilon {
+		return nil, offered
+	}
+
+	return
 }

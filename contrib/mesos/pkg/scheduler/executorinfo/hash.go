@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package service
+package executorinfo
 
 import (
 	"bytes"
@@ -23,7 +23,11 @@ import (
 	"sort"
 	"strconv"
 
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/uid"
+
+	"github.com/gogo/protobuf/proto"
 	mesos "github.com/mesos/mesos-go/mesosproto"
+	execcfg "k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
 )
 
 // compute a hashcode for ExecutorInfo that may be used as a reasonable litmus test
@@ -33,7 +37,7 @@ import (
 // secondary scheduler doesn't match that of the primary scheduler.
 //
 // see https://github.com/apache/mesos/blob/0.22.0/src/common/type_utils.cpp#L110
-func hashExecutorInfo(info *mesos.ExecutorInfo) uint64 {
+func hash(info *mesos.ExecutorInfo) uint64 {
 	// !!! we specifically do NOT include:
 	// - Framework ID because it's a value that's initialized too late for us to use
 	// - Executor ID because it's a value that includes a copy of this hash
@@ -85,4 +89,10 @@ func hashExecutorInfo(info *mesos.ExecutorInfo) uint64 {
 	}
 	table := crc64.MakeTable(crc64.ECMA)
 	return crc64.Checksum(buf.Bytes(), table)
+}
+
+func NewExecutorID(info *mesos.ExecutorInfo) (*mesos.ExecutorID, *uid.UID) {
+	ehash := hash(info)
+	eid := uid.New(ehash, execcfg.DefaultInfoID)
+	return &mesos.ExecutorID{Value: proto.String(eid.String())}, eid
 }

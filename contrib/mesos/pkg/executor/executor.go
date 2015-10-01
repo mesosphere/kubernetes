@@ -24,6 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bytes"
+
 	"github.com/fsouza/go-dockerclient"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
@@ -33,6 +35,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/node"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/executorinfo"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/pkg/api"
 	unversionedapi "k8s.io/kubernetes/pkg/api/unversioned"
@@ -215,13 +218,21 @@ func (k *Executor) sendPodUpdate(u *kubetypes.PodUpdate) bool {
 }
 
 // Registered is called when the executor is successfully registered with the slave.
-func (k *Executor) Registered(driver bindings.ExecutorDriver,
-	executorInfo *mesos.ExecutorInfo, frameworkInfo *mesos.FrameworkInfo, slaveInfo *mesos.SlaveInfo) {
+func (k *Executor) Registered(
+	driver bindings.ExecutorDriver,
+	executorInfo *mesos.ExecutorInfo,
+	frameworkInfo *mesos.FrameworkInfo,
+	slaveInfo *mesos.SlaveInfo,
+) {
 	if k.isDone() {
 		return
 	}
-	log.Infof("Executor %v of framework %v registered with slave %v\n",
-		executorInfo, frameworkInfo, slaveInfo)
+
+	log.Infof(
+		"Executor %v of framework %v registered with slave %v\n",
+		executorInfo, frameworkInfo, slaveInfo,
+	)
+
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to register/transition to a connected state")
 	}
@@ -230,8 +241,22 @@ func (k *Executor) Registered(driver bindings.ExecutorDriver,
 		k.initializeStaticPodsSource(executorInfo.Data)
 	}
 
+	annotations, err := ExecutorInfoToAnnotations(executorInfo)
+	if err != nil {
+		log.Errorf(
+			"cannot get node annotations from executor info %v error %v",
+			executorInfo, err,
+		)
+	}
+
 	if slaveInfo != nil {
-		_, err := node.CreateOrUpdate(k.client, slaveInfo.GetHostname(), node.SlaveAttributesToLabels(slaveInfo.Attributes))
+		_, err := node.CreateOrUpdate(
+			k.client,
+			slaveInfo.GetHostname(),
+			node.SlaveAttributesToLabels(slaveInfo.Attributes),
+			annotations,
+		)
+
 		if err != nil {
 			log.Errorf("cannot update node labels: %v", err)
 		}
@@ -262,7 +287,13 @@ func (k *Executor) Reregistered(driver bindings.ExecutorDriver, slaveInfo *mesos
 	}
 
 	if slaveInfo != nil {
-		_, err := node.CreateOrUpdate(k.client, slaveInfo.GetHostname(), node.SlaveAttributesToLabels(slaveInfo.Attributes))
+		_, err := node.CreateOrUpdate(
+			k.client,
+			slaveInfo.GetHostname(),
+			node.SlaveAttributesToLabels(slaveInfo.Attributes),
+			map[string]string{},
+		)
+
 		if err != nil {
 			log.Errorf("cannot update node labels: %v", err)
 		}
@@ -986,4 +1017,21 @@ func nodeInfo(si *mesos.SlaveInfo, ei *mesos.ExecutorInfo) NodeInfo {
 		}
 	}
 	return ni
+}
+
+func ExecutorInfoToAnnotations(ei *mesos.ExecutorInfo) (annotations map[string]string, err error) {
+	annotations = map[string]string{}
+	if ei == nil {
+		return
+	}
+
+	var buf bytes.Buffer
+	if err = executorinfo.EncodeResources(&buf, ei.GetResources()); err != nil {
+		return
+	}
+
+	annotations[meta.ExecutorIdKey] = ei.GetExecutorId().GetValue()
+	annotations[meta.ExecutorResourcesKey] = buf.String()
+
+	return
 }

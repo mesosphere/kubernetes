@@ -57,15 +57,17 @@ const (
 
 type KubeletExecutorServer struct {
 	*app.KubeletServer
-	SuicideTimeout time.Duration
-	ShutdownFD     int
-	ShutdownFIFO   string
+	SuicideTimeout    time.Duration
+	ShutdownFD        int
+	ShutdownFIFO      string
+	LaunchGracePeriod time.Duration
 }
 
 func NewKubeletExecutorServer() *KubeletExecutorServer {
 	k := &KubeletExecutorServer{
-		KubeletServer:  app.NewKubeletServer(),
-		SuicideTimeout: config.DefaultSuicideTimeout,
+		KubeletServer:     app.NewKubeletServer(),
+		SuicideTimeout:    config.DefaultSuicideTimeout,
+		LaunchGracePeriod: config.DefaultLaunchGracePeriod,
 	}
 	if pwd, err := os.Getwd(); err != nil {
 		log.Warningf("failed to determine current directory: %v", err)
@@ -83,6 +85,7 @@ func (s *KubeletExecutorServer) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&s.SuicideTimeout, "suicide-timeout", s.SuicideTimeout, "Self-terminate after this period of inactivity. Zero disables suicide watch.")
 	fs.IntVar(&s.ShutdownFD, "shutdown-fd", s.ShutdownFD, "File descriptor used to signal shutdown to external watchers, requires shutdown-fifo flag")
 	fs.StringVar(&s.ShutdownFIFO, "shutdown-fifo", s.ShutdownFIFO, "FIFO used to signal shutdown to external watchers, requires shutdown-fd flag")
+	fs.DurationVar(&s.LaunchGracePeriod, "mesos-launch-grace-period", s.LaunchGracePeriod, "Launch grace period after which launching tasks will be cancelled. Zero disables launch cancellation.")
 }
 
 // returns a Closer that should be closed to signal impending shutdown, but only if ShutdownFD
@@ -351,7 +354,8 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 				}
 			}
 		},
-		ExitFunc: os.Exit,
+		LaunchGracePeriod: ks.LaunchGracePeriod,
+		ExitFunc:          os.Exit,
 		PodStatusFunc: func(_ executor.KubeletInterface, pod *api.Pod) (*api.PodStatus, error) {
 			return klet.GetRuntime().GetPodStatus(pod)
 		},

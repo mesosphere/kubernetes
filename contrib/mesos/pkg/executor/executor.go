@@ -45,7 +45,6 @@ import (
 
 const (
 	containerPollTime = 1 * time.Second
-	launchGracePeriod = 5 * time.Minute
 )
 
 type stateType int32
@@ -129,6 +128,7 @@ type KubernetesExecutor struct {
 	staticPodsConfig     []byte
 	staticPodsConfigPath string
 	initialRegComplete   chan struct{}
+	launchGracePeriod    time.Duration
 }
 
 type Config struct {
@@ -144,6 +144,7 @@ type Config struct {
 	ExitFunc             func(int)
 	PodStatusFunc        func(KubeletInterface, *api.Pod) (*api.PodStatus, error)
 	StaticPodsConfigPath string
+	LaunchGracePeriod    time.Duration
 }
 
 func (k *KubernetesExecutor) isConnected() bool {
@@ -171,6 +172,7 @@ func New(config Config) *KubernetesExecutor {
 		podStatusFunc:        config.PodStatusFunc,
 		initialRegComplete:   make(chan struct{}),
 		staticPodsConfigPath: config.StaticPodsConfigPath,
+		launchGracePeriod:    config.LaunchGracePeriod,
 	}
 	//TODO(jdef) do something real with these events..
 	if config.Watch != nil {
@@ -571,7 +573,10 @@ func (k *KubernetesExecutor) launchTask(driver bindings.ExecutorDriver, taskId s
 func (k *KubernetesExecutor) _launchTask(driver bindings.ExecutorDriver, taskId, podFullName string, psf podStatusFunc) {
 
 	expired := make(chan struct{})
-	time.AfterFunc(launchGracePeriod, func() { close(expired) })
+
+	if k.launchGracePeriod > 0 {
+		time.AfterFunc(k.launchGracePeriod, func() { close(expired) })
+	}
 
 	getMarshalledInfo := func() (data []byte, cancel bool) {
 		// potentially long call..
@@ -610,7 +615,7 @@ waitForRunningPod:
 	for {
 		select {
 		case <-expired:
-			log.Warningf("Launch expired grace period of '%v'", launchGracePeriod)
+			log.Warningf("Launch expired grace period of '%v'", k.launchGracePeriod)
 			break waitForRunningPod
 		case <-time.After(containerPollTime):
 			if data, cancel := getMarshalledInfo(); cancel {

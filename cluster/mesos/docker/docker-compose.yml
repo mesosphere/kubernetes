@@ -147,6 +147,7 @@ scheduler:
     --cluster-domain=cluster.local
     --mesos-executor-cpus=1.0
     --executor-logv=4
+    --profiling=true
     --v=4
   environment:
   - MESOS_DOCKER_ETCD_TIMEOUT

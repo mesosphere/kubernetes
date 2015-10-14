@@ -19,6 +19,7 @@ package service
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -46,6 +47,11 @@ const (
 	// @see ConfigSourceAnnotationKey
 	MESOS_CFG_SOURCE = kubetypes.ApiserverSource
 )
+
+func init() {
+	// sensible timeout for default HTTP client
+	http.DefaultClient.Timeout = 10 * time.Second
+}
 
 type KubeletExecutorServer struct {
 	*app.KubeletServer

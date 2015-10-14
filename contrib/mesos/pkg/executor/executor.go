@@ -637,6 +637,7 @@ waitForRunningPod:
 			break waitForRunningPod
 		case <-time.After(containerPollTime):
 			if data, cancel := getMarshalledInfo(); cancel {
+				log.Warningf("Launch expired grace period of '%v'", k.launchGracePeriod)
 				break waitForRunningPod
 			} else if data == nil {
 				continue waitForRunningPod
@@ -644,9 +645,11 @@ waitForRunningPod:
 				k.lock.Lock()
 				defer k.lock.Unlock()
 				if _, found := k.tasks[taskId]; !found {
+					log.V(2).Infof("Lost pod %q", podFullName)
 					goto reportLost
 				}
 
+				log.V(2).Infof("Found running pod %q", podFullName)
 				statusUpdate := &mesos.TaskStatus{
 					TaskId:  mutil.NewTaskID(taskId),
 					State:   mesos.TaskState_TASK_RUNNING.Enum(),

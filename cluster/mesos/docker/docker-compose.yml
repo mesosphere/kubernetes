@@ -15,7 +15,7 @@ mesosmaster1:
   hostname: mesosmaster1
   image: mesosphere/mesos:0.24.0-1.0.27.ubuntu1404
   entrypoint: [ "mesos-master" ]
-  ports: [ "5050:5050" ]
+  ports: [ "9050:5050" ]
   environment:
   - MESOS_HOSTNAME=mesosmaster1
   - MESOS_PORT=5050
@@ -29,7 +29,7 @@ mesosmaster1:
 mesosslave:
   hostname: mesosslave
   privileged: true
-  image: mesosphere/mesos-slave-dind:mesos-0.24.0_dind-0.2_docker-1.8.2_ubuntu-14.04.3
+  image: jdef/mesos-slave-dind:mesos-0.24.0-1.0.27.ubuntu1404-docker-1.8.2-0-trusty
   entrypoint:
   - bash
   - -xc
@@ -146,6 +146,7 @@ scheduler:
     --cluster-dns=10.10.10.10
     --cluster-domain=cluster.local
     --mesos-executor-cpus=1.0
+    --executor-logv=4
     --v=4
   environment:
   - MESOS_DOCKER_ETCD_TIMEOUT

@@ -140,6 +140,12 @@ func (d *httpDecoder) run(res http.ResponseWriter) {
 	}()
 
 	go func() {
+		defer func() {
+			if d.con != nil {
+				log.V(2).Infoln(d.idtag + "run: closing connection")
+				d.con.Close()
+			}
+		}()
 		for buf := range d.outCh {
 			select {
 			case <-d.forceQuit:
@@ -147,8 +153,17 @@ func (d *httpDecoder) run(res http.ResponseWriter) {
 			default:
 			}
 			//TODO(jdef) I worry about this busy-looping
-			for buf.Len() > 0 {
+			now := time.Now()
+			for buf.Len() > 0 && time.Since(now) < 15 * time.Second {
 				d.tryFlushResponse(buf)
+				select {
+				case <-d.forceQuit:
+					return
+				default:
+				}
+			}
+			if buf.Len() > 0 {
+				log.Warningln("failed to fully flush output buffer within time")
 			}
 		}
 	}()
@@ -324,10 +339,6 @@ func terminateState(d *httpDecoder) httpState {
 	// attempt to forcefully close the connection and signal response handlers that
 	// no further responses should be written
 	d.Cancel(false)
-
-	if d.con != nil {
-		d.con.Close()
-	}
 
 	// there is no spoon
 	return nil

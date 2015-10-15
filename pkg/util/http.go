@@ -24,6 +24,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/mesos/mesos-go/messenger"
 )
 
 // IsProbableEOF returns true if the given error resembles a connection termination
@@ -49,7 +52,21 @@ func IsProbableEOF(err error) bool {
 	return false
 }
 
-var defaultTransport = http.DefaultTransport.(*http.Transport)
+var defaultTransport = func() *http.Transport {
+	tag := "k8s/pkg/util"
+/*
+	_, file, line, ok := runtime.Caller(0)
+	if ok {
+		tag = fmt.Sprintf("(%s:%d)", file, line)
+	}
+*/
+	t := http.DefaultTransport.(*http.Transport)
+	t.Dial = messenger.MonitorLongLivedConnectionDialer(tag, (&net.Dialer{
+		Timeout: 30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).Dial)
+	return t
+}()
 
 // SetTransportDefaults applies the defaults from http.DefaultTransport
 // for the Proxy, Dial, and TLSHandshakeTimeout fields if unset

@@ -29,6 +29,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/mesos/mesos-go/detector"
 	mesos "github.com/mesos/mesos-go/mesosproto"
+	"github.com/mesos/mesos-go/messenger"
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
@@ -102,7 +103,10 @@ func newMesosClient(
 	md detector.Master,
 	mesosHttpClientTimeout, stateCacheTTL time.Duration) (*mesosClient, error) {
 
-	tr := &http.Transport{}
+	tr := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		Dial: messenger.MonitorLongLivedConnectionDialer("mcloud", (&net.Dialer{Timeout: 30*time.Second,KeepAlive:30*time.Second}).Dial),
+	}
 	httpClient := &http.Client{
 		Transport: tr,
 		Timeout:   mesosHttpClientTimeout,

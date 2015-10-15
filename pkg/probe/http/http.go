@@ -19,18 +19,26 @@ package http
 import (
 	"crypto/tls"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
 
 	"k8s.io/kubernetes/pkg/probe"
+	"github.com/mesos/mesos-go/messenger"
 
 	"github.com/golang/glog"
 )
 
 func New() HTTPProber {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	transport := &http.Transport{
+		Dial: messenger.MonitorLongLivedConnectionDialer("probe", (&net.Dialer{
+			Timeout: 30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial),
+		TLSClientConfig: tlsConfig,
+	}
 	return httpProber{transport}
 }
 

@@ -139,12 +139,16 @@ func (d *httpDecoder) run(res http.ResponseWriter) {
 		log.V(2).Infoln(d.idtag + "run: terminating")
 	}()
 
+	connCh := make(chan net.Conn, 1)
 	go func() {
+		con, ok := <-connCh
+		if !ok {
+			log.V(2).Infoln("run: response-writer aborted, likley that hijack failed")
+			return
+		}
 		defer func() {
-			if d.con != nil {
-				log.V(2).Infoln(d.idtag + "run: closing connection")
-				d.con.Close()
-			}
+			log.V(2).Infoln(d.idtag + "run: closing connection")
+			con.Close()
 		}()
 		for buf := range d.outCh {
 			select {
@@ -169,7 +173,7 @@ func (d *httpDecoder) run(res http.ResponseWriter) {
 	}()
 
 	var next httpState
-	for state := d.bootstrapState(res); state != nil; state = next {
+	for state := d.bootstrapState(res, connCh); state != nil; state = next {
 		next = state(d)
 	}
 }
@@ -367,8 +371,9 @@ func limit(r *bufio.Reader, limit int64) *io.LimitedReader {
 // bootstrapState expects to be called when the standard net/http lib has already
 // read the initial request query line + headers from a connection. the request
 // is ready to be hijacked at this point.
-func (d *httpDecoder) bootstrapState(res http.ResponseWriter) httpState {
+func (d *httpDecoder) bootstrapState(res http.ResponseWriter, ch chan<- net.Conn) httpState {
 	log.V(2).Infoln(d.idtag + "bootstrap-state")
+	defer close(ch)
 	d.updateForRequest()
 
 	// hijack
@@ -386,6 +391,7 @@ func (d *httpDecoder) bootstrapState(res http.ResponseWriter) httpState {
 	}
 	d.rw = rw
 	d.con = c
+	ch <- c
 	return d.readBodyContent()
 }
 

@@ -76,6 +76,8 @@ import (
 	"k8s.io/kubernetes/pkg/watch"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 	"k8s.io/kubernetes/third_party/golang/expansion"
+
+	"github.com/mesos/mesos-go/messenger"
 )
 
 const (
@@ -258,7 +260,16 @@ func NewMainKubelet(
 		rootDirectory:                  rootDirectory,
 		resyncInterval:                 resyncInterval,
 		containerRefManager:            containerRefManager,
-		httpClient:                     &http.Client{},
+		httpClient:                     &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				Dial: messenger.MonitorLongLivedConnectionDialer("kubelet", (&net.Dialer{
+					Timeout: 30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).Dial),
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
+		},
 		sourcesReady:                   sourcesReady,
 		registerNode:                   registerNode,
 		registerSchedulable:            registerSchedulable,

@@ -29,8 +29,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,10 +49,7 @@ var (
 
 	httpTransport, httpClient = func() (tr *http.Transport, cl *http.Client){
 		tr = &http.Transport{
-			Dial: (&net.Dialer{
-				Timeout: 10 * time.Second, // TODO(jdef) extract constant
-				KeepAlive: 30 * time.Second,
-			}).Dial,
+			Dial: MonitorLongLivedConnectionDialer("mgo", DefaultDialer()),
 		}
 		cl = &http.Client{
 			// TODO(jdef) dialer should use a timeout
@@ -60,6 +59,77 @@ var (
 		return
 	}()
 )
+
+type DialerFunc func(network, addr string) (net.Conn, error)
+
+func DefaultDialer() DialerFunc {
+	return (&net.Dialer{
+		Timeout: 10 * time.Second, // TODO(jdef) extract constant
+		KeepAlive: 30 * time.Second,
+	}).Dial
+}
+
+type monitoredConn struct {
+	net.Conn
+	closeHook func() error
+}
+func (c *monitoredConn) Close() error { return c.closeHook() }
+
+func MonitorLongLivedConnection(id int32, tag string, c net.Conn, err error) (net.Conn, error) {
+		var (
+			now = time.Now()
+			callers = ""
+			ticker = time.NewTicker(5 * time.Minute)
+			done = make(chan struct{})
+			closeOnce sync.Once
+		)
+		// capture a stack trace
+		for i := 0; true; i++ {
+			_, file, line, ok := runtime.Caller(i)
+			if !ok {
+				break
+			}
+			callers = callers + fmt.Sprintf("%v:%v\n", file, line)
+		}
+
+		// set up a ticker, log long lived connections
+		go func() {
+			for {
+				select {
+				case <-ticker.C:
+					log.Warningf("long-lived connection %s:%d has been alive for %v:\n%v",
+						tag, id, time.Since(now), callers) 
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		// decorate the connection Close() func
+		return &monitoredConn{c, func() error {
+			e2 := c.Close()
+			closeOnce.Do(func() {
+				log.V(3).Infof("closing %q", tag)
+				close(done)
+				ticker.Stop()
+			})
+			return e2
+		}}, nil
+}
+
+func MonitorLongLivedConnectionDialer(tag string, f DialerFunc) DialerFunc {
+	idCounter := int32(0)
+	return DialerFunc(func(network, addr string) (net.Conn, error) {
+		c, err := f(network, addr)
+		if err != nil {
+			return c, err
+		}
+		id := atomic.AddInt32(&idCounter,1)
+		newtag := tag+fmt.Sprintf("[%s/%s]", network, addr)
+		log.V(3).Infof("dialing %q", newtag)
+		return MonitorLongLivedConnection(id, newtag, c, err)
+	})
+}
 
 // httpTransporter is a subset of the Transporter interface
 type httpTransporter interface {
@@ -365,7 +435,7 @@ func (l *loggedListener) Addr() net.Addr { return l.delegate.Addr() }
 
 func logConnection(c net.Conn) net.Conn {
 	w := hex.Dumper(os.Stdout)
-	r := io.TeeReader(c, w)
+	r := TeeReader(c, w)
 	return &loggedConnection{
 		Conn:   c,
 		reader: r,
@@ -379,6 +449,32 @@ type loggedConnection struct {
 
 func (c *loggedConnection) Read(b []byte) (int, error) {
 	return c.reader.Read(b)
+}
+
+// TeeReader returns a Reader that writes to w what it reads from r.
+// All reads from r performed through it are matched with
+// corresponding writes to w.  There is no internal buffering -
+// the write must complete before the read completes.
+// Any error encountered while writing is reported as a read error.
+func TeeReader(r io.Reader, w io.Writer) io.Reader {
+        return &teeReader{r, w}
+}
+
+type teeReader struct {
+        r io.Reader
+        w io.Writer
+}
+
+func (t *teeReader) Read(p []byte) (n int, err error) {
+        n, err = t.r.Read(p)
+        if n > 0 {
+		// don't shadow the original error in case someone really cares about
+		// read timeouts
+                if n, err2 := t.w.Write(p[:n]); err2 != nil {
+                        return n, err2
+                }
+        }
+        return
 }
 
 // Listen starts listen on UPID. If UPID is empty, the transporter
@@ -493,6 +589,7 @@ func (t *HTTPTransporter) UPID() upid.UPID {
 }
 
 func (t *HTTPTransporter) messageDecoder(w http.ResponseWriter, r *http.Request) {
+	log.V(3).Infof("messageDecoder: %s %s", r.Method, r.RequestURI)
 	// Verify it's a libprocess request.
 	from, err := getLibprocessFrom(r)
 	if err != nil {

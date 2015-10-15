@@ -24,12 +24,16 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"k8s.io/kubernetes/pkg/api"
 	apierrors "k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/util/httpstream"
 	"k8s.io/kubernetes/third_party/golang/netutil"
+
+	"github.com/mesos/mesos-go/messenger"
 )
 
 // SpdyRoundTripper knows how to upgrade an HTTP request to one that supports
@@ -63,13 +67,18 @@ func NewSpdyRoundTripper(tlsConfig *tls.Config) *SpdyRoundTripper {
 	return &SpdyRoundTripper{tlsConfig: tlsConfig}
 }
 
+var (
+	netDialer = messenger.MonitorLongLivedConnectionDialer("spdy", (&net.Dialer{Timeout: 30*time.Second,KeepAlive:30*time.Second}).Dial)
+	spdyTLSID = int32(0)
+)
+
 // dial dials the host specified by req, using TLS if appropriate.
 func (s *SpdyRoundTripper) dial(req *http.Request) (net.Conn, error) {
 	dialAddr := netutil.CanonicalAddr(req.URL)
 
 	if req.URL.Scheme == "http" {
 		if s.Dialer == nil {
-			return net.Dial("tcp", dialAddr)
+			return netDialer("tcp", dialAddr)
 		} else {
 			return s.Dialer.Dial("tcp", dialAddr)
 		}
@@ -79,7 +88,10 @@ func (s *SpdyRoundTripper) dial(req *http.Request) (net.Conn, error) {
 	var conn *tls.Conn
 	var err error
 	if s.Dialer == nil {
-		conn, err = tls.Dial("tcp", dialAddr, s.tlsConfig)
+		//conn, err = tls.Dial("tcp", dialAddr, s.tlsConfig)
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 30*time.Second}, "tcp", dialAddr, s.tlsConfig)
+		id := atomic.AddInt32(&spdyTLSID, 1)
+		return messenger.MonitorLongLivedConnection(id, "spdytls", conn, err)
 	} else {
 		conn, err = tls.DialWithDialer(s.Dialer, "tcp", dialAddr, s.tlsConfig)
 	}

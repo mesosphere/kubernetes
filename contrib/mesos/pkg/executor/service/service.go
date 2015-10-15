@@ -27,6 +27,7 @@ import (
 
 	log "github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
+	"github.com/mesos/mesos-go/messenger"
 	"github.com/spf13/pflag"
 	"k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor"
@@ -51,6 +52,12 @@ const (
 func init() {
 	// sensible timeout for default HTTP client
 	http.DefaultClient.Timeout = 10 * time.Second
+
+	http.DefaultTransport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		Dial: messenger.MonitorLongLivedConnectionDialer("net/http",(&net.Dialer{Timeout: 30*time.Second, KeepAlive: 30*time.Second}).Dial),
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
 }
 
 type KubeletExecutorServer struct {

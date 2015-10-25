@@ -840,7 +840,7 @@ func TestDeleteOne_NonexistentPod(t *testing.T) {
 	reg := podtask.NewInMemoryRegistry()
 	obj.On("tasks").Return(reg)
 
-	qr := queuer.NewQueuer(nil)
+	qr := queuer.New(nil)
 	assert.Equal(0, len(qr.PodQueue.List()))
 	d := &deleter{
 		api: obj,
@@ -874,7 +874,7 @@ func TestDeleteOne_PendingPod(t *testing.T) {
 	}
 
 	// preconditions
-	qr := queuer.NewQueuer(nil)
+	qr := queuer.New(nil)
 	qr.PodQueue.Add(pod, queue.ReplaceExisting)
 	assert.Equal(1, len(qr.PodQueue.List()))
 	_, found := qr.PodQueue.Get("default/foo")
@@ -917,7 +917,7 @@ func TestDeleteOne_Running(t *testing.T) {
 	}
 
 	// preconditions
-	qr := queuer.NewQueuer(nil)
+	qr := queuer.New(nil)
 	qr.PodQueue.Add(pod, queue.ReplaceExisting)
 	assert.Equal(1, len(qr.PodQueue.List()))
 	_, found := qr.PodQueue.Get("default/foo")
@@ -944,7 +944,7 @@ func TestDeleteOne_badPodNaming(t *testing.T) {
 	pod := &queuer.Pod{Pod: &api.Pod{}}
 	d := &deleter{
 		api: obj,
-		qr:  queuer.NewQueuer(nil),
+		qr:  queuer.New(nil),
 	}
 
 	err := d.deleteOne(pod)

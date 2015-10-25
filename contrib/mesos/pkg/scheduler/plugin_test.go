@@ -441,12 +441,12 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	// create fake apiserver
 	apiServer := NewTestServer(t, api.NamespaceDefault, podsListWatch)
 
-	// create executor with some data for static pods if set
-	executor := mesosutil.NewExecutorInfo(
+	// create ExecutorInfo with some data for static pods if set
+	ei := mesosutil.NewExecutorInfo(
 		mesosutil.NewExecutorID("executor-id"),
 		mesosutil.NewCommandInfo("executor-cmd"),
 	)
-	executor.Data = []byte{0, 1, 2}
+	ei.Data = []byte{0, 1, 2}
 
 	// create scheduler
 	strategy := NewAllocationStrategy(
@@ -461,7 +461,7 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	)
 
 	scheduler := New(Config{
-		Executor: executor,
+		Executor: ei,
 		Client: client.NewOrDie(&client.Config{
 			Host:    apiServer.server.URL,
 			Version: testapi.Default.Version(),

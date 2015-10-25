@@ -46,6 +46,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/ha"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/queuer"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 	"k8s.io/kubernetes/pkg/util"
 )
@@ -839,13 +840,13 @@ func TestDeleteOne_NonexistentPod(t *testing.T) {
 	reg := podtask.NewInMemoryRegistry()
 	obj.On("tasks").Return(reg)
 
-	qr := newQueuer(nil)
-	assert.Equal(0, len(qr.podQueue.List()))
+	qr := queuer.NewQueuer(nil)
+	assert.Equal(0, len(qr.PodQueue.List()))
 	d := &deleter{
 		api: obj,
 		qr:  qr,
 	}
-	pod := &Pod{Pod: &api.Pod{
+	pod := &queuer.Pod{Pod: &api.Pod{
 		ObjectMeta: api.ObjectMeta{
 			Name:      "foo",
 			Namespace: api.NamespaceDefault,
@@ -861,7 +862,7 @@ func TestDeleteOne_PendingPod(t *testing.T) {
 	reg := podtask.NewInMemoryRegistry()
 	obj.On("tasks").Return(reg)
 
-	pod := &Pod{Pod: &api.Pod{
+	pod := &queuer.Pod{Pod: &api.Pod{
 		ObjectMeta: api.ObjectMeta{
 			Name:      "foo",
 			UID:       "foo0",
@@ -873,10 +874,10 @@ func TestDeleteOne_PendingPod(t *testing.T) {
 	}
 
 	// preconditions
-	qr := newQueuer(nil)
-	qr.podQueue.Add(pod, queue.ReplaceExisting)
-	assert.Equal(1, len(qr.podQueue.List()))
-	_, found := qr.podQueue.Get("default/foo")
+	qr := queuer.NewQueuer(nil)
+	qr.PodQueue.Add(pod, queue.ReplaceExisting)
+	assert.Equal(1, len(qr.PodQueue.List()))
+	_, found := qr.PodQueue.Get("default/foo")
 	assert.True(found)
 
 	// exec & post conditions
@@ -886,9 +887,9 @@ func TestDeleteOne_PendingPod(t *testing.T) {
 	}
 	err = d.deleteOne(pod)
 	assert.Nil(err)
-	_, found = qr.podQueue.Get("foo0")
+	_, found = qr.PodQueue.Get("foo0")
 	assert.False(found)
-	assert.Equal(0, len(qr.podQueue.List()))
+	assert.Equal(0, len(qr.PodQueue.List()))
 	obj.AssertExpectations(t)
 }
 
@@ -898,7 +899,7 @@ func TestDeleteOne_Running(t *testing.T) {
 	reg := podtask.NewInMemoryRegistry()
 	obj.On("tasks").Return(reg)
 
-	pod := &Pod{Pod: &api.Pod{
+	pod := &queuer.Pod{Pod: &api.Pod{
 		ObjectMeta: api.ObjectMeta{
 			Name:      "foo",
 			UID:       "foo0",
@@ -916,10 +917,10 @@ func TestDeleteOne_Running(t *testing.T) {
 	}
 
 	// preconditions
-	qr := newQueuer(nil)
-	qr.podQueue.Add(pod, queue.ReplaceExisting)
-	assert.Equal(1, len(qr.podQueue.List()))
-	_, found := qr.podQueue.Get("default/foo")
+	qr := queuer.NewQueuer(nil)
+	qr.PodQueue.Add(pod, queue.ReplaceExisting)
+	assert.Equal(1, len(qr.PodQueue.List()))
+	_, found := qr.PodQueue.Get("default/foo")
 	assert.True(found)
 
 	obj.On("killTask", task.ID).Return(nil)
@@ -931,19 +932,19 @@ func TestDeleteOne_Running(t *testing.T) {
 	}
 	err = d.deleteOne(pod)
 	assert.Nil(err)
-	_, found = qr.podQueue.Get("foo0")
+	_, found = qr.PodQueue.Get("foo0")
 	assert.False(found)
-	assert.Equal(0, len(qr.podQueue.List()))
+	assert.Equal(0, len(qr.PodQueue.List()))
 	obj.AssertExpectations(t)
 }
 
 func TestDeleteOne_badPodNaming(t *testing.T) {
 	assert := assert.New(t)
 	obj := &MockScheduler{}
-	pod := &Pod{Pod: &api.Pod{}}
+	pod := &queuer.Pod{Pod: &api.Pod{}}
 	d := &deleter{
 		api: obj,
-		qr:  newQueuer(nil),
+		qr:  queuer.NewQueuer(nil),
 	}
 
 	err := d.deleteOne(pod)

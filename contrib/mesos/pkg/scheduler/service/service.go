@@ -54,6 +54,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/profile"
 	"k8s.io/kubernetes/contrib/mesos/pkg/runtime"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler"
+	malgorithm "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/algorithm"
 	schedcfg "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/ha"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
@@ -678,7 +679,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Fatalf("misconfigured etcd: %v", err)
 	}
 
-	as := scheduler.NewAllocationStrategy(
+	as := malgorithm.NewAllocationStrategy(
 		podtask.NewDefaultPredicate(
 			s.DefaultContainerCPULimit,
 			s.DefaultContainerMemLimit,
@@ -691,7 +692,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 
 	// downgrade allocation strategy if user disables "account-for-pod-resources"
 	if !s.AccountForPodResources {
-		as = scheduler.NewAllocationStrategy(
+		as = malgorithm.NewAllocationStrategy(
 			podtask.DefaultMinimalPredicate,
 			podtask.DefaultMinimalProcurement)
 	}
@@ -713,7 +714,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		return n.(*api.Node)
 	}
 
-	fcfs := scheduler.NewFCFSPodScheduler(as, lookupNode)
+	fcfs := malgorithm.NewFCFSPodScheduler(as, lookupNode)
 	mesosPodScheduler := scheduler.New(scheduler.Config{
 		Schedcfg:          *sc,
 		Executor:          executor,

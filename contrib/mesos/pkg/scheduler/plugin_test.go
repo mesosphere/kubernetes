@@ -412,7 +412,7 @@ type lifecycleTest struct {
 	apiServer     *TestServer
 	driver        *joinableDriver
 	eventObs      *EventObserver
-	plugin        *schedulingPlugin
+	plugin        *schedulerPlugin
 	podsListWatch *MockPodsListWatch
 	scheduler     *MesosScheduler
 	schedulerProc *ha.SchedulerProcess
@@ -478,7 +478,7 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	config.Recorder = eventObs
 
 	// create plugin
-	plugin := NewPlugin(config).(*schedulingPlugin)
+	plugin := NewPlugin(config).(*schedulerPlugin)
 	assert.NotNil(plugin)
 
 	// create mock mesos scheduler driver

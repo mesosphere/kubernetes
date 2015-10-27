@@ -79,10 +79,10 @@ type MesosScheduler struct {
 	executor          *mesos.ExecutorInfo
 	executorGroup     uint64
 	client            *client.Client
-	etcdClient        tools.EtcdClient
 	failoverTimeout   float64 // in seconds
 	reconcileInterval int64
 	nodeRegistrator   node.Registrator
+	storeFrameworkId  func(id string)
 
 	// Mesos context.
 
@@ -113,7 +113,7 @@ type Config struct {
 	Executor          *mesos.ExecutorInfo
 	PodScheduler      podschedulers.PodScheduler
 	Client            *client.Client
-	EtcdClient        tools.EtcdClient
+	StoreFrameworkId  func(id string)
 	FailoverTimeout   float64
 	ReconcileInterval int64
 	ReconcileCooldown time.Duration
@@ -130,7 +130,6 @@ func New(config Config) *MesosScheduler {
 		executorGroup:     uid.Parse(config.Executor.ExecutorId.GetValue()).Group(),
 		podScheduler:      config.PodScheduler,
 		client:            config.Client,
-		etcdClient:        config.EtcdClient,
 		failoverTimeout:   config.FailoverTimeout,
 		reconcileInterval: config.ReconcileInterval,
 		nodeRegistrator:   node.NewRegistrator(config.Client, config.LookupNode),
@@ -175,6 +174,7 @@ func New(config Config) *MesosScheduler {
 		asRegisteredMaster: proc.DoerFunc(func(proc.Action) <-chan error {
 			return proc.ErrorChanf("cannot execute action with unregistered scheduler")
 		}),
+		storeFrameworkId: config.StoreFrameworkId,
 	}
 	return k
 }
@@ -267,14 +267,6 @@ func (k *MesosScheduler) Registered(drv bindings.SchedulerDriver, fid *mesos.Fra
 	k.reconciler.RequestExplicit()
 }
 
-func (k *MesosScheduler) storeFrameworkId() {
-	// TODO(jdef): port FrameworkId store to generic Kubernetes config store as soon as available
-	_, err := k.etcdClient.Set(meta.FrameworkIDKey, k.frameworkId.GetValue(), uint64(k.failoverTimeout))
-	if err != nil {
-		log.Errorf("failed to renew frameworkId TTL: %v", err)
-	}
-}
-
 // Reregistered is called when the scheduler re-registered with the master successfully.
 // This happends when the master fails over.
 func (k *MesosScheduler) Reregistered(drv bindings.SchedulerDriver, mi *mesos.MasterInfo) {
@@ -297,7 +289,9 @@ func (k *MesosScheduler) onInitialRegistration(driver bindings.SchedulerDriver) 
 		if k.failoverTimeout < k.schedulerConfig.FrameworkIdRefreshInterval.Duration.Seconds() {
 			refreshInterval = time.Duration(math.Max(1, k.failoverTimeout/2)) * time.Second
 		}
-		go runtime.Until(k.storeFrameworkId, refreshInterval, k.terminate)
+		go runtime.Until(func() {
+			k.storeFrameworkId(k.frameworkId.GetValue())
+		}, refreshInterval, k.terminate)
 	}
 
 	r1 := k.makeTaskRegistryReconciler()

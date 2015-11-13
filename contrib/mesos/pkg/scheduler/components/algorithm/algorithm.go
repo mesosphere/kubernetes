@@ -99,8 +99,8 @@ func (k *schedulerAlgorithm) Schedule(pod *api.Pod) (string, error) {
 			return "", errors.NoSuchPodErr
 		}
 
-		// write resource limits into the pod spec which is transferred to the executor. From here
-		// on we can expect that the pod spec of a task has proper limits for CPU and memory.
+		// write resource limits into the pod spec.
+		// From here on we can expect that the pod spec of a task has proper limits for CPU and memory.
 		k.limitPod(pod)
 
 		podTask, err := podtask.New(ctx, "", pod, k.prototype, k.roles)

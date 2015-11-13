@@ -41,7 +41,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/uid"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -70,8 +69,6 @@ type framework struct {
 	// Config related, write-once
 	sched             scheduler.Scheduler
 	schedulerConfig   *schedcfg.Config
-	executor          *mesos.ExecutorInfo
-	executorGroup     uint64
 	client            *client.Client
 	failoverTimeout   float64 // in seconds
 	reconcileInterval int64
@@ -98,7 +95,6 @@ type framework struct {
 
 type Config struct {
 	SchedulerConfig   schedcfg.Config
-	Executor          *mesos.ExecutorInfo
 	Client            *client.Client
 	StoreFrameworkId  func(id string)
 	FailoverTimeout   float64
@@ -113,8 +109,6 @@ func New(config Config) Framework {
 	k = &framework{
 		schedulerConfig:   &config.SchedulerConfig,
 		RWMutex:           new(sync.RWMutex),
-		executor:          config.Executor,
-		executorGroup:     uid.Parse(config.Executor.ExecutorId.GetValue()).Group(),
 		client:            config.Client,
 		failoverTimeout:   config.FailoverTimeout,
 		reconcileInterval: config.ReconcileInterval,
@@ -213,8 +207,12 @@ func (k *framework) installDebugHandlers(mux *http.ServeMux) {
 	wrappedHandler("/debug/actions/kamikaze", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slaves := k.slaveHostNames.SlaveIDs()
 		for _, slaveId := range slaves {
+			eId := k.slaveHostNames.ExecutorId(slaveId)
+			if eId == "" {
+				continue
+			}
 			_, err := k.driver.SendFrameworkMessage(
-				k.executor.ExecutorId,
+				mutil.NewExecutorID(eId),
 				mutil.NewSlaveID(slaveId),
 				messages.Kamikaze)
 			if err != nil {
@@ -305,7 +303,7 @@ func (k *framework) ResourceOffers(driver bindings.SchedulerDriver, offers []*me
 	k.offers.Add(offers)
 	for _, offer := range offers {
 		slaveId := offer.GetSlaveId().GetValue()
-		k.slaveHostNames.Register(slaveId, offer.GetHostname())
+		k.slaveHostNames.Register(slaveId, offer.GetHostname(), "")
 
 		// create api object if not existing already
 		if k.nodeRegistrator != nil {
@@ -369,12 +367,17 @@ func (k *framework) StatusUpdate(driver bindings.SchedulerDriver, taskStatus *me
 			} // else, we don't really care about FINISHED tasks that aren't registered
 			return
 		}
-		if hostName := k.slaveHostNames.HostName(taskStatus.GetSlaveId().GetValue()); hostName == "" {
+
+		hostName := k.slaveHostNames.HostName(taskStatus.GetSlaveId().GetValue())
+		if hostName == "" {
 			// a registered task has an update reported by a slave that we don't recognize.
 			// this should never happen! So we don't reconcile it.
 			log.Errorf("Ignore status %+v because the slave does not exist", taskStatus)
 			return
 		}
+
+		k.slaveHostNames.Register(taskStatus.GetSlaveId().GetValue(), hostName, taskStatus.GetExecutorId().GetValue())
+
 	case mesos.TaskState_TASK_FAILED, mesos.TaskState_TASK_ERROR:
 		if task, _ := k.sched.Tasks().UpdateStatus(taskStatus); task != nil {
 			if task.Has(podtask.Launched) && !task.Has(podtask.Bound) {
@@ -538,6 +541,9 @@ func (k *framework) SlaveLost(driver bindings.SchedulerDriver, slaveId *mesos.Sl
 // ExecutorLost is called when some executor is lost.
 func (k *framework) ExecutorLost(driver bindings.SchedulerDriver, executorId *mesos.ExecutorID, slaveId *mesos.SlaveID, status int) {
 	log.Infof("Executor %v of slave %v is lost, status: %v\n", executorId, slaveId, status)
+
+	k.slaveHostNames.ExecutorLost(slaveId.GetValue())
+
 	// TODO(yifan): Restart any unfinished tasks of the executor.
 }
 
@@ -662,7 +668,7 @@ func (ks *framework) recoverTasks() error {
 	recoverSlave := func(t *podtask.T) {
 
 		slaveId := t.Spec.SlaveID
-		ks.slaveHostNames.Register(slaveId, t.Offer.Host())
+		ks.slaveHostNames.Register(slaveId, t.Offer.Host(), t.Spec.Executor.GetExecutorId().GetValue())
 	}
 	for _, pod := range podList.Items {
 		if _, isMirrorPod := pod.Annotations[kubetypes.ConfigMirrorAnnotationKey]; isMirrorPod {

@@ -42,7 +42,7 @@ func NewFCFSPodScheduler(pr podtask.Procurement, lookupNode node.LookupFunc) Pod
 // A first-come-first-serve scheduler: acquires the first offer that can support the task
 func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, task *podtask.T) (offers.Perishable, *podtask.Spec, error) {
 	podName := fmt.Sprintf("%s/%s", task.Pod.Namespace, task.Pod.Name)
-	var acceptedOffer offers.Perishable
+	var matchingOffer offers.Perishable
 	var acceptedSpec *podtask.Spec
 	err := r.Walk(func(p offers.Perishable) (bool, error) {
 		offer := p.Details()
@@ -78,16 +78,16 @@ func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, task *podtask.T) (of
 			return false, nil // continue
 		}
 
-		acceptedOffer = p
+		matchingOffer = p
 		acceptedSpec = spec
 		log.V(3).Infof("Pod %s accepted offer %v", podName, offer.Id.GetValue())
 		return true, nil // stop, we found an offer
 	})
-	if acceptedOffer != nil {
+	if matchingOffer != nil {
 		if err != nil {
 			log.Warningf("problems walking the offer registry: %v, attempting to continue", err)
 		}
-		return acceptedOffer, acceptedSpec, nil
+		return matchingOffer, acceptedSpec, nil
 	}
 	if err != nil {
 		log.V(2).Infof("failed to find a fit for pod: %s, err = %v", podName, err)

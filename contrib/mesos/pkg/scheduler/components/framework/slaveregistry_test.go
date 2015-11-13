@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Check that same slave is only added once.
 func TestSlaveStorage_Register(t *testing.T) {
 	assert := assert.New(t)
 
@@ -31,14 +30,18 @@ func TestSlaveStorage_Register(t *testing.T) {
 
 	slaveId := "slave1"
 	slaveHostname := "slave1Hostname"
-	slaveStorage.Register(slaveId, slaveHostname)
+	executorId := "1234-5678-9012"
+
+	slaveStorage.Register(slaveId, slaveHostname, "")
 	assert.Equal(1, len(slaveStorage.SlaveIDs()))
 
-	slaveStorage.Register(slaveId, slaveHostname)
+	slaveStorage.Register(slaveId, slaveHostname, "")
+	assert.Equal(1, len(slaveStorage.SlaveIDs()))
+
+	slaveStorage.Register(slaveId, slaveHostname, executorId)
 	assert.Equal(1, len(slaveStorage.SlaveIDs()))
 }
 
-// Check that GetHostName returns empty hostname for nonexisting slave.
 func TestSlaveStorage_HostName(t *testing.T) {
 	assert := assert.New(t)
 
@@ -51,14 +54,53 @@ func TestSlaveStorage_HostName(t *testing.T) {
 	h := slaveStorage.HostName(slaveId)
 	assert.Equal(h, "")
 
-	slaveStorage.Register(slaveId, slaveHostname)
+	slaveStorage.Register(slaveId, slaveHostname, "")
 	assert.Equal(1, len(slaveStorage.SlaveIDs()))
+
+	h = slaveStorage.HostName(slaveId)
+	assert.Equal(h, slaveHostname)
+
+	slaveStorage.ExecutorLost(slaveId)
 
 	h = slaveStorage.HostName(slaveId)
 	assert.Equal(h, slaveHostname)
 }
 
-// Check that GetSlaveIds returns array with all slaveIds.
+func TestSlaveStorage_ExecutorId(t *testing.T) {
+	assert := assert.New(t)
+
+	slaveStorage := newSlaveRegistry()
+	assert.Equal(0, len(slaveStorage.hostNames))
+
+	slaveId := "slave1"
+	slaveHostname := "slave1Hostname"
+	executorId := "1234-5678-9012"
+
+	h := slaveStorage.HostName(slaveId)
+	assert.Equal(h, "")
+
+	slaveStorage.Register(slaveId, slaveHostname, "")
+	assert.Equal(1, len(slaveStorage.SlaveIDs()))
+
+	id := slaveStorage.ExecutorId(slaveId)
+	assert.Equal(id, "")
+
+	slaveStorage.Register(slaveId, slaveHostname, executorId)
+
+	id = slaveStorage.ExecutorId(slaveId)
+	assert.Equal(id, executorId)
+
+	slaveStorage.Register(slaveId, slaveHostname, "")
+
+	id = slaveStorage.ExecutorId(slaveId)
+	assert.Equal(id, executorId)
+
+	slaveStorage.ExecutorLost(slaveId)
+
+	id = slaveStorage.ExecutorId(slaveId)
+	assert.Equal(id, "")
+}
+
 func TestSlaveStorage_SlaveIds(t *testing.T) {
 	assert := assert.New(t)
 
@@ -67,12 +109,12 @@ func TestSlaveStorage_SlaveIds(t *testing.T) {
 
 	slaveId := "1"
 	slaveHostname := "hn1"
-	slaveStorage.Register(slaveId, slaveHostname)
+	slaveStorage.Register(slaveId, slaveHostname, "")
 	assert.Equal(1, len(slaveStorage.SlaveIDs()))
 
 	slaveId = "2"
 	slaveHostname = "hn2"
-	slaveStorage.Register(slaveId, slaveHostname)
+	slaveStorage.Register(slaveId, slaveHostname, "")
 	assert.Equal(2, len(slaveStorage.SlaveIDs()))
 
 	slaveIds := slaveStorage.SlaveIDs()

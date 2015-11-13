@@ -22,24 +22,32 @@ import (
 
 // slaveRegistry manages node hostnames for slave ids.
 type slaveRegistry struct {
-	lock      sync.Mutex
-	hostNames map[string]string
+	lock        sync.Mutex
+	hostNames   map[string]string // by slaveId
+	executorIds map[string]string // by slaveId
 }
 
 func newSlaveRegistry() *slaveRegistry {
 	return &slaveRegistry{
-		hostNames: map[string]string{},
+		hostNames:   map[string]string{},
+		executorIds: map[string]string{},
 	}
 }
 
 // Register creates a mapping between a slaveId and slave if not existing.
-func (st *slaveRegistry) Register(slaveId, slaveHostname string) {
+func (st *slaveRegistry) Register(slaveId, slaveHostname, executorId string) {
 	st.lock.Lock()
 	defer st.lock.Unlock()
-	_, exists := st.hostNames[slaveId]
-	if !exists {
-		st.hostNames[slaveId] = slaveHostname
+
+	st.hostNames[slaveId] = slaveHostname
+	if executorId != "" {
+		st.executorIds[slaveId] = executorId
 	}
+}
+
+// ExecutorLost removes the executor id for the given slave
+func (st *slaveRegistry) ExecutorLost(slaveId string) {
+	delete(st.executorIds, slaveId)
 }
 
 // SlaveIDs returns the keys of the registry
@@ -58,4 +66,12 @@ func (st *slaveRegistry) HostName(slaveId string) string {
 	st.lock.Lock()
 	defer st.lock.Unlock()
 	return st.hostNames[slaveId]
+}
+
+// ExecutorId looks up an executor id for a given slaveId. An empty string is
+// returned if no executor is running on that slave.
+func (st *slaveRegistry) ExecutorId(slaveId string) string {
+	st.lock.Lock()
+	defer st.lock.Unlock()
+	return st.executorIds[slaveId]
 }

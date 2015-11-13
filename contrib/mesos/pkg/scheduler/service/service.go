@@ -706,7 +706,6 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 
 	framework := framework.New(framework.Config{
 		SchedulerConfig:   *sc,
-		Executor:          eiPrototype,
 		Client:            client,
 		FailoverTimeout:   s.failoverTimeout,
 		ReconcileInterval: s.reconcileInterval,

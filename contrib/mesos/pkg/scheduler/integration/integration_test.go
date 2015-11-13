@@ -473,7 +473,6 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	})
 	c := *schedcfg.CreateDefaultConfig()
 	fw := framework.New(framework.Config{
-		Executor:        ei,
 		Client:          client,
 		SchedulerConfig: c,
 		LookupNode:      apiServer.LookupNode,

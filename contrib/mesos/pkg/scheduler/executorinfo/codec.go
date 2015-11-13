@@ -17,10 +17,10 @@ limitations under the License.
 package executorinfo
 
 import (
-	"bytes"
 	"encoding/base64"
 	"io"
-	"strings"
+
+	"bufio"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/mesos/mesos-go/mesosproto"
@@ -28,6 +28,9 @@ import (
 
 var base64Codec = base64.StdEncoding
 
+// EncodeResources encodes the given resource slice to the given writer.
+// The resource slice is encoded as a comma separated string of
+// base64 encoded resource protobufs.
 func EncodeResources(w io.Writer, rs []*mesosproto.Resource) error {
 	sep := ""
 
@@ -54,14 +57,25 @@ func EncodeResources(w io.Writer, rs []*mesosproto.Resource) error {
 	return nil
 }
 
-func DecodeResources(r io.Reader) ([]*mesosproto.Resource, error) {
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	encoded := strings.Split(buf.String(), ",")
+// DecodeResources decodes a resource slice from the given reader.
+// The format is expected to be the same as in EncodeResources.
+func DecodeResources(r io.Reader) (rs []*mesosproto.Resource, err error) {
+	delimited := bufio.NewReader(r)
+	rs = []*mesosproto.Resource{}
 
-	rs := make([]*mesosproto.Resource, 0, len(encoded))
-	for _, e := range encoded {
-		decoded, err := base64Codec.DecodeString(e)
+	for err != io.EOF {
+		var encoded string
+		encoded, err = delimited.ReadString(',')
+
+		switch {
+		case err == io.EOF:
+		case err == nil:
+			encoded = encoded[:len(encoded)-1]
+		default: // err != nil && err != io.EOF
+			return nil, err
+		}
+
+		decoded, err := base64Codec.DecodeString(encoded)
 		if err != nil {
 			return nil, err
 		}

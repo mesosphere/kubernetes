@@ -63,7 +63,7 @@ func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, task *podtask.T) (of
 		spec := &podtask.Spec{}
 		err := fps.procurement.Procure(task, offer, n, spec)
 		if err != nil {
-			log.V(2).Infof(
+			log.V(5).Infof(
 				"Offer %q does not fit pod %s/%s: %v",
 				offer.Id, task.Pod.Namespace, task.Pod.Name, err,
 			)

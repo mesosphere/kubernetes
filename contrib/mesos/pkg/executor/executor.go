@@ -17,14 +17,13 @@ limitations under the License.
 package executor
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"bytes"
 
 	"github.com/fsouza/go-dockerclient"
 	"github.com/gogo/protobuf/proto"
@@ -241,7 +240,7 @@ func (k *Executor) Registered(
 		k.initializeStaticPodsSource(executorInfo.Data)
 	}
 
-	annotations, err := ExecutorInfoToAnnotations(executorInfo)
+	annotations, err := executorInfoToAnnotations(executorInfo)
 	if err != nil {
 		log.Errorf(
 			"cannot get node annotations from executor info %v error %v",
@@ -1019,7 +1018,7 @@ func nodeInfo(si *mesos.SlaveInfo, ei *mesos.ExecutorInfo) NodeInfo {
 	return ni
 }
 
-func ExecutorInfoToAnnotations(ei *mesos.ExecutorInfo) (annotations map[string]string, err error) {
+func executorInfoToAnnotations(ei *mesos.ExecutorInfo) (annotations map[string]string, err error) {
 	annotations = map[string]string{}
 	if ei == nil {
 		return

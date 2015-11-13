@@ -39,7 +39,7 @@ func NewDefaultProcurement(prototype *mesos.ExecutorInfo, eir executorinfo.Regis
 		NewNodeProcurement(),
 		NewPodResourcesProcurement(),
 		NewPortsProcurement(),
-		NewExecutorResourceProcurer(prototype, eir),
+		NewExecutorResourceProcurer(prototype.GetResources(), eir),
 	})
 }
 
@@ -185,13 +185,13 @@ func NewPortsProcurement() Procurement {
 // If a given offer has no executor IDs set, the given prototype executor resources are considered for procurement.
 // If a given offer has one executor ID set, only pod resources are being procured.
 // An offer with more than one executor ID implies an invariant violation and the first executor ID is being considered.
-func NewExecutorResourceProcurer(prototype *mesos.ExecutorInfo, registry executorinfo.Registry) Procurement {
+func NewExecutorResourceProcurer(resources []*mesos.Resource, registry executorinfo.Registry) Procurement {
 	return ProcurementFunc(func(t *T, offer *mesos.Offer, _ *api.Node, spec *Spec) error {
 		eids := len(offer.GetExecutorIds())
 		switch {
 		case eids == 0:
-			wantedCpus := sumResources(filterResources(prototype.GetResources(), isScalar, hasName("cpus")))
-			wantedMem := sumResources(filterResources(prototype.GetResources(), isScalar, hasName("mem")))
+			wantedCpus := sumResources(filterResources(resources, isScalar, hasName("cpus")))
+			wantedMem := sumResources(filterResources(resources, isScalar, hasName("mem")))
 
 			procuredCpu, remaining := procureRoleResources("cpus", wantedCpus, t.allowedRoles, offer.GetResources())
 			if procuredCpu == nil {

@@ -290,7 +290,7 @@ func (k *Executor) Reregistered(driver bindings.ExecutorDriver, slaveInfo *mesos
 			k.client,
 			slaveInfo.GetHostname(),
 			node.SlaveAttributesToLabels(slaveInfo.Attributes),
-			map[string]string{},
+			nil,
 		)
 
 		if err != nil {

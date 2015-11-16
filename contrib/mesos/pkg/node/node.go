@@ -17,7 +17,6 @@ limitations under the License.
 package node
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -29,10 +28,13 @@ import (
 	"k8s.io/kubernetes/pkg/api/errors"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/util/validation"
+	"time"
 )
 
 const (
-	labelPrefix = "k8s.mesosphere.io/attribute-"
+	labelPrefix         = "k8s.mesosphere.io/attribute-"
+	clientRetryCount    = 5
+	clientRetryInterval = time.Second
 )
 
 // Create creates a new node api object with the given hostname and labels
@@ -61,58 +63,48 @@ func Create(client *client.Client, hostName string, slaveAttrLabels, annotations
 }
 
 // Update updates an existing node api object with new labels
-func Update(client *client.Client, n *api.Node, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
-	patch := struct {
-		Metadata struct {
-			Labels      map[string]string `json:"labels"`
-			Annotations map[string]string `json:"annotations"`
-		} `json:"metadata"`
-	}{}
+func Update(client *client.Client, hostname string, slaveAttrLabels, annotations map[string]string) (n *api.Node, err error) {
+	for i := 0; i < clientRetryCount; i++ {
+		n, err = client.Nodes().Get(hostname)
+		if err != nil {
+			return nil, fmt.Errorf("error getting node %q: %v", hostname, err)
+		}
+		if n == nil {
+			return nil, fmt.Errorf("no node instance returned for %q", hostname)
+		}
 
-	// update labels derived from Mesos slave attributes, keep all other labels
-	patch.Metadata.Labels = mergeMaps(
-		filterMap(n.Labels, IsNotSlaveAttributeLabel),
-		slaveAttrLabels,
-	)
+		// update labels derived from Mesos slave attributes, keep all other labels
+		n.Labels = mergeMaps(
+			filterMap(n.Labels, IsNotSlaveAttributeLabel),
+			slaveAttrLabels,
+		)
+		n.Annotations = mergeMaps(n.Annotations, annotations)
 
-	patch.Metadata.Annotations = mergeMaps(n.Annotations, annotations)
+		n, err = client.Nodes().Update(n)
+		if err == nil && !errors.IsConflict(err) {
+			return n, nil
+		}
 
-	patchJson, _ := json.Marshal(patch)
-	log.V(4).Infof("Patching labels of node %q: %v", n.Name, string(patchJson))
-	err := client.Patch(api.MergePatchType).RequestURI(n.SelfLink).Body(patchJson).Do().Error()
-	if err != nil {
-		return nil, fmt.Errorf("error updating labels of node %q: %v", n.Name, err)
+		log.Infof("retry %d/%d: error updating node %v err %v", i, clientRetryCount, n, err)
+		time.Sleep(time.Duration(i) * clientRetryInterval)
 	}
 
-	newNode, err := api.Scheme.DeepCopy(n)
-	if err != nil {
-		return nil, err
-	}
-	newNode.(*api.Node).Labels = patch.Metadata.Labels
-
-	return newNode.(*api.Node), nil
+	return nil, err
 }
 
 // CreateOrUpdate tries to create a node api object or updates an already existing one
-func CreateOrUpdate(client *client.Client, hostName string, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
-	n, err := Create(client, hostName, slaveAttrLabels, annotations)
+func CreateOrUpdate(client *client.Client, hostname string, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
+	n, err := Create(client, hostname, slaveAttrLabels, annotations)
 	if err == nil {
 		return n, nil
 	}
+
 	if !errors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("unable to register %q with the apiserver: %v", hostName, err)
+		return nil, fmt.Errorf("unable to register %q with the apiserver: %v", hostname, err)
 	}
 
 	// fall back to update an old node with new labels
-	// TODO(sttts): potential race when somebody else modifies labels and/or annotation after the get and before the patching
-	n, err = client.Nodes().Get(hostName)
-	if err != nil {
-		return nil, fmt.Errorf("error getting node %q: %v", hostName, err)
-	}
-	if n == nil {
-		return nil, fmt.Errorf("no node instance returned for %q", hostName)
-	}
-	return Update(client, n, slaveAttrLabels, annotations)
+	return Update(client, hostname, slaveAttrLabels, annotations)
 }
 
 // IsNotSlaveAttributeLabel returns true iff the given label is not derived from a slave attribute

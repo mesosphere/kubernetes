@@ -63,18 +63,15 @@ func (r *registry) New(nodename string, resources []*mesosproto.Resource) *mesos
 	id, _ := NewExecutorID(e)
 	e.ExecutorId = id
 
-	r.mu.RLock()
-	info, ok := r.items[id.GetValue()]
-	r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
+	info, ok := r.items[id.GetValue()]
 	if ok {
 		return info
 	}
 
-	r.mu.Lock()
 	r.items[id.GetValue()] = e
-	r.mu.Unlock()
-
 	return e
 }
 

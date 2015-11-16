@@ -41,7 +41,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/uid"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -70,13 +69,12 @@ type framework struct {
 	// Config related, write-once
 	sched             scheduler.Scheduler
 	schedulerConfig   *schedcfg.Config
-	executor          *mesos.ExecutorInfo
-	executorGroup     uint64
 	client            *client.Client
 	failoverTimeout   float64 // in seconds
 	reconcileInterval int64
 	nodeRegistrator   node.Registrator
 	storeFrameworkId  func(id string)
+	lookupNode        node.LookupFunc
 
 	// Mesos context
 	driver         bindings.SchedulerDriver // late initialization
@@ -113,8 +111,6 @@ func New(config Config) Framework {
 	k = &framework{
 		schedulerConfig:   &config.SchedulerConfig,
 		RWMutex:           new(sync.RWMutex),
-		executor:          config.Executor,
-		executorGroup:     uid.Parse(config.Executor.ExecutorId.GetValue()).Group(),
 		client:            config.Client,
 		failoverTimeout:   config.FailoverTimeout,
 		reconcileInterval: config.ReconcileInterval,
@@ -152,6 +148,7 @@ func New(config Config) Framework {
 			return proc.ErrorChanf("cannot execute action with unregistered scheduler")
 		}),
 		storeFrameworkId: config.StoreFrameworkId,
+		lookupNode:       config.LookupNode,
 	}
 	return k
 }
@@ -179,6 +176,45 @@ func (k *framework) asMaster() proc.Doer {
 	return k.asRegisteredMaster
 }
 
+// An executorRef holds a reference to an executor and the slave it is running on
+type executorRef struct {
+	executorID *mesos.ExecutorID
+	slaveID    *mesos.SlaveID
+}
+
+// executorRefs returns a slice of known references to running executors known to this framework
+func (k *framework) executorRefs() []executorRef {
+	slaves := k.slaveHostNames.SlaveIDs()
+	refs := make([]executorRef, 0, len(slaves))
+
+	for _, slaveID := range slaves {
+		hostname := k.slaveHostNames.HostName(slaveID)
+		if hostname == "" {
+			log.Warningf("hostname lookup for slaveID %q failed", slaveID)
+			continue
+		}
+
+		node := k.lookupNode(hostname)
+		if node == nil {
+			log.Warningf("node lookup for slaveID %q failed", slaveID)
+			continue
+		}
+
+		eid, ok := node.Annotations[meta.ExecutorIdKey]
+		if !ok {
+			log.Warningf("unable to find %q annotation for node %v", meta.ExecutorIdKey, node)
+			continue
+		}
+
+		refs = append(refs, executorRef{
+			executorID: mutil.NewExecutorID(eid),
+			slaveID:    mutil.NewSlaveID(slaveID),
+		})
+	}
+
+	return refs
+}
+
 func (k *framework) installDebugHandlers(mux *http.ServeMux) {
 	wrappedHandler := func(uri string, h http.Handler) {
 		mux.HandleFunc(uri, func(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +237,7 @@ func (k *framework) installDebugHandlers(mux *http.ServeMux) {
 			}
 		})
 	}
+
 	requestReconciliation := func(uri string, requestAction func()) {
 		wrappedHandler(uri, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestAction()
@@ -211,18 +248,34 @@ func (k *framework) installDebugHandlers(mux *http.ServeMux) {
 	requestReconciliation("/debug/actions/requestImplicit", k.tasksReconciler.RequestImplicit)
 
 	wrappedHandler("/debug/actions/kamikaze", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slaves := k.slaveHostNames.SlaveIDs()
-		for _, slaveId := range slaves {
+		refs := k.executorRefs()
+
+		for _, ref := range refs {
 			_, err := k.driver.SendFrameworkMessage(
-				k.executor.ExecutorId,
-				mutil.NewSlaveID(slaveId),
-				messages.Kamikaze)
+				ref.executorID,
+				ref.slaveID,
+				messages.Kamikaze,
+			)
+
 			if err != nil {
-				log.Warningf("failed to send kamikaze message to slave %s: %v", slaveId, err)
-			} else {
-				io.WriteString(w, fmt.Sprintf("kamikaze slave %s\n", slaveId))
+				msg := fmt.Sprintf(
+					"error sending kamikaze message to executor %q on slave %q: %v",
+					ref.executorID.GetValue(),
+					ref.slaveID.GetValue(),
+					err,
+				)
+				log.Warning(msg)
+				fmt.Fprintln(w, msg)
+				continue
 			}
+
+			io.WriteString(w, fmt.Sprintf(
+				"kamikaze message sent to executor %q on slave %q\n",
+				ref.executorID.GetValue(),
+				ref.slaveID.GetValue(),
+			))
 		}
+
 		io.WriteString(w, "OK")
 	}))
 }

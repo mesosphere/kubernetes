@@ -207,22 +207,18 @@ func NewExecutorResourceProcurer(resources []*mesos.Resource, registry executori
 			spec.Executor = registry.New(offer.GetHostname(), append(procuredCpu, procuredMem...))
 			return nil
 
-		case eids > 1:
-			log.Errorf("got %d executor IDs in offer, want 1 (procuring first)", eids)
-			fallthrough
-
-		default: // eids >= 1
-			// read 1st executor id executor info from cache/attributes/...
-			eid := offer.GetExecutorIds()[0].GetValue()
-			log.V(5).Infof("found executor id %q", eid)
-
-			e, err := registry.Get(offer.GetHostname(), eid)
+		case eids == 1:
+			e, err := registry.Get(offer.GetHostname())
 			if err != nil {
 				return err
 			}
-
 			spec.Executor = e
 			return nil
+
+		default:
+			// offers with more than 1 ExecutorId should be rejected by the
+			// framework long before they arrive here.
+			return fmt.Errorf("got offer with more than 1 executor id: %v", offer.GetExecutorIds())
 		}
 	})
 }

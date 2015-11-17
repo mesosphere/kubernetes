@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"github.com/gogo/protobuf/proto"
 	"github.com/mesos/mesos-go/mesosproto"
+	"github.com/mesos/mesos-go/mesosutil"
 	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/pkg/api"
@@ -44,19 +45,13 @@ func TestRegistryGet(t *testing.T) {
 		return
 	}
 
-	initial := r.New("", nil)
 	var resources bytes.Buffer
 	EncodeResources(&resources, prototype.GetResources())
 
 	for i, tt := range []struct {
-		id      string
 		apiNode *api.Node
 		wantErr bool
 	}{
-		{
-			id:      initial.GetExecutorId().GetValue(),
-			wantErr: false,
-		},
 		{
 			apiNode: nil,
 			wantErr: true,
@@ -66,9 +61,7 @@ func TestRegistryGet(t *testing.T) {
 		}, {
 			apiNode: &api.Node{
 				ObjectMeta: api.ObjectMeta{
-					Annotations: map[string]string{
-						meta.ExecutorIdKey: "wrongKey",
-					},
+					Annotations: map[string]string{},
 				},
 			},
 			wantErr: true,
@@ -76,17 +69,6 @@ func TestRegistryGet(t *testing.T) {
 			apiNode: &api.Node{
 				ObjectMeta: api.ObjectMeta{
 					Annotations: map[string]string{
-						meta.ExecutorIdKey: prototype.GetExecutorId().GetValue(),
-					},
-				},
-			},
-			wantErr: true,
-		}, {
-			id: prototype.GetExecutorId().GetValue(),
-			apiNode: &api.Node{
-				ObjectMeta: api.ObjectMeta{
-					Annotations: map[string]string{
-						meta.ExecutorIdKey:        prototype.GetExecutorId().GetValue(),
 						meta.ExecutorResourcesKey: resources.String(),
 					},
 				},
@@ -95,7 +77,7 @@ func TestRegistryGet(t *testing.T) {
 		},
 	} {
 		lookupFunc = func() *api.Node { return tt.apiNode }
-		_, err := r.Get("", tt.id)
+		_, err := r.Get("")
 
 		if !tt.wantErr && err != nil {
 			t.Errorf("test %d: want error but got none", i)
@@ -110,18 +92,26 @@ func TestRegistryNew(t *testing.T) {
 		want      *mesosproto.ExecutorInfo
 	}{
 		{
-			prototype: &mesosproto.ExecutorInfo{},
+			prototype: &mesosproto.ExecutorInfo{
+				ExecutorId: mesosutil.NewExecutorID("exec-id"),
+			},
 			resources: nil,
-			want:      &mesosproto.ExecutorInfo{},
-		}, {
-			prototype: &mesosproto.ExecutorInfo{},
-			resources: []*mesosproto.Resource{},
 			want: &mesosproto.ExecutorInfo{
-				Resources: []*mesosproto.Resource{},
+				ExecutorId: mesosutil.NewExecutorID("exec-id"),
 			},
 		}, {
 			prototype: &mesosproto.ExecutorInfo{
-				Name: proto.String("foo"),
+				ExecutorId: mesosutil.NewExecutorID("exec-id"),
+			},
+			resources: []*mesosproto.Resource{},
+			want: &mesosproto.ExecutorInfo{
+				ExecutorId: mesosutil.NewExecutorID("exec-id"),
+				Resources:  []*mesosproto.Resource{},
+			},
+		}, {
+			prototype: &mesosproto.ExecutorInfo{
+				ExecutorId: mesosutil.NewExecutorID("exec-id"),
+				Name:       proto.String("foo"),
 			},
 
 			resources: []*mesosproto.Resource{
@@ -130,7 +120,8 @@ func TestRegistryNew(t *testing.T) {
 			},
 
 			want: &mesosproto.ExecutorInfo{
-				Name: proto.String("foo"),
+				ExecutorId: mesosutil.NewExecutorID("exec-id"),
+				Name:       proto.String("foo"),
 				Resources: []*mesosproto.Resource{
 					scalar("foo", 1.0, "role1"),
 					scalar("bar", 2.0, "role2"),
@@ -148,11 +139,6 @@ func TestRegistryNew(t *testing.T) {
 		}
 
 		got := r.New("", tt.resources)
-
-		wantID, _ := NewExecutorID(tt.want)
-		if wantID != nil {
-			tt.want.ExecutorId = wantID
-		}
 
 		if !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("test #%d\ngot  %v\nwant %v", i, got, tt.want)

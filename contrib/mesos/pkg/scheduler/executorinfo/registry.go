@@ -29,20 +29,18 @@ import (
 )
 
 // Registry is the interface that provides methods for interacting
-// with a registry of executorinfo objects
+// with a registry of ExecutorInfo objects
 type Registry interface {
-	// New returns an executor info object based on a given hostname and resources
+	// New returns an ExecutorInfo object based on a given hostname and resources
 	New(hostname string, resources []*mesosproto.Resource) *mesosproto.ExecutorInfo
-	// Get looks up an executorinfo object for the given hostname and executorinfo ID.
-	Get(hostname, id string) (*mesosproto.ExecutorInfo, error)
+	// Get looks up an ExecutorInfo object for the given hostname
+	Get(hostname string) (*mesosproto.ExecutorInfo, error)
 }
 
-// registry implements a map-based in-memory executorinfo registry
+// registry implements a map-based in-memory ExecutorInfo registry
 type registry struct {
-	// items stores executor ID keys and ExecutorInfo values
-	items map[string]*mesosproto.ExecutorInfo
-	// protects fields above
-	mu sync.RWMutex
+	items map[string]*mesosproto.ExecutorInfo // by <hostname>
+	mu    sync.RWMutex                        // protects fields above
 
 	lookupNode node.LookupFunc
 	prototype  *mesosproto.ExecutorInfo
@@ -66,39 +64,42 @@ func NewRegistry(lookupNode node.LookupFunc, prototype *mesosproto.ExecutorInfo)
 	}, nil
 }
 
+// New creates a customized ExecutorInfo for a host
+//
+// Note: New modifies Command.Arguments and Resources and intentionally
+// does not update the executor id (although that originally depended on the
+// command arguments and the resources). But as the hostname is constant for a
+// given host, and the resources are compatible by the registry logic here this
+// will not weaken our litmus test comparing the prototype ExecutorId with the
+// id of running executors when an offer comes in.
 func (r *registry) New(hostname string, resources []*mesosproto.Resource) *mesosproto.ExecutorInfo {
 	e := proto.Clone(r.prototype).(*mesosproto.ExecutorInfo)
 	e.Resources = resources
-
-	// hostname needs of the executor needs to match that of the offer, otherwise
-	// the kubelet node status checker/updater is very unhappy
 	setCommandArgument(e, "--hostname-override", hostname)
-	id, _ := NewExecutorID(e)
-	e.ExecutorId = id
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	info, ok := r.items[id.GetValue()]
+	info, ok := r.items[hostname]
 	if ok {
 		return info
 	}
 
-	r.items[id.GetValue()] = e
+	r.items[hostname] = e
 	return e
 }
 
-func (r *registry) Get(hostname, id string) (*mesosproto.ExecutorInfo, error) {
+func (r *registry) Get(hostname string) (*mesosproto.ExecutorInfo, error) {
 	// first try to read from cached items
 	r.mu.RLock()
-	info, ok := r.items[id]
+	info, ok := r.items[hostname]
 	r.mu.RUnlock()
 
 	if ok {
 		return info, nil
 	}
 
-	result, err := r.getFromNode(hostname, id)
+	result, err := r.getFromNode(hostname)
 	if err != nil {
 		// master claims there is an executor with id, we cannot find any meta info
 		// => no way to recover this node
@@ -111,27 +112,12 @@ func (r *registry) Get(hostname, id string) (*mesosproto.ExecutorInfo, error) {
 	return r.New(hostname, result), nil
 }
 
-// getFromNode looks up executorinfo resources for the given hostname and executorinfo ID
+// getFromNode looks up ExecutorInfo resources for the given hostname and executorinfo ID
 // or returns an error in case of failure.
-func (r *registry) getFromNode(hostname, id string) ([]*mesosproto.Resource, error) {
+func (r *registry) getFromNode(hostname string) ([]*mesosproto.Resource, error) {
 	n := r.lookupNode(hostname)
 	if n == nil {
 		return nil, fmt.Errorf("hostname %q not found", hostname)
-	}
-
-	annotatedId, ok := n.Annotations[meta.ExecutorIdKey]
-	if !ok {
-		return nil, fmt.Errorf(
-			"no %q annotation found in hostname %q",
-			meta.ExecutorIdKey, hostname,
-		)
-	}
-
-	if annotatedId != id {
-		return nil, fmt.Errorf(
-			"want executor id %q but got %q from nodename %q",
-			id, annotatedId, hostname,
-		)
 	}
 
 	encoded, ok := n.Annotations[meta.ExecutorResourcesKey]

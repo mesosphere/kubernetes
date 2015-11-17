@@ -446,7 +446,7 @@ func (m mockRegistry) New(nodename string, rs []*mesos.Resource) *mesos.Executor
 	return clone
 }
 
-func (m mockRegistry) Get(nodename, id string) (*mesos.ExecutorInfo, error) {
+func (m mockRegistry) Get(nodename string) (*mesos.ExecutorInfo, error) {
 	panic("N/A")
 }
 
@@ -473,7 +473,7 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	})
 	c := *schedcfg.CreateDefaultConfig()
 	fw := framework.New(framework.Config{
-		Executor:        ei,
+		ExecutorId:      ei.GetExecutorId(),
 		Client:          client,
 		SchedulerConfig: c,
 		LookupNode:      apiServer.LookupNode,

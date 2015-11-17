@@ -117,7 +117,10 @@ func (r *registry) Get(hostname, id string) (*mesosproto.ExecutorInfo, error) {
 	// different executor command line, or on a different k8sm version with
 	// different executor settings.
 	if ei.GetExecutorId().GetValue() != id {
-		return nil, fmt.Errorf("executor on node %q does not match the current configuration or version", hostname)
+		return nil, fmt.Errorf(
+			"executor on node %q with id %q does not match the current configuration or version which would result in id %q",
+			hostname, ei.GetExecutorId().GetValue(), id,
+		)
 	}
 
 	return ei, nil

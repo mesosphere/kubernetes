@@ -117,7 +117,7 @@ func (mr mockRegistry) New(nodename string, resources []*mesos.Resource) *mesos.
 	}
 }
 
-func (mr mockRegistry) Get(nodename, id string) (*mesos.ExecutorInfo, error) {
+func (mr mockRegistry) Get(nodename string) (*mesos.ExecutorInfo, error) {
 	panic("N/A")
 }
 

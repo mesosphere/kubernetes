@@ -75,6 +75,7 @@ type framework struct {
 	nodeRegistrator   node.Registrator
 	storeFrameworkId  func(id string)
 	lookupNode        node.LookupFunc
+	executorId        *mesos.ExecutorID
 
 	// Mesos context
 	driver         bindings.SchedulerDriver // late initialization
@@ -96,7 +97,7 @@ type framework struct {
 
 type Config struct {
 	SchedulerConfig   schedcfg.Config
-	Executor          *mesos.ExecutorInfo
+	ExecutorId        *mesos.ExecutorID
 	Client            *client.Client
 	StoreFrameworkId  func(id string)
 	FailoverTimeout   float64
@@ -115,12 +116,27 @@ func New(config Config) Framework {
 		failoverTimeout:   config.FailoverTimeout,
 		reconcileInterval: config.ReconcileInterval,
 		nodeRegistrator:   node.NewRegistrator(config.Client, config.LookupNode),
+		executorId:        config.ExecutorId,
 		offers: offers.CreateRegistry(offers.RegistryConfig{
 			Compat: func(o *mesos.Offer) bool {
 				// the node must be registered and have up-to-date labels
 				n := config.LookupNode(o.GetHostname())
 				if n == nil || !node.IsUpToDate(n, node.SlaveAttributesToLabels(o.GetAttributes())) {
 					return false
+				}
+
+				// at most one executor id expected. More than one means that
+				// the given node is seriously in trouble.
+				if len(o.GetExecutorIds()) > 1 {
+					return false
+				}
+
+				// the executor id must match, otherwise the running executor
+				// is incompatible with the current scheduler configuration.
+				if len(o.GetExecutorIds()) == 1 {
+					if eid := o.GetExecutorIds()[0]; eid.GetValue() != config.ExecutorId.GetValue() {
+						return false
+					}
 				}
 
 				return true

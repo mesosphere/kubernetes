@@ -92,6 +92,10 @@ func hash(info *mesos.ExecutorInfo) uint64 {
 }
 
 func NewExecutorID(info *mesos.ExecutorInfo) (*mesos.ExecutorID, *uid.UID) {
+	if info == nil {
+		return nil, nil
+	}
+
 	ehash := hash(info)
 	eid := uid.New(ehash, execcfg.DefaultInfoID)
 	return &mesos.ExecutorID{Value: proto.String(eid.String())}, eid

@@ -700,7 +700,11 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		return n.(*api.Node)
 	}
 
-	eiRegistry := executorinfo.NewRegistry(lookupNode, eiPrototype, client)
+	eiRegistry, err := executorinfo.NewRegistry(lookupNode, eiPrototype)
+	if err != nil {
+		log.Fatalf("Cannot create executorinfo registry: %v", err)
+	}
+
 	pr := podtask.NewDefaultProcurement(eiPrototype, eiRegistry)
 	fcfs := podschedulers.NewFCFSPodScheduler(pr, lookupNode)
 

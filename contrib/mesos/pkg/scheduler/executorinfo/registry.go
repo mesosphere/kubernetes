@@ -26,14 +26,18 @@ import (
 	"github.com/mesos/mesos-go/mesosproto"
 	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
 )
 
+// Registry is the interface that provides methods for interacting
+// with a registry of executorinfo objects
 type Registry interface {
-	New(nodename string, resources []*mesosproto.Resource) *mesosproto.ExecutorInfo
-	Get(nodename, id string) (*mesosproto.ExecutorInfo, error)
+	// New returns an executor info object based on a given hostname and resources
+	New(hostname string, resources []*mesosproto.Resource) *mesosproto.ExecutorInfo
+	// Get looks up an executorinfo object for the given hostname and executorinfo ID.
+	Get(hostname, id string) (*mesosproto.ExecutorInfo, error)
 }
 
+// registry implements a map-based in-memory executorinfo registry
 type registry struct {
 	// items stores executor ID keys and ExecutorInfo values
 	items map[string]*mesosproto.ExecutorInfo
@@ -42,24 +46,33 @@ type registry struct {
 
 	lookupNode node.LookupFunc
 	prototype  *mesosproto.ExecutorInfo
-	client     *client.Client
 }
 
-func NewRegistry(lookupNode node.LookupFunc, prototype *mesosproto.ExecutorInfo, client *client.Client) Registry {
+// NewRegistry returns a new executorinfo registry.
+// The given prototype is being used for properties other than resources.
+func NewRegistry(lookupNode node.LookupFunc, prototype *mesosproto.ExecutorInfo) (Registry, error) {
+	if prototype == nil {
+		return nil, fmt.Errorf("no prototype given")
+	}
+
+	if lookupNode == nil {
+		return nil, fmt.Errorf("no lookupNode given")
+	}
+
 	return &registry{
 		items:      map[string]*mesosproto.ExecutorInfo{},
 		lookupNode: lookupNode,
 		prototype:  prototype,
-	}
+	}, nil
 }
 
-func (r *registry) New(nodename string, resources []*mesosproto.Resource) *mesosproto.ExecutorInfo {
+func (r *registry) New(hostname string, resources []*mesosproto.Resource) *mesosproto.ExecutorInfo {
 	e := proto.Clone(r.prototype).(*mesosproto.ExecutorInfo)
 	e.Resources = resources
 
 	// hostname needs of the executor needs to match that of the offer, otherwise
 	// the kubelet node status checker/updater is very unhappy
-	setCommandArgument(e, "--hostname-override", nodename, true)
+	setCommandArgument(e, "--hostname-override", hostname)
 	id, _ := NewExecutorID(e)
 	e.ExecutorId = id
 
@@ -75,7 +88,7 @@ func (r *registry) New(nodename string, resources []*mesosproto.Resource) *mesos
 	return e
 }
 
-func (r *registry) Get(nodename, id string) (*mesosproto.ExecutorInfo, error) {
+func (r *registry) Get(hostname, id string) (*mesosproto.ExecutorInfo, error) {
 	// first try to read from cached items
 	r.mu.RLock()
 	info, ok := r.items[id]
@@ -85,45 +98,60 @@ func (r *registry) Get(nodename, id string) (*mesosproto.ExecutorInfo, error) {
 		return info, nil
 	}
 
-	result, err := r.getFromNode(nodename, id)
+	result, err := r.getFromNode(hostname, id)
 	if err != nil {
 		// master claims there is an executor with id, we cannot find any meta info
 		// => no way to recover this node
 		return nil, fmt.Errorf(
 			"failed to recover executor info for node %q, error: %v",
-			nodename, err,
+			hostname, err,
 		)
 	}
 
-	return r.New(nodename, result), nil
+	return r.New(hostname, result), nil
 }
 
-func (r *registry) getFromNode(nodename, id string) ([]*mesosproto.Resource, error) {
-	n := r.lookupNode(nodename)
+// getFromNode looks up executorinfo resources for the given hostname and executorinfo ID
+// or returns an error in case of failure.
+func (r *registry) getFromNode(hostname, id string) ([]*mesosproto.Resource, error) {
+	n := r.lookupNode(hostname)
 	if n == nil {
-		return nil, fmt.Errorf("nodename %q not found", nodename)
+		return nil, fmt.Errorf("hostname %q not found", hostname)
 	}
 
 	annotatedId, ok := n.Annotations[meta.ExecutorIdKey]
+	if !ok {
+		return nil, fmt.Errorf(
+			"no %q annotation found in hostname %q",
+			meta.ExecutorIdKey, hostname,
+		)
+	}
+
 	if annotatedId != id {
 		return nil, fmt.Errorf(
 			"want executor id %q but got %q from nodename %q",
-			id, annotatedId, nodename,
+			id, annotatedId, hostname,
 		)
 	}
 
 	encoded, ok := n.Annotations[meta.ExecutorResourcesKey]
 	if !ok {
 		return nil, fmt.Errorf(
-			"no %q annotation found in nodename %q",
-			meta.ExecutorResourcesKey, nodename,
+			"no %q annotation found in hostname %q",
+			meta.ExecutorResourcesKey, hostname,
 		)
 	}
 
 	return DecodeResources(strings.NewReader(encoded))
 }
 
-func setCommandArgument(ei *mesosproto.ExecutorInfo, flag, value string, create bool) {
+// setCommandArgument sets the given flag to the given value
+// in the command arguments of the given executoringfo.
+func setCommandArgument(ei *mesosproto.ExecutorInfo, flag, value string) {
+	if ei.Command == nil {
+		return
+	}
+
 	argv := ei.Command.Arguments
 	overwrite := false
 
@@ -135,7 +163,7 @@ func setCommandArgument(ei *mesosproto.ExecutorInfo, flag, value string, create 
 		}
 	}
 
-	if !overwrite && create {
+	if !overwrite {
 		ei.Command.Arguments = append(argv, flag+"="+value)
 	}
 }

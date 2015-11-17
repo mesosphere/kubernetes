@@ -32,6 +32,10 @@ import (
 	"k8s.io/kubernetes/pkg/client/cache"
 )
 
+// SchedulerAlgorithm is the interface that orchestrates the pod scheduling.
+//
+// Schedule implements the Scheduler interface of Kubernetes.
+// It returns the selectedMachine's hostname or an error if the schedule failed.
 type SchedulerAlgorithm interface {
 	Schedule(pod *api.Pod) (string, error)
 }
@@ -47,6 +51,8 @@ type schedulerAlgorithm struct {
 	defaultMem   mresource.MegaBytes
 }
 
+// New returns a new SchedulerAlgorithm
+// TODO(sur): refactor params to separate config object
 func New(
 	sched scheduler.Scheduler,
 	podUpdates queue.FIFO,
@@ -67,8 +73,6 @@ func New(
 	}
 }
 
-// Schedule implements the Scheduler interface of Kubernetes.
-// It returns the selectedMachine's name and error (if there's any).
 func (k *schedulerAlgorithm) Schedule(pod *api.Pod) (string, error) {
 	log.Infof("Try to schedule pod %v\n", pod.Name)
 	ctx := api.WithNamespace(api.NewDefaultContext(), pod.Namespace)
@@ -138,6 +142,7 @@ func (k *schedulerAlgorithm) Schedule(pod *api.Pod) (string, error) {
 	}
 }
 
+// limitPod limits the given pod based on the scheduler's default limits.
 func (k *schedulerAlgorithm) limitPod(pod *api.Pod) error {
 	cpuRequest, cpuLimit, _, err := mresource.LimitPodCPU(pod, k.defaultCpus)
 	if err != nil {
@@ -157,7 +162,9 @@ func (k *schedulerAlgorithm) limitPod(pod *api.Pod) error {
 	return nil
 }
 
-// Call ScheduleFunc and subtract some resources, returning the name of the machine the task is scheduled on
+// doSchedule implements the actual scheduling of the given pod task.
+// It checks whether the offer has been accepted and is still present in the offer registry.
+// It delegates to the actual pod scheduler and updates the task registry.
 func (k *schedulerAlgorithm) doSchedule(task *podtask.T) (string, error) {
 	var offer offers.Perishable
 	var err error

@@ -23,18 +23,19 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 )
 
+// SchedulePod is the interface which schedules pods.
+// There can be different implementation for different scheduling policies.
+//
+// SchedulePod accepts a set of offers and a single pod task, which aligns well
+// with the k8s scheduling algorithm. It returns an offer that is acceptable
+// for the pod, else nil. The caller is responsible for filling in task
+// state w/ relevant offer details.
+//
+// See the FCFSPodScheduler for example.
+//
+// Fit checks whether a given podtask can be scheduled for the given offer on the given node.
 type PodScheduler interface {
-	// SchedulePod implements how to schedule pods among slaves.
-	// We can have different implementation for different scheduling policy.
-	//
-	// The function accepts a set of offers and a single pod, which aligns well
-	// with the k8s scheduling algorithm. It returns an offerId that is acceptable
-	// for the pod, otherwise nil. The caller is responsible for filling in task
-	// state w/ relevant offer details.
-	//
-	// See the FCFSPodScheduler for example.
 	SchedulePod(r offers.Registry, task *podtask.T) (offers.Perishable, *podtask.Spec, error)
 
-	// Fit tries to do a procurement without side-effects and return true if it is successful
 	Fit(*podtask.T, *mesosproto.Offer, *api.Node) bool
 }

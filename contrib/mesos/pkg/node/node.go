@@ -22,13 +22,14 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/util/validation"
-	"time"
 )
 
 const (
@@ -37,8 +38,14 @@ const (
 	clientRetryInterval = time.Second
 )
 
-// Create creates a new node api object with the given hostname and labels
-func Create(client *client.Client, hostName string, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
+// Create creates a new node api object with the given hostname,
+// slave attribute labels and annotations
+func Create(
+	client *client.Client,
+	hostName string,
+	slaveAttrLabels,
+	annotations map[string]string,
+) (*api.Node, error) {
 	n := api.Node{
 		ObjectMeta: api.ObjectMeta{
 			Name: hostName,
@@ -62,8 +69,16 @@ func Create(client *client.Client, hostName string, slaveAttrLabels, annotations
 	return client.Nodes().Create(&n)
 }
 
-// Update updates an existing node api object with new labels
-func Update(client *client.Client, hostname string, slaveAttrLabels, annotations map[string]string) (n *api.Node, err error) {
+// Update updates an existing node api object
+// by looking up the given hostname.
+// The updated node merges the given slave attribute labels
+// and annotations with the found api object.
+func Update(
+	client *client.Client,
+	hostname string,
+	slaveAttrLabels,
+	annotations map[string]string,
+) (n *api.Node, err error) {
 	for i := 0; i < clientRetryCount; i++ {
 		n, err = client.Nodes().Get(hostname)
 		if err != nil {
@@ -92,8 +107,13 @@ func Update(client *client.Client, hostname string, slaveAttrLabels, annotations
 	return nil, err
 }
 
-// CreateOrUpdate tries to create a node api object or updates an already existing one
-func CreateOrUpdate(client *client.Client, hostname string, slaveAttrLabels, annotations map[string]string) (*api.Node, error) {
+// CreateOrUpdate creates a node api object or updates an existing one
+func CreateOrUpdate(
+	client *client.Client,
+	hostname string,
+	slaveAttrLabels,
+	annotations map[string]string,
+) (*api.Node, error) {
 	n, err := Create(client, hostname, slaveAttrLabels, annotations)
 	if err == nil {
 		return n, nil
@@ -161,6 +181,8 @@ func SlaveAttributesToLabels(attrs []*mesos.Attribute) map[string]string {
 	return l
 }
 
+// filterMap filters the given map and returns a new map
+// containing all original elements matching the given key-value predicate.
 func filterMap(m map[string]string, predicate func(string, string) bool) map[string]string {
 	result := make(map[string]string, len(m))
 	for k, v := range m {
@@ -171,6 +193,9 @@ func filterMap(m map[string]string, predicate func(string, string) bool) map[str
 	return result
 }
 
+// mergeMaps merges all given maps into a single map.
+// There is no advanced key conflict resolution.
+// The last key from the given maps wins.
 func mergeMaps(ms ...map[string]string) map[string]string {
 	var l int
 	for _, m := range ms {

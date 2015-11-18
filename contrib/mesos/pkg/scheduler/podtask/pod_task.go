@@ -128,7 +128,7 @@ func generateTaskName(pod *api.Pod) string {
 
 func (t *T) BuildTaskInfo() (*mesos.TaskInfo, error) {
 	if t.Spec == nil {
-		return nil, errors.New("taskinfo cannot be build with nil spec")
+		return nil, errors.New("no podtask.T.Spec given, cannot build task info")
 	}
 
 	info := &mesos.TaskInfo{
@@ -176,9 +176,7 @@ func (t *T) Roles() []string {
 		}
 
 		roles = filterRoles(roles, not(emptyRole), not(seenRole()))
-	}
-
-	if roles == nil {
+	} else {
 		// no roles label defined,
 		// by convention return the first allowed role
 		// to be used for launching the pod task

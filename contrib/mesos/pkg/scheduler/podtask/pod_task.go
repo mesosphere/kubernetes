@@ -56,9 +56,13 @@ var defaultRoles = []string{"*"}
 
 // A struct that describes a pod task.
 type T struct {
-	ID          string
-	Pod         api.Pod
-	Spec        *Spec             // stores the final procurement result
+	ID  string
+	Pod api.Pod
+
+	// stores the final procurement result, once set read-only
+	// meant to be set by algorith.SchedulerAlgorithm only
+	Spec *Spec
+
 	Offer       offers.Perishable // thread-safe
 	State       StateType
 	Flags       map[FlagType]struct{}

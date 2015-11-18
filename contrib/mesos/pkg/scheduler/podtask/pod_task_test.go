@@ -133,9 +133,6 @@ func TestEmptyOffer(t *testing.T) {
 
 	defaultProc := NewDefaultProcurement(
 		&mesos.ExecutorInfo{
-			Command: &mesos.CommandInfo{
-				Arguments: []string{},
-			},
 			Resources: []*mesos.Resource{
 				mutil.NewScalarResource("cpus", 1.0),
 				mutil.NewScalarResource("mem", 64.0),
@@ -160,9 +157,6 @@ func TestNoPortsInPodOrOffer(t *testing.T) {
 	}
 
 	executor := &mesos.ExecutorInfo{
-		Command: &mesos.CommandInfo{
-			Arguments: []string{},
-		},
 		Resources: []*mesos.Resource{
 			mutil.NewScalarResource("cpus", 1.0),
 			mutil.NewScalarResource("mem", 64.0),
@@ -198,11 +192,7 @@ func TestAcceptOfferPorts(t *testing.T) {
 	pod := &task.Pod
 
 	defaultProc := NewDefaultProcurement(
-		&mesos.ExecutorInfo{
-			Command: &mesos.CommandInfo{
-				Arguments: []string{},
-			},
-		},
+		&mesos.ExecutorInfo{},
 		mockRegistry{},
 	)
 
@@ -334,11 +324,7 @@ func TestNodeSelector(t *testing.T) {
 	}
 
 	defaultProc := NewDefaultProcurement(
-		&mesos.ExecutorInfo{
-			Command: &mesos.CommandInfo{
-				Arguments: []string{},
-			},
-		},
+		&mesos.ExecutorInfo{},
 		mockRegistry{},
 	)
 

@@ -58,7 +58,7 @@ var defaultRoles = []string{"*"}
 type T struct {
 	ID          string
 	Pod         api.Pod
-	Spec        *Spec
+	Spec        *Spec             // stores the final procurement result
 	Offer       offers.Perishable // thread-safe
 	State       StateType
 	Flags       map[FlagType]struct{}

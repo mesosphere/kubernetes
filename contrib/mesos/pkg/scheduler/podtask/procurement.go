@@ -35,7 +35,6 @@ import (
 // and memory limits).
 func NewDefaultProcurement(prototype *mesos.ExecutorInfo, eir executorinfo.Registry) Procurement {
 	return AllOrNothingProcurement([]Procurement{
-		NewValidateProcurement(),
 		NewNodeProcurement(),
 		NewPodResourcesProcurement(),
 		NewPortsProcurement(),
@@ -43,14 +42,25 @@ func NewDefaultProcurement(prototype *mesos.ExecutorInfo, eir executorinfo.Regis
 	})
 }
 
-// Procurement funcs allocate resources for a task from an offer.
-// Both the offer and the spec may be modified, the task and the node must not.
+// The ProcurementFunc type is an adapter to use ordinary functions as Procurement implementations.
 type ProcurementFunc func(*T, *mesos.Offer, *api.Node, *Spec) error
 
 func (p ProcurementFunc) Procure(t *T, o *mesos.Offer, n *api.Node, s *Spec) error {
 	return p(t, o, n, s)
 }
 
+// Procurement is the interface that implements resource procurement.
+//
+// Procure procurs offered resources for a given pod task T
+// and stores the procurement result in the given Spec.
+// It returns an error if the procurement failed.
+//
+// Note that the T struct also includes a Spec field.
+// This differs from the given Spec parameter which is meant to be filled
+// by a chain of Procure invocations (procurement pipeline).
+//
+// In contrast T.Spec is meant not to be filled by the procurement chain
+// but rather by a final scheduler instance.
 type Procurement interface {
 	Procure(*T, *mesos.Offer, *api.Node, *Spec) error
 }
@@ -72,20 +82,10 @@ func (a AllOrNothingProcurement) Procure(t *T, offer *mesos.Offer, n *api.Node, 
 	return nil
 }
 
-// NewValidateProcurement checks that the offered resources are kosher, and if not panics.
-// If things check out ok, t.Spec is cleared and nil is returned.
-func NewValidateProcurement() Procurement {
-	return ProcurementFunc(func(t *T, offer *mesos.Offer, _ *api.Node, spec *Spec) error {
-		if offer == nil {
-			//programming error
-			panic("offer details are nil")
-		}
-		return nil
-	})
-}
-
-// NewNodeProcurement returns a Procurement updating t.Spec in preparation for the task to be launched on the
-// slave associated with the offer.
+// NewNodeProcurement returns a Procurement that checks whether the given pod task and offer
+// have valid node informations available and wehther the pod spec node selector matches
+// the pod labels.
+// If the check is successfull the slave ID and assigned slave is set in the given Spec.
 func NewNodeProcurement() Procurement {
 	return ProcurementFunc(func(t *T, offer *mesos.Offer, n *api.Node, spec *Spec) error {
 		// if the user has specified a target host, make sure this offer is for that host

@@ -35,8 +35,8 @@ func TestNewPodResourcesProcurement(t *testing.T) {
 	)
 	executor.Data = []byte{0, 1, 2}
 	executor.Resources = []*mesosproto.Resource{
-		newResource("cpus", 0.1, "*"),
-		newResource("mem", 64.0, "*"),
+		scalar("cpus", 0.1, "*"),
+		scalar("mem", 64.0, "*"),
 	}
 	executor.Command = &mesosproto.CommandInfo{
 		Arguments: []string{},
@@ -44,8 +44,8 @@ func TestNewPodResourcesProcurement(t *testing.T) {
 
 	offer := &mesosproto.Offer{
 		Resources: []*mesosproto.Resource{
-			newResource("cpus", 4.0, "*"),
-			newResource("mem", 512.0, "*"),
+			scalar("cpus", 4.0, "*"),
+			scalar("mem", 512.0, "*"),
 		},
 	}
 
@@ -104,8 +104,8 @@ func TestProcureRoleResources(t *testing.T) {
 	}{
 		{
 			offered: []*mesos.Resource{
-				newResource("mem", 128.0, "*"),
-				newResource("mem", 32.0, "slave_public"),
+				scalar("mem", 128.0, "*"),
+				scalar("mem", 32.0, "slave_public"),
 			},
 
 			name:  "mem",
@@ -113,17 +113,17 @@ func TestProcureRoleResources(t *testing.T) {
 			roles: []string{"slave_public", "*"},
 
 			consumed: []*mesos.Resource{
-				newResource("mem", 32.0, "slave_public"),
-				newResource("mem", 96.0, "*"),
+				scalar("mem", 32.0, "slave_public"),
+				scalar("mem", 96.0, "*"),
 			},
 			left: []*mesos.Resource{
-				newResource("mem", 32.0, "*"),
+				scalar("mem", 32.0, "*"),
 			},
 		},
 		{
 			offered: []*mesos.Resource{
-				newResource("mem", 128.0, "*"),
-				newResource("mem", 32.0, "slave_public"),
+				scalar("mem", 128.0, "*"),
+				scalar("mem", 32.0, "slave_public"),
 			},
 
 			name:  "mem",
@@ -132,17 +132,17 @@ func TestProcureRoleResources(t *testing.T) {
 
 			consumed: nil,
 			left: []*mesos.Resource{
-				newResource("mem", 128.0, "*"),
-				newResource("mem", 32.0, "slave_public"),
+				scalar("mem", 128.0, "*"),
+				scalar("mem", 32.0, "slave_public"),
 			},
 		},
 		{
 			offered: []*mesos.Resource{
-				newResource("cpus", 1.5, "slave_public"),
-				newResource("cpus", 1, "slave_public"),
-				newResource("mem", 128.0, "slave_public"),
-				newResource("mem", 64.0, "slave_public"),
-				newResource("mem", 128.0, "*"),
+				scalar("cpus", 1.5, "slave_public"),
+				scalar("cpus", 1, "slave_public"),
+				scalar("mem", 128.0, "slave_public"),
+				scalar("mem", 64.0, "slave_public"),
+				scalar("mem", 128.0, "*"),
 			},
 
 			name:  "mem",
@@ -150,19 +150,19 @@ func TestProcureRoleResources(t *testing.T) {
 			roles: []string{"slave_public", "*"},
 
 			consumed: []*mesos.Resource{
-				newResource("mem", 128.0, "slave_public"),
-				newResource("mem", 64.0, "slave_public"),
-				newResource("mem", 8.0, "*"),
+				scalar("mem", 128.0, "slave_public"),
+				scalar("mem", 64.0, "slave_public"),
+				scalar("mem", 8.0, "*"),
 			},
 			left: []*mesos.Resource{
-				newResource("cpus", 1.5, "slave_public"),
-				newResource("cpus", 1, "slave_public"),
-				newResource("mem", 120, "*"),
+				scalar("cpus", 1.5, "slave_public"),
+				scalar("cpus", 1, "slave_public"),
+				scalar("mem", 120, "*"),
 			},
 		},
 		{
 			offered: []*mesos.Resource{
-				newResource("mem", 128.0, "*"),
+				scalar("mem", 128.0, "*"),
 			},
 
 			name:  "mem",
@@ -170,13 +170,13 @@ func TestProcureRoleResources(t *testing.T) {
 			roles: []string{"slave_public", "*"},
 
 			consumed: []*mesos.Resource{
-				newResource("mem", 128, "*"),
+				scalar("mem", 128, "*"),
 			},
 			left: []*mesos.Resource{},
 		},
 		{
 			offered: []*mesos.Resource{
-				newResource("cpu", 32.0, "slave_public"),
+				scalar("cpu", 32.0, "slave_public"),
 			},
 
 			name:  "mem",
@@ -185,7 +185,7 @@ func TestProcureRoleResources(t *testing.T) {
 
 			consumed: nil,
 			left: []*mesos.Resource{
-				newResource("cpu", 32.0, "slave_public"),
+				scalar("cpu", 32.0, "slave_public"),
 			},
 		},
 		{
@@ -210,7 +210,7 @@ func TestProcureRoleResources(t *testing.T) {
 	}
 }
 
-func newResource(name string, value float64, role string) *mesos.Resource {
+func scalar(name string, value float64, role string) *mesos.Resource {
 	res := mesosutil.NewScalarResource(name, value)
 	res.Role = stringPtrTo(role)
 	return res

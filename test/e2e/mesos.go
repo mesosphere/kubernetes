@@ -62,7 +62,7 @@ var _ = Describe("Mesos", func() {
 		// not just take the node list and choose the first of them. Depending on the
 		// cluster and the scheduler it might be that a "normal" pod cannot be
 		// scheduled onto it.
-		By("Trying to launch a pod without a label to get a node which can launch it.")
+		By("Trying to launch a pod with a label to get a node which can launch it.")
 		podName := "with-label"
 		_, err := c.Pods(ns).Create(&api.Pod{
 			TypeMeta: unversioned.TypeMeta{

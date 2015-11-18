@@ -35,7 +35,7 @@ func TestRegistryGet(t *testing.T) {
 
 	prototype := &mesosproto.ExecutorInfo{
 		Resources: []*mesosproto.Resource{
-			newResource("foo", 1.0, "role1"),
+			scalar("foo", 1.0, "role1"),
 		},
 	}
 	r, err := NewRegistry(lookupNode, prototype)
@@ -125,15 +125,15 @@ func TestRegistryNew(t *testing.T) {
 			},
 
 			resources: []*mesosproto.Resource{
-				newResource("foo", 1.0, "role1"),
-				newResource("bar", 2.0, "role2"),
+				scalar("foo", 1.0, "role1"),
+				scalar("bar", 2.0, "role2"),
 			},
 
 			want: &mesosproto.ExecutorInfo{
 				Name: proto.String("foo"),
 				Resources: []*mesosproto.Resource{
-					newResource("foo", 1.0, "role1"),
-					newResource("bar", 2.0, "role2"),
+					scalar("foo", 1.0, "role1"),
+					scalar("bar", 2.0, "role2"),
 				},
 			},
 		},

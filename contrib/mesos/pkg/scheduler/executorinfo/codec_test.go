@@ -27,9 +27,9 @@ import (
 
 func TestEncodeDecode(t *testing.T) {
 	want := []*mesosproto.Resource{
-		newResource("cpus", 0.1, "*"),
-		newResource("mem", 64.0, "*"),
-		newResource("mem", 128.0, "public_slave"),
+		scalar("cpus", 0.1, "*"),
+		scalar("mem", 64.0, "*"),
+		scalar("mem", 128.0, "public_slave"),
 	}
 
 	var buf bytes.Buffer
@@ -62,7 +62,7 @@ func TestEncodeDecodeNil(t *testing.T) {
 	}
 }
 
-func newResource(name string, value float64, role string) *mesosproto.Resource {
+func scalar(name string, value float64, role string) *mesosproto.Resource {
 	res := mesosutil.NewScalarResource(name, value)
 	res.Role = &role
 	return res

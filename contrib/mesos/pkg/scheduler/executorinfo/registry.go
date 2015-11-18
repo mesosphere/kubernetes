@@ -109,7 +109,22 @@ func (r *registry) Get(hostname string) (*mesosproto.ExecutorInfo, error) {
 		)
 	}
 
-	return r.New(hostname, result), nil
+	ei := r.New(hostname, result)
+
+	// check that the newly created ExecutorInfo is compatible with the
+	// running executor on the node. If the ids differ, this means that the
+	// ExecutorInfos are different and we don't support launching a new task
+	// through them. This can happen either on configuration upgrade leading to
+	// different executor command line, or on a different k8sm version with
+	// different executor settings.
+	if ei.GetExecutorId().GetValue() != id {
+		return nil, fmt.Errorf(
+			"executor on node %q with id %q does not match the current configuration or version which would result in id %q",
+			hostname, ei.GetExecutorId().GetValue(), id,
+		)
+	}
+
+	return ei, nil
 }
 
 // getFromNode looks up ExecutorInfo resources for the given hostname and executorinfo ID

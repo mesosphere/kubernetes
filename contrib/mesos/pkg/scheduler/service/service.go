@@ -873,6 +873,8 @@ func (s *SchedulerServer) buildFrameworkInfo() (info *mesos.FrameworkInfo, cred 
 		info.FailoverTimeout = proto.Float64(s.failoverTimeout)
 	}
 
+	// set the framework's role to the first configured non-star role.
+	// once Mesos supports multiple roles simply set the configured mesos roles slice.
 	for _, role := range s.mesosRoles {
 		if role != "*" {
 			// mesos currently supports only one role per framework info

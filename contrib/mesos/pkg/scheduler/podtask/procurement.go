@@ -139,7 +139,7 @@ func NewPodResourcesProcurement() Procurement {
 		)
 
 		podRoles := t.Roles()
-		procuredCpu, remaining := procureRoleResources("cpus", wantedCpus, podRoles, offer.GetResources())
+		procuredCpu, remaining := procureScalarResources("cpus", wantedCpus, podRoles, offer.GetResources())
 		if procuredCpu == nil {
 			return fmt.Errorf(
 				"not enough cpu resources for pod %s/%s: want=%v",
@@ -147,7 +147,7 @@ func NewPodResourcesProcurement() Procurement {
 			)
 		}
 
-		procuredMem, remaining := procureRoleResources("mem", wantedMem, podRoles, remaining)
+		procuredMem, remaining := procureScalarResources("mem", wantedMem, podRoles, remaining)
 		if procuredMem == nil {
 			return fmt.Errorf(
 				"not enough mem resources for pod %s/%s: want=%v",
@@ -193,12 +193,12 @@ func NewExecutorResourceProcurer(resources []*mesos.Resource, registry executori
 			wantedCpus := sumResources(filterResources(resources, isScalar, hasName("cpus")))
 			wantedMem := sumResources(filterResources(resources, isScalar, hasName("mem")))
 
-			procuredCpu, remaining := procureRoleResources("cpus", wantedCpus, t.allowedRoles, offer.GetResources())
+			procuredCpu, remaining := procureScalarResources("cpus", wantedCpus, t.allowedRoles, offer.GetResources())
 			if procuredCpu == nil {
 				return fmt.Errorf("not enough cpu resources for executor: want=%v", wantedCpus)
 			}
 
-			procuredMem, remaining := procureRoleResources("mem", wantedMem, t.allowedRoles, remaining)
+			procuredMem, remaining := procureScalarResources("mem", wantedMem, t.allowedRoles, remaining)
 			if procuredMem == nil {
 				return fmt.Errorf("not enough mem resources for executor: want=%v", wantedMem)
 			}
@@ -231,12 +231,17 @@ func NewExecutorResourceProcurer(resources []*mesos.Resource, registry executori
 // see https://github.com/golang/go/issues/966
 var epsilon = math.Nextafter(1, 2) - 1
 
-// procureRoleResources procures offered resources that
+// procureScalarResources procures offered resources that
 // 1. Match the given name
 // 2. Match the given roles
 // 3. The given wanted scalar value can be fully consumed by offered resources
 // Roles are being considered in the specified roles slice ordering.
-func procureRoleResources(name string, want float64, roles []string, offered []*mesos.Resource) (procured, remaining []*mesos.Resource) {
+func procureScalarResources(
+	name string,
+	want float64,
+	roles []string,
+	offered []*mesos.Resource,
+) (procured, remaining []*mesos.Resource) {
 	sorted := byRoles(roles...).sort(offered)
 	procured = make([]*mesos.Resource, 0, len(sorted))
 	remaining = make([]*mesos.Resource, 0, len(sorted))

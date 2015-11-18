@@ -198,7 +198,7 @@ func TestProcureRoleResources(t *testing.T) {
 			consumed: nil, left: nil,
 		},
 	} {
-		consumed, remaining := procureRoleResources(tt.name, tt.want, tt.roles, tt.offered)
+		consumed, remaining := procureScalarResources(tt.name, tt.want, tt.roles, tt.offered)
 
 		if !reflect.DeepEqual(consumed, tt.consumed) {
 			t.Errorf("test #%d (consumed):\ngot  %v\nwant %v", i, consumed, tt.consumed)

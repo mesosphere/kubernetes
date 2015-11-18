@@ -210,7 +210,7 @@ func TestAcceptOfferPorts(t *testing.T) {
 		Resources: []*mesos.Resource{
 			mutil.NewScalarResource("cpus", t_min_cpu),
 			mutil.NewScalarResource("mem", t_min_mem),
-			newRangesResource("*", 1, 1),
+			newPortsResource("*", 1, 1),
 		},
 	}
 	if err := defaultProc.Procure(task, offer, &api.Node{}, &Spec{}); err != nil {
@@ -376,7 +376,7 @@ func newScalarAttribute(name string, val float64) *mesos.Attribute {
 	}
 }
 
-func newRangesResource(role string, ports ...uint64) *mesos.Resource {
+func newPortsResource(role string, ports ...uint64) *mesos.Resource {
 	return &mesos.Resource{
 		Name:   proto.String("ports"),
 		Type:   mesos.Value_RANGES.Enum(),

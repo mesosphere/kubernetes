@@ -31,7 +31,7 @@ func TestDefaultHostPortMatching(t *testing.T) {
 
 	offer := &mesos.Offer{
 		Resources: []*mesos.Resource{
-			newRangesResource("*", 1, 1),
+			newPortsResource("*", 1, 1),
 		},
 	}
 	mapping, err := FixedMapper(task, offer)
@@ -81,7 +81,7 @@ func TestWildcardHostPortMatching(t *testing.T) {
 	//--
 	offer = &mesos.Offer{
 		Resources: []*mesos.Resource{
-			newRangesResource("*", 1, 1),
+			newPortsResource("*", 1, 1),
 		},
 	}
 	mapping, err = WildcardMapper(task, offer)
@@ -158,7 +158,7 @@ func TestWildcardHostPortMatching(t *testing.T) {
 	//--
 	offer = &mesos.Offer{
 		Resources: []*mesos.Resource{
-			newRangesResource("*", 1, 2),
+			newPortsResource("*", 1, 2),
 		},
 	}
 	mapping, err = WildcardMapper(task, offer)

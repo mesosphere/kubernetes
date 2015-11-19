@@ -213,7 +213,7 @@ func ServerAPIVersions(c *Config) (groupVersions []string, err error) {
 		return nil, err
 	}
 	// Get the groupVersions exposed at /api
-	baseURL.Path = absPath(prefix, prefix, "/api")
+	baseURL.Path = absPath(prefix, "/api")
 	resp, err := client.Get(baseURL.String())
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func ServerAPIVersions(c *Config) (groupVersions []string, err error) {
 
 	groupVersions = append(groupVersions, v.Versions...)
 	// Get the groupVersions exposed at /apis
-	baseURL.Path = absPath(prefix, prefix, "/apis")
+	baseURL.Path = absPath(prefix, "/apis")
 	resp2, err := client.Get(baseURL.String())
 	if err != nil {
 		return nil, err

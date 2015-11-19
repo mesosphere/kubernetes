@@ -95,6 +95,7 @@ type Request struct {
 	selector     labels.Selector
 	timeout      time.Duration
 
+	serverBase string // serverBase is the *unversioned* sub path of the server
 	apiVersion string
 
 	// output
@@ -107,7 +108,7 @@ type Request struct {
 }
 
 // NewRequest creates a new request helper object for accessing runtime.Objects on a server.
-func NewRequest(client HTTPClient, verb string, baseURL *url.URL, apiVersion string,
+func NewRequest(client HTTPClient, verb string, baseURL *url.URL, serverBase, apiVersion string,
 	codec runtime.Codec) *Request {
 	metrics.Register()
 	return &Request{
@@ -117,6 +118,7 @@ func NewRequest(client HTTPClient, verb string, baseURL *url.URL, apiVersion str
 		path:       baseURL.Path,
 		apiVersion: apiVersion,
 		codec:      codec,
+		serverBase: serverBase,
 	}
 }
 
@@ -232,13 +234,27 @@ func (r *Request) AbsPath(segments ...string) *Request {
 	if r.err != nil {
 		return r
 	}
+	r.path = absPath(r.serverBase, segments...)
+	return r
+}
+
+func absPath(base string, segments ...string) string {
+	// special case: if base ends in /api then the "real" relative server base is ..
+	if strings.HasSuffix(base, "/api") {
+		base = base[0 : len(base)-4]
+	}
+	// join base+segments
 	if len(segments) == 1 {
 		// preserve any trailing slashes for legacy behavior
-		r.path = segments[0]
-	} else {
-		r.path = path.Join(segments...)
+		p := path.Join(base, segments[0])
+		if strings.HasSuffix(segments[0], "/") && len(p) > 1 {
+			p += "/"
+		}
+		return p
 	}
-	return r
+	x := make([]string, 1, len(segments)+1)
+	x[0] = base
+	return path.Join(append(x, segments...)...)
 }
 
 // RequestURI overwrites existing path and parameters with the value of the provided server relative

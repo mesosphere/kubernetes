@@ -208,15 +208,12 @@ func ServerAPIVersions(c *Config) (groupVersions []string, err error) {
 	}
 	client := http.Client{Transport: transport}
 
-	configCopy := *c
-	configCopy.Version = ""
-	configCopy.Prefix = ""
-	baseURL, err := defaultServerUrlFor(c)
+	baseURL, prefix, err := defaultServerUrlFor(c)
 	if err != nil {
 		return nil, err
 	}
 	// Get the groupVersions exposed at /api
-	baseURL.Path = "/api"
+	baseURL.Path = absPath(prefix, prefix, "/api")
 	resp, err := client.Get(baseURL.String())
 	if err != nil {
 		return nil, err
@@ -230,7 +227,7 @@ func ServerAPIVersions(c *Config) (groupVersions []string, err error) {
 
 	groupVersions = append(groupVersions, v.Versions...)
 	// Get the groupVersions exposed at /apis
-	baseURL.Path = "/apis"
+	baseURL.Path = absPath(prefix, prefix, "/apis")
 	resp2, err := client.Get(baseURL.String())
 	if err != nil {
 		return nil, err
@@ -403,12 +400,12 @@ func RESTClientFor(config *Config) (*RESTClient, error) {
 		return nil, fmt.Errorf("Codec is required when initializing a RESTClient")
 	}
 
-	baseURL, err := defaultServerUrlFor(config)
+	baseURL, prefix, err := defaultServerUrlFor(config)
 	if err != nil {
 		return nil, err
 	}
 
-	client := NewRESTClient(baseURL, config.Version, config.Codec, config.QPS, config.Burst)
+	client := NewRESTClient(baseURL, prefix, config.Version, config.Codec, config.QPS, config.Burst)
 
 	transport, err := TransportFor(config)
 	if err != nil {
@@ -428,12 +425,12 @@ func UnversionedRESTClientFor(config *Config) (*RESTClient, error) {
 		return nil, fmt.Errorf("Codec is required when initializing a RESTClient")
 	}
 
-	baseURL, err := defaultServerUrlFor(config)
+	baseURL, prefix, err := defaultServerUrlFor(config)
 	if err != nil {
 		return nil, err
 	}
 
-	client := NewRESTClient(baseURL, config.Version, config.Codec, config.QPS, config.Burst)
+	client := NewRESTClient(baseURL, prefix, config.Version, config.Codec, config.QPS, config.Burst)
 
 	transport, err := TransportFor(config)
 	if err != nil {
@@ -567,14 +564,14 @@ func HTTPWrappersForConfig(config *Config, rt http.RoundTripper) (http.RoundTrip
 // DefaultServerURL converts a host, host:port, or URL string to the default base server API path
 // to use with a Client at a given API version following the standard conventions for a
 // Kubernetes API.
-func DefaultServerURL(host, prefix, version string, defaultTLS bool) (*url.URL, error) {
+func DefaultServerURL(host, prefix, version string, defaultTLS bool) (*url.URL, string, error) {
 	if host == "" {
-		return nil, fmt.Errorf("host must be a URL or a host:port pair")
+		return nil, "", fmt.Errorf("host must be a URL or a host:port pair")
 	}
 	base := host
 	hostURL, err := url.Parse(base)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if hostURL.Scheme == "" {
 		scheme := "http://"
@@ -583,26 +580,32 @@ func DefaultServerURL(host, prefix, version string, defaultTLS bool) (*url.URL, 
 		}
 		hostURL, err = url.Parse(scheme + base)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if hostURL.Path != "" && hostURL.Path != "/" {
-			return nil, fmt.Errorf("host must be a URL or a host:port pair: %q", base)
+			return nil, "", fmt.Errorf("host must be a URL or a host:port pair: %q", base)
 		}
 	}
 
 	// If the user specified a URL without a path component (http://server.com), automatically
 	// append the default prefix
-	if hostURL.Path == "" {
-		if prefix == "" {
-			prefix = "/"
-		}
-		hostURL.Path = prefix
-	}
+	prefix = findPrefix(hostURL.Path, prefix)
 
 	// Add the version to the end of the path
-	hostURL.Path = path.Join(hostURL.Path, version)
+	hostURL.Path = path.Join(prefix, version)
 
-	return hostURL, nil
+	return hostURL, prefix, nil
+}
+
+// findPrefix returns the first non-empty string as the URL prefix. if no such string exists
+// in the provided list, returns "/".
+func findPrefix(prefixes ...string) string {
+	for _, p := range prefixes {
+		if p != "" {
+			return p
+		}
+	}
+	return "/"
 }
 
 // IsConfigTransportTLS returns true if and only if the provided config will result in a protected
@@ -616,7 +619,7 @@ func IsConfigTransportTLS(config Config) bool {
 	// modify the copy of the config we got to satisfy preconditions for defaultServerUrlFor
 	config.Version = defaultVersionFor(&config)
 
-	baseURL, err := defaultServerUrlFor(&config)
+	baseURL, _, err := defaultServerUrlFor(&config)
 	if err != nil {
 		return false
 	}
@@ -625,7 +628,7 @@ func IsConfigTransportTLS(config Config) bool {
 
 // defaultServerUrlFor is shared between IsConfigTransportTLS and RESTClientFor. It
 // requires Host and Version to be set prior to being called.
-func defaultServerUrlFor(config *Config) (*url.URL, error) {
+func defaultServerUrlFor(config *Config) (*url.URL, string, error) {
 	// TODO: move the default to secure when the apiserver supports TLS by default
 	// config.Insecure is taken to mean "I want HTTPS but don't bother checking the certs against a CA."
 	hasCA := len(config.CAFile) != 0 || len(config.CAData) != 0

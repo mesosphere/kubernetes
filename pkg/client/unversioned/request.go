@@ -239,10 +239,22 @@ func (r *Request) AbsPath(segments ...string) *Request {
 }
 
 func absPath(base string, segments ...string) string {
-	// special case: if base ends in /api then the "real" relative server base is ..
+	// normalize the base
+	if !strings.HasPrefix(base, "/") {
+		base = "/" + base
+	}
+	if strings.HasSuffix(base, "/") {
+		base = base[0 : len(base)-1]
+	}
+
+	// special cases: if base ends in /api or /apis then the "real" relative server base is ...
 	if strings.HasSuffix(base, "/api") {
 		base = base[0 : len(base)-4]
 	}
+	if strings.HasSuffix(base, "/apis") {
+		base = base[0 : len(base)-5]
+	}
+
 	// join base+segments
 	if len(segments) == 1 {
 		// preserve any trailing slashes for legacy behavior

@@ -20,7 +20,6 @@ Kubernetes can also be installed on [Mesosphere DCOS](https://mesosphere.com/lea
 
 For more information about how Kubernetes-Mesos is different from Kubernetes, see [Architecture](./docs/architecture.md).
 
-
 ## Release Status
 
 Kubernetes-Mesos is alpha quality, still under active development, and not yet recommended for production systems.

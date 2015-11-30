@@ -28,37 +28,37 @@ var actionErr = errors.New("some error!")
 
 func TestGuard(t *testing.T) {
 	for i, tt := range []struct {
-		a       Action
+		a       action
 		timeout time.Duration
 		abort   <-chan struct{}
 		want    error
 	}{
 		{
-			a:       ActionFunc(func(io.Writer) error { return actionErr }),
+			a:       actionFunc(func(io.Writer) error { return actionErr }),
 			timeout: 100 * time.Millisecond,
 			want:    actionErr,
 		},
 		{
-			a: ActionFunc(func(io.Writer) error {
+			a: actionFunc(func(io.Writer) error {
 				time.Sleep(200 * time.Millisecond)
 				return nil
 			}),
 			timeout: 100 * time.Millisecond,
-			want:    Timeout,
+			want:    ActionTimeoutError,
 		},
 		{
-			a: ActionFunc(func(io.Writer) error {
+			a: actionFunc(func(io.Writer) error {
 				time.Sleep(100 * time.Millisecond)
 				return nil
 			}),
 			timeout: 100 * time.Millisecond,
 			abort:   aborted(),
-			want:    Aborted,
+			want:    ActionAbortedError,
 		},
 	} {
-		a := Decorate(tt.a, Guard(tt.timeout, tt.abort))
+		a := decorate(tt.a, guard(tt.timeout, tt.abort))
 		var buf bytes.Buffer
-		if got := a.Execute(&buf); got != tt.want {
+		if got := a.execute(&buf); got != tt.want {
 			t.Errorf("test %d got %v want %v", i, got, tt.want)
 		}
 	}

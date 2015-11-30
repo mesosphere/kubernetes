@@ -26,62 +26,62 @@ import (
 )
 
 var (
-	Timeout = errors.New("timed out waiting for action to be processed")
-	Aborted = errors.New("action aborted")
+	ActionTimeoutError = errors.New("timed out waiting for action to be processed")
+	ActionAbortedError = errors.New("action aborted")
 )
 
-// Action is the interface which executes
+// action is the interface which executes
 // a simple action inside a http transaction.
 //
-// Execute takes an io.Writer (the http output) and returns an error.
-type Action interface {
-	Execute(w io.Writer) error
+// execute takes an io.Writer (the http output) and returns an error.
+type action interface {
+	execute(w io.Writer) error
 }
 
-// ActionFunc is an adapter to allow the use of ordinary functions as an Action.
-type ActionFunc func(w io.Writer) error
+// actionFunc is an adapter to allow the use of ordinary functions as an Action.
+type actionFunc func(w io.Writer) error
 
-// Execute calls f(w)
-func (f ActionFunc) Execute(w io.Writer) error {
+// execute calls f(w)
+func (f actionFunc) execute(w io.Writer) error {
 	return f(w)
 }
 
-// Decorator is a function that takes an action and returns a decorated action.
-type Decorator func(Action) Action
+// decorator is a function that takes an action and returns a decorated action.
+type decorator func(action) action
 
-// Decorate takes an action and a list of decorators and returns
+// decorate takes an action and a list of decorators and returns
 // a decorated action in the given order of decorators.
-func Decorate(a Action, ds ...Decorator) Action {
+func decorate(a action, ds ...decorator) action {
 	for _, decorate := range ds {
 		a = decorate(a)
 	}
 	return a
 }
 
-// Logger is a decorator that takes an action,
+// logger is a decorator that takes an action,
 // logs a warning in case an error occured
 // and returns the execution error.
-func Logger(a Action) Action {
-	return ActionFunc(func(w io.Writer) (err error) {
-		if err = a.Execute(w); err != nil {
+func logger(a action) action {
+	return actionFunc(func(w io.Writer) (err error) {
+		if err = a.execute(w); err != nil {
 			log.Warningf("error processing request: %v", err)
 		}
 		return
 	})
 }
 
-// Guard is a decorator that takes a timeout and an abort channel
+// guard is a decorator that takes a timeout and an abort channel
 // and executes the given action in a separate goroutine.
 // If the action finishes first, its error is being returned.
 //
 // If the timeout or an event in the abort channel happens first
 // an error is returned and the result of the executed action is ignored.
-func Guard(timeout time.Duration, abort <-chan struct{}) Decorator {
-	return func(a Action) Action {
-		return ActionFunc(func(w io.Writer) error {
+func guard(timeout time.Duration, abort <-chan struct{}) decorator {
+	return func(a action) action {
+		return actionFunc(func(w io.Writer) error {
 			fin := make(chan error, 1)
 			go func() {
-				fin <- a.Execute(w)
+				fin <- a.execute(w)
 			}()
 
 			var err error
@@ -89,9 +89,9 @@ func Guard(timeout time.Duration, abort <-chan struct{}) Decorator {
 			case err = <-fin:
 				// action finished first
 			case <-abort:
-				err = Aborted
+				err = ActionAbortedError
 			case <-time.After(timeout):
-				err = Timeout
+				err = ActionTimeoutError
 			}
 
 			return err
@@ -99,12 +99,12 @@ func Guard(timeout time.Duration, abort <-chan struct{}) Decorator {
 	}
 }
 
-// Handler takes an action and returns a http Handler.
+// handler takes an action and returns a http Handler.
 // It executes the action, passes the reponse writer as its argument.
 // If the action returns an error, a 500 status code is returned, else 204 (no content).
-func Handler(a Action) http.Handler {
+func handler(a action) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if err := a.Execute(w); err != nil {
+		if err := a.execute(w); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}

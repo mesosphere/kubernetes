@@ -52,7 +52,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/sets"
 )
 
-var Unregistered = errors.New("failed to execute action, scheduler is disconnected")
+var UnregisteredError = errors.New("failed to execute action, scheduler is disconnected")
 
 type Framework interface {
 	bindings.Scheduler
@@ -65,6 +65,7 @@ type Framework interface {
 }
 
 type framework struct {
+	// guarded Mesos context
 	driver      bindings.SchedulerDriver // late initialization
 	frameworkId *mesos.FrameworkID
 	registered  bool
@@ -194,7 +195,7 @@ func (f *framework) Init(sched scheduler.Scheduler, electedMaster proc.Process, 
 	f.mux = mux
 	f.asRegisteredMaster = proc.DoerFunc(func(a proc.Action) <-chan error {
 		if !f.IsRegistered() {
-			return proc.ErrorChanf(Unregistered.Error())
+			return proc.ErrorChanf(UnregisteredError.Error())
 		}
 		return electedMaster.Do(a)
 	})
@@ -202,10 +203,6 @@ func (f *framework) Init(sched scheduler.Scheduler, electedMaster proc.Process, 
 	f.offers.Init(f.terminate)
 	f.nodeRegistrator.Run(f.terminate)
 	return f.recoverTasks()
-}
-
-func (f *framework) asMaster() proc.Doer {
-	return f.asRegisteredMaster
 }
 
 // An executorRef holds a reference to an executor and the slave it is running on
@@ -290,27 +287,27 @@ func (f *framework) kamikaze(w io.Writer) error {
 }
 
 func (f *framework) installDebugHandlers(mux *http.ServeMux) {
-	asMaster := func(a Action) Action {
-		return ActionFunc(func(w io.Writer) error {
+	asMaster := func(a action) action {
+		return actionFunc(func(w io.Writer) error {
 			if !f.IsRegistered() {
-				return Unregistered
+				return UnregisteredError
 			}
 
-			return a.Execute(w)
+			return a.execute(w)
 		})
 	}
 
-	guard := Guard(
+	guard := guard(
 		f.schedulerConfig.HttpHandlerTimeout.Duration,
 		f.terminate,
 	)
 
-	handler := func(a Action) http.Handler {
-		return Handler(Decorate(a, Logger, asMaster, guard))
+	handler := func(a action) http.Handler {
+		return handler(decorate(a, logger, asMaster, guard))
 	}
 
-	action := func(f func()) Action {
-		return ActionFunc(func(io.Writer) error {
+	action := func(f func()) action {
+		return actionFunc(func(io.Writer) error {
 			f()
 			return nil
 		})
@@ -328,7 +325,7 @@ func (f *framework) installDebugHandlers(mux *http.ServeMux) {
 
 	mux.Handle(
 		"/debug/actions/kamikaze",
-		handler(ActionFunc(f.kamikaze)),
+		handler(actionFunc(f.kamikaze)),
 	)
 }
 

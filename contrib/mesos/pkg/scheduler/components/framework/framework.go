@@ -168,6 +168,8 @@ func New(config Config) Framework {
 	return k
 }
 
+// Init initializes this framework.
+// This method is part of the framework.Framework
 func (k *framework) Init(sched scheduler.Scheduler, electedMaster proc.Process, mux *http.ServeMux) error {
 	log.V(1).Infoln("initializing kubernetes mesos scheduler")
 
@@ -295,11 +297,14 @@ func (k *framework) installDebugHandlers(mux *http.ServeMux) {
 	}))
 }
 
+// Registration returns the registration channel.
+// This method is part of the framework.Framework interface.
 func (k *framework) Registration() <-chan struct{} {
 	return k.registration
 }
 
 // Registered is called when the scheduler registered with the master successfully.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) Registered(drv bindings.SchedulerDriver, fid *mesos.FrameworkID, mi *mesos.MasterInfo) {
 	log.Infof("Scheduler registered with the master: %v with frameworkId: %v\n", mi, fid)
 
@@ -314,6 +319,7 @@ func (k *framework) Registered(drv bindings.SchedulerDriver, fid *mesos.Framewor
 
 // Reregistered is called when the scheduler re-registered with the master successfully.
 // This happends when the master fails over.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) Reregistered(drv bindings.SchedulerDriver, mi *mesos.MasterInfo) {
 	log.Infof("Scheduler reregistered with the master: %v\n", mi)
 
@@ -356,6 +362,7 @@ func (k *framework) onInitialRegistration(driver bindings.SchedulerDriver) {
 }
 
 // Disconnected is called when the scheduler loses connection to the master.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) Disconnected(driver bindings.SchedulerDriver) {
 	log.Infof("Master disconnected!\n")
 
@@ -366,6 +373,7 @@ func (k *framework) Disconnected(driver bindings.SchedulerDriver) {
 }
 
 // ResourceOffers is called when the scheduler receives some offers from the master.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) ResourceOffers(driver bindings.SchedulerDriver, offers []*mesos.Offer) {
 	log.V(2).Infof("Received offers %+v", offers)
 
@@ -387,6 +395,7 @@ func (k *framework) ResourceOffers(driver bindings.SchedulerDriver, offers []*me
 }
 
 // OfferRescinded is called when the resources are recinded from the scheduler.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) OfferRescinded(driver bindings.SchedulerDriver, offerId *mesos.OfferID) {
 	log.Infof("Offer rescinded %v\n", offerId)
 
@@ -395,6 +404,7 @@ func (k *framework) OfferRescinded(driver bindings.SchedulerDriver, offerId *mes
 }
 
 // StatusUpdate is called when a status update message is sent to the scheduler.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) StatusUpdate(driver bindings.SchedulerDriver, taskStatus *mesos.TaskStatus) {
 
 	source, reason := "none", "none"
@@ -587,12 +597,14 @@ func (k *framework) reconcileNonTerminalTask(driver bindings.SchedulerDriver, ta
 }
 
 // FrameworkMessage is called when the scheduler receives a message from the executor.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) FrameworkMessage(driver bindings.SchedulerDriver,
 	executorId *mesos.ExecutorID, slaveId *mesos.SlaveID, message string) {
 	log.Infof("Received messages from executor %v of slave %v, %v\n", executorId, slaveId, message)
 }
 
 // SlaveLost is called when some slave is lost.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) SlaveLost(driver bindings.SchedulerDriver, slaveId *mesos.SlaveID) {
 	log.Infof("Slave %v is lost\n", slaveId)
 
@@ -608,12 +620,14 @@ func (k *framework) SlaveLost(driver bindings.SchedulerDriver, slaveId *mesos.Sl
 }
 
 // ExecutorLost is called when some executor is lost.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) ExecutorLost(driver bindings.SchedulerDriver, executorId *mesos.ExecutorID, slaveId *mesos.SlaveID, status int) {
 	log.Infof("Executor %v of slave %v is lost, status: %v\n", executorId, slaveId, status)
 }
 
 // Error is called when there is an unrecoverable error in the scheduler or scheduler driver.
 // The driver should have been aborted before this is invoked.
+// This method is part of the scheduler.Scheduler interface.
 func (k *framework) Error(driver bindings.SchedulerDriver, message string) {
 	log.Fatalf("fatal scheduler error: %v\n", message)
 }
@@ -758,12 +772,16 @@ func (ks *framework) recoverTasks() error {
 	return nil
 }
 
+// KillTask kills the task with the given id.
+// This method is part of the framework.Framework interface.
 func (ks *framework) KillTask(id string) error {
 	killTaskId := mutil.NewTaskID(id)
 	_, err := ks.driver.KillTask(killTaskId)
 	return err
 }
 
+// LaunchTask launches the given pod task using the underlying driver.
+// This method is part of the framework.Framework interface.
 func (ks *framework) LaunchTask(t *podtask.T) error {
 	taskInfo, err := t.BuildTaskInfo()
 	if err != nil {
@@ -778,6 +796,8 @@ func (ks *framework) LaunchTask(t *podtask.T) error {
 	return err
 }
 
+// Offers returs the offers registry.
+// This method is part of the framework.Framework interface.
 func (ks *framework) Offers() offers.Registry {
 	return ks.offers
 }

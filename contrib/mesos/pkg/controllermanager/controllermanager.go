@@ -48,8 +48,8 @@ import (
 	"k8s.io/kubernetes/pkg/serviceaccount"
 	"k8s.io/kubernetes/pkg/util"
 
+	kmendpoint "k8s.io/kubernetes/contrib/mesos/pkg/controller/endpoint"
 	"k8s.io/kubernetes/contrib/mesos/pkg/profile"
-	kmendpoint "k8s.io/kubernetes/contrib/mesos/pkg/service"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"

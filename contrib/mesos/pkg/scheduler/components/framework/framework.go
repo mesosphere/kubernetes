@@ -768,24 +768,47 @@ func (ks *framework) recoverTasks() error {
 // KillTask kills the task with the given id.
 // This method is part of the framework.Framework interface.
 func (ks *framework) KillTask(id string) error {
-	killTaskId := mutil.NewTaskID(id)
-	_, err := ks.driver.KillTask(killTaskId)
+	killErr := make(chan error, 1)
+	procErr := ks.asRegisteredMaster.Do(func() {
+		killTaskId := mutil.NewTaskID(id)
+		_, err := ks.driver.KillTask(killTaskId)
+		killErr <- err
+	})
+
+	var err error
+	select {
+	case err = <-killErr:
+	case err = <-procErr:
+	}
+
 	return err
 }
 
 // LaunchTask launches the given pod task using the underlying driver.
 // This method is part of the framework.Framework interface.
 func (ks *framework) LaunchTask(t *podtask.T) error {
-	taskInfo, err := t.BuildTaskInfo()
-	if err != nil {
-		return err
+	killErr := make(chan error, 1)
+	procErr := ks.asRegisteredMaster.Do(func() {
+		taskInfo, err := t.BuildTaskInfo()
+		if err != nil {
+			killErr <- err
+			return
+		}
+
+		// assume caller is holding scheduler lock
+		taskList := []*mesos.TaskInfo{taskInfo}
+		offerIds := []*mesos.OfferID{t.Offer.Details().Id}
+		filters := &mesos.Filters{}
+		_, err = ks.driver.LaunchTasks(offerIds, taskList, filters)
+		killErr <- err
+	})
+
+	var err error
+	select {
+	case err = <-killErr:
+	case err = <-procErr:
 	}
 
-	// assume caller is holding scheduler lock
-	taskList := []*mesos.TaskInfo{taskInfo}
-	offerIds := []*mesos.OfferID{t.Offer.Details().Id}
-	filters := &mesos.Filters{}
-	_, err = ks.driver.LaunchTasks(offerIds, taskList, filters)
 	return err
 }
 

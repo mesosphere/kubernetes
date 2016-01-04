@@ -60,10 +60,6 @@ type Framework interface {
 }
 
 type framework struct {
-	// We use a lock here to avoid races
-	// between invoking the mesos callback
-	*sync.RWMutex
-
 	// Config related, write-once
 	sched             scheduler.Scheduler
 	schedulerConfig   *schedcfg.Config
@@ -109,7 +105,6 @@ func New(config Config) Framework {
 	var k *framework
 	k = &framework{
 		schedulerConfig:   &config.SchedulerConfig,
-		RWMutex:           new(sync.RWMutex),
 		client:            config.Client,
 		failoverTimeout:   config.FailoverTimeout,
 		reconcileInterval: config.ReconcileInterval,
@@ -188,8 +183,6 @@ func (k *framework) Init(sched scheduler.Scheduler, electedMaster proc.Process, 
 }
 
 func (k *framework) asMaster() proc.Doer {
-	k.RLock()
-	defer k.RUnlock()
 	return k.asRegisteredMaster
 }
 

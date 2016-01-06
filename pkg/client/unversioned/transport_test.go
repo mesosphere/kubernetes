@@ -107,7 +107,7 @@ func TestTLSConfigKey(t *testing.T) {
 	identicalConfigurations := map[string]*Config{
 		"empty":          {},
 		"host":           {Host: "foo"},
-		"prefix":         {Prefix: "foo"},
+		"apiPath":        {APIPath: "foo"},
 		"version":        {Version: "foo"},
 		"codec":          {Codec: testapi.Default.Codec()},
 		"basic":          {Username: "bob", Password: "password"},

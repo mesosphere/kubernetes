@@ -69,7 +69,7 @@ func TestRequestWithErrorWontChange(t *testing.T) {
 }
 
 func TestRequestPreservesBaseTrailingSlash(t *testing.T) {
-	r := &Request{baseURL: &url.URL{}, path: "/path/"}
+	r := &Request{baseURL: &url.URL{}, pathPrefix: "/path/"}
 	if s := r.URL().String(); s != "/path/" {
 		t.Errorf("trailing slash should be preserved: %s", s)
 	}
@@ -111,8 +111,8 @@ func TestRequestSetsNamespace(t *testing.T) {
 
 func TestRequestOrdersNamespaceInPath(t *testing.T) {
 	r := (&Request{
-		baseURL: &url.URL{},
-		path:    "/test/",
+		baseURL:    &url.URL{},
+		pathPrefix: "/test/",
 	}).Name("bar").Resource("baz").Namespace("foo")
 	if s := r.URL().String(); s != "/test/namespaces/foo/baz/bar" {
 		t.Errorf("namespace should be in order in path: %s", s)
@@ -121,8 +121,8 @@ func TestRequestOrdersNamespaceInPath(t *testing.T) {
 
 func TestRequestOrdersSubResource(t *testing.T) {
 	r := (&Request{
-		baseURL: &url.URL{},
-		path:    "/test/",
+		baseURL:    &url.URL{},
+		pathPrefix: "/test/",
 	}).Name("bar").Resource("baz").Namespace("foo").Suffix("test").SubResource("a", "b")
 	if s := r.URL().String(); s != "/test/namespaces/foo/baz/bar/a/b/test" {
 		t.Errorf("namespace should be in order in path: %s", s)
@@ -177,7 +177,7 @@ func TestRequestURI(t *testing.T) {
 	r := (&Request{}).Param("foo", "a")
 	r.Prefix("other")
 	r.RequestURI("/test?foo=b&a=b&c=1&c=2")
-	if r.path != "/test" {
+	if r.pathPrefix != "/test" {
 		t.Errorf("path is wrong: %#v", r)
 	}
 	if !api.Semantic.DeepDerivative(r.params, url.Values{"a": []string{"b"}, "foo": []string{"b"}, "c": []string{"1", "2"}}) {
@@ -223,7 +223,7 @@ func TestResultIntoWithErrReturnsErr(t *testing.T) {
 
 func TestURLTemplate(t *testing.T) {
 	uri, _ := url.Parse("http://localhost")
-	r := NewRequest(nil, "POST", uri, "test", nil)
+	r := NewRequest(nil, "POST", uri, "", "test", nil)
 	r.Prefix("pre1").Resource("r1").Namespace("ns").Name("nm").Param("p0", "v0")
 	full := r.URL()
 	if full.String() != "http://localhost/pre1/namespaces/ns/r1/nm?p0=v0" {
@@ -284,7 +284,7 @@ func TestTransformResponse(t *testing.T) {
 		{Response: &http.Response{StatusCode: 200, Body: ioutil.NopCloser(bytes.NewReader(invalid))}, Data: invalid},
 	}
 	for i, test := range testCases {
-		r := NewRequest(nil, "", uri, testapi.Default.Version(), testapi.Default.Codec())
+		r := NewRequest(nil, "", uri, "", testapi.Default.Version(), testapi.Default.Codec())
 		if test.Response.Body == nil {
 			test.Response.Body = ioutil.NopCloser(bytes.NewReader([]byte{}))
 		}
@@ -408,7 +408,7 @@ func TestRequestWatch(t *testing.T) {
 			Err:     true,
 		},
 		{
-			Request: &Request{baseURL: &url.URL{}, path: "%"},
+			Request: &Request{baseURL: &url.URL{}, pathPrefix: "%"},
 			Err:     true,
 		},
 		{
@@ -535,7 +535,7 @@ func TestRequestStream(t *testing.T) {
 			Err:     true,
 		},
 		{
-			Request: &Request{baseURL: &url.URL{}, path: "%"},
+			Request: &Request{baseURL: &url.URL{}, pathPrefix: "%"},
 			Err:     true,
 		},
 		{
@@ -620,7 +620,7 @@ func TestRequestDo(t *testing.T) {
 			Err:     true,
 		},
 		{
-			Request: &Request{baseURL: &url.URL{}, path: "%"},
+			Request: &Request{baseURL: &url.URL{}, pathPrefix: "%"},
 			Err:     true,
 		},
 		{
@@ -947,49 +947,38 @@ func TestVerbs(t *testing.T) {
 	}
 }
 
-func TestUnversionedPath(t *testing.T) {
-	tt := []struct {
-		host         string
-		prefix       string
-		unversioned  string
-		expectedPath string
-	}{
-		{"", "", "", "/api"},
-		{"", "", "versions", "/api/versions"},
-		{"", "/", "", "/"},
-		{"", "/versions", "", "/versions"},
-		{"", "/api", "", "/api"},
-		{"", "/api/vfake", "", "/api/vfake"},
-		{"", "/api/vfake", "v1beta100", "/api/vfake/v1beta100"},
-		{"", "/api", "/versions", "/api/versions"},
-		{"", "/api", "versions", "/api/versions"},
-		{"", "/a/api", "", "/a/api"},
-		{"", "/a/api", "/versions", "/a/api/versions"},
-		{"", "/a/api", "/versions/d/e", "/a/api/versions/d/e"},
-		{"", "/a/api/vfake", "/versions/d/e", "/a/api/vfake/versions/d/e"},
-	}
-	for i, tc := range tt {
-		c := NewOrDie(&Config{Host: tc.host, Prefix: tc.prefix})
-		r := c.Post().Prefix("/alpha").UnversionedPath(tc.unversioned)
-		if r.path != tc.expectedPath {
-			t.Errorf("test case %d failed: unexpected path: %s, expected %s", i+1, r.path, tc.expectedPath)
-		}
-	}
-	for i, tc := range tt {
-		c := NewOrDie(&Config{Host: tc.host, Prefix: tc.prefix, Version: "v1"})
-		r := c.Post().Prefix("/alpha").UnversionedPath(tc.unversioned)
-		if r.path != tc.expectedPath {
-			t.Errorf("test case %d failed: unexpected path: %s, expected %s", i+1, r.path, tc.expectedPath)
-		}
-	}
-}
-
 func TestAbsPath(t *testing.T) {
-	expectedPath := "/bar/foo"
-	c := NewOrDie(&Config{})
-	r := c.Post().Prefix("/foo").AbsPath(expectedPath)
-	if r.path != expectedPath {
-		t.Errorf("unexpected path: %s, expected %s", r.path, expectedPath)
+	for i, tc := range []struct {
+		configPrefix   string
+		resourcePrefix string
+		absPath        string
+		wantsAbsPath   string
+	}{
+		{"", "", "", "/"},
+		{"", "", "/", "/"},
+		{"", "", "/api", "/api"},
+		{"", "", "/api/", "/api/"},
+		{"", "", "/apis", "/apis"},
+		{"", "/foo", "/bar/foo", "/bar/foo"},
+		{"", "/api/foo/123", "/bar/foo", "/bar/foo"},
+		{"/p1", "", "", "/p1"},
+		{"/p1", "", "/", "/p1/"},
+		{"/p1", "", "/api", "/p1/api"},
+		{"/p1", "", "/apis", "/p1/apis"},
+		{"/p1", "/r1", "/apis", "/p1/apis"},
+		{"/p1", "/api/r1", "/apis", "/p1/apis"},
+		{"/p1/api/p2", "", "", "/p1/api/p2"},
+		{"/p1/api/p2", "", "/", "/p1/api/p2/"},
+		{"/p1/api/p2", "", "/api", "/p1/api/p2/api"},
+		{"/p1/api/p2", "", "/api/", "/p1/api/p2/api/"},
+		{"/p1/api/p2", "/r1", "/api/", "/p1/api/p2/api/"},
+		{"/p1/api/p2", "/api/r1", "/api/", "/p1/api/p2/api/"},
+	} {
+		c := NewOrDie(&Config{Host: "http://localhost:123" + tc.configPrefix})
+		r := c.Post().Prefix(tc.resourcePrefix).AbsPath(tc.absPath)
+		if r.pathPrefix != tc.wantsAbsPath {
+			t.Errorf("test case %d failed, unexpected path: %q, expected %q", i, r.pathPrefix, tc.wantsAbsPath)
+		}
 	}
 }
 
@@ -999,9 +988,9 @@ func TestUintParam(t *testing.T) {
 		testVal   uint64
 		expectStr string
 	}{
-		{"foo", 31415, "http://localhost?foo=31415"},
-		{"bar", 42, "http://localhost?bar=42"},
-		{"baz", 0, "http://localhost?baz=0"},
+		{"foo", 31415, "http://localhost/?foo=31415"},
+		{"bar", 42, "http://localhost/?bar=42"},
+		{"baz", 0, "http://localhost/?baz=0"},
 	}
 
 	for _, item := range table {

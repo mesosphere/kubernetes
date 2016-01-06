@@ -217,7 +217,7 @@ func TestTLSTransportCache(t *testing.T) {
 	identicalConfigurations := map[string]*Config{
 		"empty":          {Insecure: true},
 		"host":           {Insecure: true, Host: "foo"},
-		"prefix":         {Insecure: true, Prefix: "foo"},
+		"apiPath":        {Insecure: true, APIPath: "foo"},
 		"version":        {Insecure: true, Version: "foo"},
 		"codec":          {Insecure: true, Codec: testapi.Default.Codec()},
 		"basic":          {Insecure: true, Username: "bob", Password: "password"},
@@ -332,7 +332,7 @@ func TestSetKubernetesDefaults(t *testing.T) {
 		{
 			Config{},
 			Config{
-				Prefix:  "/api",
+				APIPath: "/api",
 				Version: testapi.Default.Version(),
 				Codec:   testapi.Default.Codec(),
 				QPS:     5,

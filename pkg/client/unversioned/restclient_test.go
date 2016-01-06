@@ -30,11 +30,11 @@ import (
 
 func TestSetsCodec(t *testing.T) {
 	testCases := map[string]struct {
-		Err    bool
-		Prefix string
-		Codec  runtime.Codec
+		Err              bool
+		VersionedAPIPath string
+		Codec            runtime.Codec
 	}{
-		testapi.Default.Version(): {false, "/api/" + testapi.Default.Version() + "/", testapi.Default.Codec()},
+		testapi.Default.Version(): {false, "/api/" + testapi.Default.Version(), testapi.Default.Codec()},
 		"invalidVersion":          {true, "", nil},
 	}
 	for version, expected := range testCases {
@@ -49,7 +49,7 @@ func TestSetsCodec(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if e, a := expected.Prefix, client.RESTClient.baseURL.Path; e != a {
+		if e, a := expected.VersionedAPIPath, client.RESTClient.versionedAPIPath; e != a {
 			t.Errorf("expected %#v, got %#v", e, a)
 		}
 		if e, a := expected.Codec, client.RESTClient.Codec; e != a {
@@ -72,23 +72,24 @@ func TestRESTClientRequires(t *testing.T) {
 
 func TestValidatesHostParameter(t *testing.T) {
 	testCases := []struct {
-		Host   string
-		Prefix string
+		Host    string
+		APIPath string
 
+		// wants
 		URL string
 		Err bool
 	}{
-		{"127.0.0.1", "", "http://127.0.0.1/" + testapi.Default.Version() + "/", false},
-		{"127.0.0.1:8080", "", "http://127.0.0.1:8080/" + testapi.Default.Version() + "/", false},
-		{"foo.bar.com", "", "http://foo.bar.com/" + testapi.Default.Version() + "/", false},
-		{"http://host/prefix", "", "http://host/prefix/" + testapi.Default.Version() + "/", false},
-		{"http://host", "", "http://host/" + testapi.Default.Version() + "/", false},
-		{"http://host", "/", "http://host/" + testapi.Default.Version() + "/", false},
-		{"http://host", "/other", "http://host/other/" + testapi.Default.Version() + "/", false},
+		{"127.0.0.1", "", "http://127.0.0.1/", false},
+		{"127.0.0.1:8080", "", "http://127.0.0.1:8080/", false},
+		{"foo.bar.com", "", "http://foo.bar.com/", false},
+		{"http://host/prefix", "", "http://host/prefix/", false},
+		{"http://host", "", "http://host/", false},
+		{"http://host", "/", "http://host/", false},
+		{"http://host", "/other", "http://host/", false},
 		{"host/server", "", "", true},
 	}
 	for i, testCase := range testCases {
-		c, err := RESTClientFor(&Config{Host: testCase.Host, Prefix: testCase.Prefix, Version: testapi.Default.Version(), Codec: testapi.Default.Codec()})
+		c, err := RESTClientFor(&Config{Host: testCase.Host, APIPath: testCase.APIPath, Version: testapi.Default.Version(), Codec: testapi.Default.Codec()})
 		switch {
 		case err == nil && testCase.Err:
 			t.Errorf("expected error but was nil")

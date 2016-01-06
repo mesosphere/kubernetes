@@ -35,4 +35,5 @@ const (
 	ContainerPortKeyFormat   = "k8s.mesosphere.io/containerPort_%s_%s_%d"
 	StaticPodFilenameKey     = "k8s.mesosphere.io/staticPodFilename"
 	RolesKey                 = "k8s.mesosphere.io/roles"
+	IncompatibleExecutor     = "k8s.mesosphere.io/incompatbile-executor"
 )

@@ -49,6 +49,7 @@ import (
 	"k8s.io/kubernetes/pkg/util"
 
 	kmendpoint "k8s.io/kubernetes/contrib/mesos/pkg/controller/endpoint"
+	"k8s.io/kubernetes/contrib/mesos/pkg/controller/upgrade"
 	"k8s.io/kubernetes/contrib/mesos/pkg/profile"
 
 	"github.com/golang/glog"
@@ -224,6 +225,12 @@ func (s *CMServer) Run(_ []string) error {
 		kubeClient,
 		serviceaccountcontroller.DefaultServiceAccountsControllerOptions(),
 	).Run()
+
+	upgrade.NewUpgradeController(
+		kubeClient,
+		util.NewTokenBucketRateLimiter(s.DeletingPodsQps, s.DeletingPodsBurst),
+		util.NewTokenBucketRateLimiter(s.DeletingPodsQps, s.DeletingPodsBurst),
+	).Run(util.NeverStop)
 
 	select {}
 }

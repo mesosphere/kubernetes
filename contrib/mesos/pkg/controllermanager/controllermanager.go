@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"k8s.io/kubernetes/cmd/kube-controller-manager/app"
-	"k8s.io/kubernetes/contrib/mesos/pkg/node"
+	mesosnode "k8s.io/kubernetes/contrib/mesos/pkg/node"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
@@ -34,17 +34,23 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/mesos"
 	"k8s.io/kubernetes/pkg/controller/daemon"
-	kendpoint "k8s.io/kubernetes/pkg/controller/endpoint"
-	"k8s.io/kubernetes/pkg/controller/namespace"
-	"k8s.io/kubernetes/pkg/controller/node"
+	"k8s.io/kubernetes/pkg/controller/deployment"
+	endpointcontroller "k8s.io/kubernetes/pkg/controller/endpoint"
+	"k8s.io/kubernetes/pkg/controller/gc"
+	"k8s.io/kubernetes/pkg/controller/job"
+	namespacecontroller "k8s.io/kubernetes/pkg/controller/namespace"
+	nodecontroller "k8s.io/kubernetes/pkg/controller/node"
 	"k8s.io/kubernetes/pkg/controller/persistentvolume"
-	"k8s.io/kubernetes/pkg/controller/replication"
-	"k8s.io/kubernetes/pkg/controller/resourcequota"
-	"k8s.io/kubernetes/pkg/controller/route"
-	"k8s.io/kubernetes/pkg/controller/service"
+	"k8s.io/kubernetes/pkg/controller/podautoscaler"
+	"k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
+	replicationcontroller "k8s.io/kubernetes/pkg/controller/replication"
+	resourcequotacontroller "k8s.io/kubernetes/pkg/controller/resourcequota"
+	routecontroller "k8s.io/kubernetes/pkg/controller/route"
+	servicecontroller "k8s.io/kubernetes/pkg/controller/service"
 	"k8s.io/kubernetes/pkg/controller/serviceaccount"
 	"k8s.io/kubernetes/pkg/healthz"
 	"k8s.io/kubernetes/pkg/util"
+	"k8s.io/kubernetes/pkg/util/wait"
 
 	"k8s.io/kubernetes/contrib/mesos/pkg/profile"
 	kmendpoint "k8s.io/kubernetes/contrib/mesos/pkg/service"
@@ -123,8 +129,10 @@ func (s *CMServer) Run(_ []string) error {
 	go replicationcontroller.NewReplicationManager(kubeClient, s.resyncPeriod, replicationcontroller.BurstReplicas).
 		Run(s.ConcurrentRCSyncs, util.NeverStop)
 
-	go daemon.NewDaemonSetsController(kubeClient, s.resyncPeriod).
-		Run(s.ConcurrentDSCSyncs, util.NeverStop)
+	if s.TerminatedPodGCThreshold > 0 {
+		go gc.New(kubeClient, s.resyncPeriod, s.TerminatedPodGCThreshold).
+			Run(util.NeverStop)
+	}
 
 	//TODO(jdef) should eventually support more cloud providers here
 	if s.CloudProvider != mesos.ProviderName {
@@ -141,7 +149,7 @@ func (s *CMServer) Run(_ []string) error {
 		s.NodeMonitorGracePeriod, s.NodeStartupGracePeriod, s.NodeMonitorPeriod, (*net.IPNet)(&s.ClusterCIDR), s.AllocateNodeCIDRs)
 	nodeController.Run(s.NodeSyncPeriod)
 
-	nodeStatusUpdaterController := node.NewStatusUpdater(kubeClient, s.NodeMonitorPeriod, time.Now)
+	nodeStatusUpdaterController := mesosnode.NewStatusUpdater(kubeClient, s.NodeMonitorPeriod, time.Now)
 	if err := nodeStatusUpdaterController.Run(util.NeverStop); err != nil {
 		glog.Fatalf("Failed to start node status update controller: %v", err)
 	}
@@ -163,11 +171,63 @@ func (s *CMServer) Run(_ []string) error {
 	resourceQuotaController := resourcequotacontroller.NewResourceQuotaController(kubeClient)
 	resourceQuotaController.Run(s.ResourceQuotaSyncPeriod)
 
+	// If apiserver is not running we should wait for some time and fail only then. This is particularly
+	// important when we start apiserver and controller manager at the same time.
+	var versionStrings []string
+	err = wait.PollImmediate(time.Second, 10*time.Second, func() (bool, error) {
+		if versionStrings, err = client.ServerAPIVersions(kubeconfig); err == nil {
+			return true, nil
+		}
+		glog.Errorf("Failed to get api versions from server: %v", err)
+		return false, nil
+	})
+	if err != nil {
+		glog.Fatalf("Failed to get api versions from server: %v", err)
+	}
+	versions := &unversioned.APIVersions{Versions: versionStrings}
+
+	resourceMap, err := kubeClient.Discovery().ServerResources()
+	if err != nil {
+		glog.Fatalf("Failed to get supported resources from server: %v", err)
+	}
+
 	namespaceController := namespacecontroller.NewNamespaceController(kubeClient, &unversioned.APIVersions{}, s.NamespaceSyncPeriod)
 	namespaceController.Run()
 
+	groupVersion := "extensions/v1beta1"
+	resources, found := resourceMap[groupVersion]
+	// TODO(k8s): this needs to be dynamic so users don't have to restart their controller manager if they change the apiserver
+	if containsVersion(versions, groupVersion) && found {
+		glog.Infof("Starting %s apis", groupVersion)
+		if containsResource(resources, "horizontalpodautoscalers") {
+			glog.Infof("Starting horizontal pod controller.")
+			metricsClient := metrics.NewHeapsterMetricsClient(kubeClient)
+			podautoscaler.NewHorizontalController(kubeClient, metricsClient).
+				Run(s.HorizontalPodAutoscalerSyncPeriod)
+		}
+
+		if containsResource(resources, "daemonsets") {
+			glog.Infof("Starting daemon set controller")
+			go daemon.NewDaemonSetsController(kubeClient, s.resyncPeriod).
+				Run(s.ConcurrentDSCSyncs, util.NeverStop)
+		}
+
+		if containsResource(resources, "jobs") {
+			glog.Infof("Starting job controller")
+			go job.NewJobController(kubeClient, s.resyncPeriod).
+				Run(s.ConcurrentJobSyncs, util.NeverStop)
+		}
+
+		if containsResource(resources, "deployments") {
+			glog.Infof("Starting deployment controller")
+			go deployment.New(kubeClient).
+				Run(s.DeploymentControllerSyncPeriod)
+		}
+	}
+
 	pvclaimBinder := volumeclaimbinder.NewPersistentVolumeClaimBinder(kubeClient, s.PVClaimBinderSyncPeriod)
 	pvclaimBinder.Run()
+
 	pvRecycler, err := volumeclaimbinder.NewPersistentVolumeRecycler(kubeClient, s.PVClaimBinderSyncPeriod, app.ProbeRecyclableVolumePlugins(s.VolumeConfigFlags))
 	if err != nil {
 		glog.Fatalf("Failed to start persistent volume recycler: %+v", err)
@@ -211,12 +271,41 @@ func (s *CMServer) Run(_ []string) error {
 	select {}
 }
 
+func clientForUserAgentOrDie(config client.Config, userAgent string) *client.Client {
+	fullUserAgent := client.DefaultKubernetesUserAgent() + "/" + userAgent
+	config.UserAgent = fullUserAgent
+	kubeClient, err := client.New(&config)
+	if err != nil {
+		glog.Fatalf("Invalid API configuration: %v", err)
+	}
+	return kubeClient
+}
+
 func (s *CMServer) createEndpointController(client *client.Client) kmendpoint.EndpointController {
 	if s.UseHostPortEndpoints {
 		glog.V(2).Infof("Creating hostIP:hostPort endpoint controller")
 		return kmendpoint.NewEndpointController(client)
 	}
 	glog.V(2).Infof("Creating podIP:containerPort endpoint controller")
-	stockEndpointController := kendpoint.NewEndpointController(client, s.resyncPeriod)
+	stockEndpointController := endpointcontroller.NewEndpointController(client, s.resyncPeriod)
 	return stockEndpointController
+}
+
+func containsVersion(versions *unversioned.APIVersions, version string) bool {
+	for ix := range versions.Versions {
+		if versions.Versions[ix] == version {
+			return true
+		}
+	}
+	return false
+}
+
+func containsResource(resources *unversioned.APIResourceList, resourceName string) bool {
+	for ix := range resources.APIResources {
+		resource := resources.APIResources[ix]
+		if resource.Name == resourceName {
+			return true
+		}
+	}
+	return false
 }

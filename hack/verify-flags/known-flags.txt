@@ -176,6 +176,7 @@ mesos-launch-grace-period
 mesos-master
 mesos-sandbox-overlay
 mesos-framework-roles
+mesos-generate-task-discovery
 mesos-default-pod-roles
 mesos-user
 minimum-container-ttl-duration

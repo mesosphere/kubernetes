@@ -92,6 +92,7 @@ file-check-frequency
 file-suffix
 forward-services
 framework-name
+framework-store-uri
 framework-weburi
 func-dest
 fuzz-iters

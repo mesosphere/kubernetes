@@ -110,6 +110,7 @@ hostname-override
 host-network-sources
 host-pid-sources
 host-ipc-sources
+host-port-endpoints
 http-check-frequency
 http-port
 ignore-not-found

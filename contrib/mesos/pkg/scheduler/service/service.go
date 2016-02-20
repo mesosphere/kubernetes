@@ -764,6 +764,16 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 	}
 
 	schedulerProcess := ha.New(framework)
+
+	// try publishing on the same IP as the slave
+	var publishedAddress net.IP
+	if libprocessIP := os.Getenv("LIBPROCESS_IP"); libprocessIP != "" {
+		publishedAddress = net.ParseIP(libprocessIP)
+	}
+	if publishedAddress != nil {
+		log.V(1).Infof("driver will publish address %v", publishedAddress)
+	}
+
 	dconfig := &bindings.DriverConfig{
 		Scheduler:        schedulerProcess,
 		Framework:        info,
@@ -771,6 +781,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		Credential:       cred,
 		BindingAddress:   s.address,
 		BindingPort:      uint16(s.driverPort),
+		PublishedAddress: publishedAddress,
 		HostnameOverride: s.hostnameOverride,
 		WithAuthContext: func(ctx context.Context) context.Context {
 			ctx = auth.WithLoginProvider(ctx, s.mesosAuthProvider)
@@ -813,7 +824,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 	)
 
 	runtime.On(framework.Registration(), func() { sched.Run(schedulerProcess.Terminal()) })
-	runtime.On(framework.Registration(), s.newServiceWriter(schedulerProcess.Terminal()))
+	runtime.On(framework.Registration(), s.newServiceWriter(publishedAddress, schedulerProcess.Terminal()))
 	runtime.On(framework.Registration(), func() { nodeCtl.Run(schedulerProcess.Terminal()) })
 
 	driverFactory := ha.DriverFactory(func() (drv bindings.SchedulerDriver, err error) {

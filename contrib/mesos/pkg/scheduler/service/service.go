@@ -360,6 +360,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 		uri, executorCmd := s.serveFrameworkArtifact(s.executorPath)
 		ci.Uris = append(ci.Uris, &mesos.CommandInfo_URI{Value: proto.String(uri), Executable: proto.Bool(true)})
 		ci.Value = proto.String(fmt.Sprintf("./%s", executorCmd))
+		ci.Arguments = append(ci.Arguments, ci.GetValue())
 	} else if !hks.FindServer(hyperkube.CommandMinion) {
 		return nil, fmt.Errorf("either run this scheduler via km or else --executor-path is required")
 	} else {
@@ -378,7 +379,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 			ci.Uris = append(ci.Uris, &mesos.CommandInfo_URI{Value: proto.String(uri), Executable: proto.Bool(true)})
 			ci.Value = proto.String(fmt.Sprintf("./%s", kmCmd))
 		}
-		ci.Arguments = append(ci.Arguments, hyperkube.CommandMinion)
+		ci.Arguments = append(ci.Arguments, ci.GetValue(), hyperkube.CommandMinion)
 
 		ci.Arguments = append(ci.Arguments, fmt.Sprintf("--run-proxy=%v", s.runProxy))
 		ci.Arguments = append(ci.Arguments, fmt.Sprintf("--proxy-bindall=%v", s.proxyBindall))

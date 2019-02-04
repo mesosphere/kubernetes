@@ -5,12 +5,20 @@ go_library(
     srcs = [
         "cmsg.go",
         "utils.go",
+        "utils_linux.go",
         "utils_unix.go",
     ],
     importmap = "k8s.io/kubernetes/vendor/github.com/opencontainers/runc/libcontainer/utils",
     importpath = "github.com/opencontainers/runc/libcontainer/utils",
     visibility = ["//visibility:public"],
-    deps = ["//vendor/golang.org/x/sys/unix:go_default_library"],
+    deps = [
+        "//vendor/golang.org/x/sys/unix:go_default_library",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//vendor/github.com/pkg/errors:go_default_library",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 filegroup(

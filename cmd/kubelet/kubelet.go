@@ -25,6 +25,8 @@ import (
 	"os"
 	"time"
 
+	_ "crypto/tls/fipsonly"
+
 	"k8s.io/component-base/logs"
 	"k8s.io/kubernetes/cmd/kubelet/app"
 	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration

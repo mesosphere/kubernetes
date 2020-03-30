@@ -30,6 +30,8 @@ import (
 
 	// Import to initialize client auth plugins.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
+	_ "crypto/tls/fipsonly"
 )
 
 func main() {
